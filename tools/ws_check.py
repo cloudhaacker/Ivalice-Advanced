@@ -197,6 +197,12 @@ def run_case(case: dict, width: int, png: pathlib.Path, sav: pathlib.Path) -> tu
     env = {k: v for k, v in os.environ.items() if not k.startswith("GBARECOMP_")}
     if case["csv"]:
         env["GBARECOMP_INPUT_REPLAY"] = case["csv"]
+    # Backend A/B: honor an explicit GBARECOMP_BIOS_HLE from the operator so
+    # the same fixtures can validate the LLE SWI path post-flip
+    # (GBARECOMP_BIOS_HLE=0 python tools/ws_check.py --keep). Default scrub
+    # stands otherwise — the gate follows game.toml (HLE) unless asked.
+    if os.environ.get("GBARECOMP_BIOS_HLE"):
+        env["GBARECOMP_BIOS_HLE"] = os.environ["GBARECOMP_BIOS_HLE"]
     # Parallel safety: keep coverage/frag artifacts per-run in the temp dir so
     # concurrent engines never race on the repo-root files.
     env["GBARECOMP_COVERAGE_JSON"] = str(sav.with_suffix(".cov.json"))

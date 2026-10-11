@@ -280,7 +280,19 @@ GBARECOMP_INPUT_REPLAY=logs/playthrough.csv ./build/FFTARecomp ...` — expect
   strict run is the definition of "statically recompiled".
 - **Attract gate:** `tools/attract_check.py` pins the SHA-256 of a 1200-frame
   attract run; it runs inside `cycle.py` after every `game.toml` change.
-  `--repin` only for deliberate visual changes.
+  `--repin` only for deliberate visual changes. Since the HLE flip it pins
+  itself to LLE (`GBARECOMP_BIOS_HLE=0`): the attract frame sits mid-intro-
+  movie (timing-chaotic content), so the pin guards rendering on the
+  oracle-faithful path while `hle_audit.py` owns the HLE path.
+- **HLE audit:** `tools/hle_audit.py` (gate suite `hle-audit`) forces
+  `GBARECOMP_BIOS_HLE=1` and runs attract + battle route B with the SWI
+  census (`GBARECOMP_SWI_LOG`) and HLE-taken trace (`GBARECOMP_SWI_TRACE`):
+  every executed SWI must be in the HLE-implemented set (mirrored from
+  `bios_hle.cpp`) and HLE-taken (no silent LLE fallback), both routes
+  FULLY_STATIC, route-B final frame matching its pin (`--repin` for
+  deliberate changes, same policy as attract). Red-verified both ways
+  (HLE-off and dropped-SWI fail the gate). Attract pixels are deliberately
+  NOT pinned here (movie chaos — see above).
 - **Widescreen smoke:** `tools/ws_check.py` — for each scene fixture x view
   width it compares the wide render's center against a faithful 240 render
   (must be pixel-identical), censuses the margins against the per-scene
@@ -291,7 +303,10 @@ GBARECOMP_INPUT_REPLAY=logs/playthrough.csv ./build/FFTARecomp ...` — expect
   (`saves/ws_fixtures/*.state` — local-only, gitignored; exit 2 when
   missing or changed). The copies keep the player's `game.state1..9` slots
   free for GUI testing; runs in parallel (`--jobs`); 6 cases x 320/384/448
-  in seconds.
+  in seconds. Backend A/B: `GBARECOMP_BIOS_HLE=0 tools/ws_check.py --keep`
+  replays the same fixtures under LLE (the scrub passes that one var
+  through) — all 24 frames must be pixel-identical to the HLE default run,
+  which is how the HLE flip was validated on stable content.
 - **Full gate:** `.venv/bin/python tools/check.py` — host unit tests
   (C++ + Python), patch validity, the device-free Android checks, the
   attract gate, the widescreen smoke,

@@ -84,6 +84,11 @@ def main() -> int:
            if not k.startswith("GBARECOMP_")}
     env["GBARECOMP_STRICT_STATIC"] = "1"
     env["GBARECOMP_HANG_WATCHDOG"] = "0"
+    # Golden stays LLE even after the game.toml flip to HLE: the attract
+    # frame sits mid-intro-movie (timing-chaotic content — same backend
+    # diverges run to run in phase), so the pin guards rendering on the
+    # oracle-faithful path while tools/hle_audit.py owns the HLE path.
+    env["GBARECOMP_BIOS_HLE"] = "0"
 
     problems: list[str] = []
     with tempfile.TemporaryDirectory(prefix="ffta_attract_") as td:

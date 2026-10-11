@@ -90,6 +90,19 @@ def check_attract():
     return r.returncode == 0 and "PASS" in line, line or f"exit {r.returncode}"
 
 
+def check_hle_audit():
+    """BIOS HLE zero-fallback audit (tools/hle_audit.py): attract + battle
+    route B under forced HLE must be FULLY_STATIC with every executed SWI
+    HLE-taken (no silent LLE fallback) and the route-B frame matching its
+    pin. Guards the release-hygiene story: HLE must actually service the
+    SWIs, not just be enabled."""
+    r = run([sys.executable, "tools/hle_audit.py"], timeout=1800)
+    line = (r.stdout.strip().splitlines() or [""])[-1]
+    if r.returncode == 2:
+        return False, line or "fixtures missing"
+    return r.returncode == 0, line or f"exit {r.returncode}"
+
+
 def strict_route(trace, frames):
     if not trace.exists():
         return False, f"missing fixture {trace.name}"
@@ -377,6 +390,7 @@ CHECKS = {
     "desktop-accept-window": check_desktop_accept_window,
     "android-apk": check_android_apk,
     "attract": check_attract,
+    "hle-audit": check_hle_audit,
     "ws_smoke": check_ws_smoke,
     "user_load": lambda: strict_route(REG / "user_load_trace.csv", 1600),
     "route_G": lambda: strict_route(REG / "sessionG_trace.csv", 19400),
@@ -392,8 +406,8 @@ FAST = ["unit-cpp", "unit-py", "savecheck", "patches", "android-static",
 OPTIONAL = {"android-apk"}
 # Checks that execute the game binary (require it to exist); the others run
 # on a fresh clone without the ROM (CI tier 1: unit-cpp, unit-py, patches).
-NEEDS_EXE = {"attract", "ws_smoke", "user_load", "route_G", "route_K",
-             "route_B"}
+NEEDS_EXE = {"attract", "hle-audit", "ws_smoke", "user_load", "route_G",
+             "route_K", "route_B"}
 
 
 def main():

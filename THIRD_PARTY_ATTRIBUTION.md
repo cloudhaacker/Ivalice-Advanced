@@ -17,6 +17,16 @@ user-supplied dumps.
 Working-tree patches in `tools/patches/` modify gbarecomp sources; patched
 copies remain under gbarecomp's terms (see `tools/patches/README.md`).
 
+## Runtime HLE (mGBA-derived)
+
+The BIOS HLE services (`gbarecomp/src/runtime/bios_hle.cpp`, enabled by
+`game.toml [bios].hle`) port SWI semantics from mGBA's `src/gba/bios.c`
+([mgba-emu/mgba](https://github.com/mgba-emu/mgba), MPL-2.0 — notice retained
+in the file header plus `third_party/MPL-2.0.txt` upstream). The object code
+links into every build (the hook installs only when HLE is on); unhandled
+SWIs fall through to the recompiled LLE BIOS. No mGBA sources are vendored
+here.
+
 ## Oracle tooling
 
 `gbarecomp/oracle/setup-mgba.sh` clones

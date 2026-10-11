@@ -24,7 +24,7 @@ ext.gbaGame = [
     romFile       : "ffta_usa.gba",
     biosRequired  : true,
     orientation   : "landscape",
-    payloadVersion: "2",
+    payloadVersion: "3",
     setupNote     : "Landscape tactics: use the on-screen pad and buttons; " +
                     "long-press or three-finger tap for the runtime settings menu.",
     variant       : "final_fantasy_tactics_advance",

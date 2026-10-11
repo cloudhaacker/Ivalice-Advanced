@@ -40,7 +40,18 @@ md5 = "cd99cdde3d45554c1b36fbeb8863b7bd"
 [bios]
 path = "gbarecomp/bios/gba_bios.bin"
 sha1 = "300c20df6731a33952ded8c436f7f186d25d3492"
-hle = false                     # LLE: recompiled real BIOS required (user dump)
+# HLE: mGBA-derived clean-room SWI services (Div/Sqrt/ArcTan, CpuSet/
+# CpuFastSet, affine + decompression SWIs, SoundBias, MidiKey2Freq).
+# Zero LLE-fallback across the census routes — attract 1317/1317, battle
+# route B 7341/7341, suspend route G 11474/11474 HLE-taken (SWI_LOG + trace,
+# enforced by tools/hle_audit.py). LLE stays linked for unimplemented SWIs
+# (SoftReset/Halt/IntrWait/sound-driver) + IRQ dispatch (vector 0x18), and
+# the SWI-return ledger only tracks LLE entries (push sits below the HLE
+# early-return, runtime_arm.cpp) so HLE-taken SWIs never touch it. The dump
+# is still required at boot (verification + fallback); dropping it needs
+# the upstream no-BIOS tier. Golden stays LLE (attract_check pins
+# GBARECOMP_BIOS_HLE=0 — the intro movie is timing-chaotic, not HLE-wrong).
+hle = true
 
 [rom]
 path = "game.gba"
@@ -7233,3 +7244,72 @@ note = "10-entry abs32 switch @0x0839A8E8 (ROM read: 080F1F1D/21E9/244D/2575/268
 addr = 0x08132450
 mode = "thumb"
 note = "prologue push {r4,lr} @0x08132450 (disarm); single ptr @0x83A8924; bridged x3; calls 0x08131DD4/0x080CDD64, flag bit 0x10 @[r4,#0x26]; between gf_tfunc_0813215C/0813254C; user-playtest battle 2026-10-11"
+
+
+# ─── Batch 2026-10-11: device boot-path misses (HLE gate, android-runtime.log) ───
+# 10 units bridged on device during the 40 s boot/settle window
+# (GbaSetupActivity AUTOSTART, fresh HLE build). Desktop 12k-frame HLE/LLE
+# runs never reach them: the windowed runner (present hook + audio
+# producer + input pump + resume-service) takes event/IRQ paths the
+# headless runner never exercises. Misspack evidence: named prologues +
+# ROM code-pointer table refs in each note.
+
+[[extra_func]]
+addr = 0x080D9CF4
+mode = "thumb"
+note = "prologue @0x080D9CF4; ptr @0x080DADB8; bridged x31; device boot 2026-10-11"
+
+[[extra_func]]
+addr = 0x080FF180
+mode = "thumb"
+note = "prologue @0x080FF180; ptr @0x08394D18; bridged x78; device boot 2026-10-11"
+
+[[extra_func]]
+addr = 0x080FF1D8
+mode = "thumb"
+note = "prologue @0x080FF180; bridged x1 (same host as 0x080FF180); device boot 2026-10-11"
+
+[[extra_func]]
+addr = 0x0810EA78
+mode = "thumb"
+note = "prologue @0x0810EA78; ptr @0x0810FCD8; bridged x127; device boot 2026-10-11"
+
+[[extra_func]]
+addr = 0x0810EC04
+mode = "thumb"
+note = "prologue @0x0810EC04; ptr @0x0810F07C; bridged x218; device boot 2026-10-11"
+
+[[extra_func]]
+addr = 0x0810EF0C
+mode = "thumb"
+note = "prologue @0x0810EF0C; ptr @0x0810FD14; bridged x538; device boot 2026-10-11"
+
+[[extra_func]]
+addr = 0x0810FAF8
+mode = "thumb"
+note = "prologue @0x0810FAF8; ptr @0x0810FD3C; bridged x1; device boot 2026-10-11"
+
+[[extra_func]]
+addr = 0x0810FBF8
+mode = "thumb"
+note = "prologue @0x0810FBF8; ptr @0x08395168; bridged x727; hottest device-boot miss; device boot 2026-10-11"
+
+[[extra_func]]
+addr = 0x0810FC6C
+mode = "thumb"
+note = "prologue @0x0810FBF8; bridged x1 (same host as 0x0810FBF8); device boot 2026-10-11"
+
+[[extra_func]]
+addr = 0x081333B8
+mode = "thumb"
+note = "prologue @0x081333B8; single ptr @0x083A8AF8 (table run, count 1); calls 0x08131DD4/0x080CDD64, flag bit 0x10 @[r4,#0x26] (same veneer shape as 0x08132450); bridged x1; device boot 2026-10-11"
+
+
+[[jump_table]]
+addr = 0x0836D7B8
+stride = 4
+count = 29
+format = "abs32"
+entries_mode = "auto"
+name = "table_0836D7B8"
+note = "29-entry abs32 switch @0x0836D7B8 (ROM read: 08018E21/E95/EB5/EB5/8FF1/904D/90A9/9121/91B1/920D/9269/928D/9495/97BD/92C1/92C1/EB5/EB5/9399 x8/93CD/93FD/9431, thumb|1, trailing default-case dups); covers hit 0x080190A8 (prologue push {r4,lr}, bridged x1; device gameplay 2026-10-11); raw interworking pointers, entries_mode=auto"

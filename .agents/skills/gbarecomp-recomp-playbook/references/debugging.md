@@ -318,6 +318,36 @@ scaffolding: removed once the counts closed, proof kept in the decision
 log. File-based engine probes — frame phase, audio probe, sampler — remain
 for the next hunt.)
 
+## Validating a BIOS-HLE flip (SWI census, chaotic content, residue)
+
+HLE replaces BIOS routines with native services. Validate in three layers:
+
+1. **SWI census, not code review.** Run each coverage route with
+   `GBARECOMP_SWI_LOG=<csv>` (every executed SWI: number, ret site, args)
+   plus `GBARECOMP_SWI_TRACE=1` (each HLE-taken SWI on stderr). Taken ==
+   total with every number in the HLE-implemented set is the legal-win
+   proof (no silent LLE fallback); any fallback names its SWI number.
+   Freeze it as a gate test (one suite forcing HLE via env, independent
+   of the shipped default), red-verified both ways (HLE-off fails taken
+   counts; a dropped set member fails the coverage assertion).
+2. **Gate stable content, never chaotic content.** Timer/animation-driven
+   scenes (intro movies, idle bobs) amplify sub-frame timing deltas into
+   large pixel offsets — different backends, even recomp-vs-interp on the
+   SAME backend, land scenes apart with identical control flow. Keep pixel
+   pins on stable screens (fixture replays, widescreen scenes:
+   bit-identical across backends is achievable and was achieved, 24/24
+   frames) and leave movie frames to coverage + census assertions. A
+   golden that sits mid-movie stays pinned to the oracle-faithful backend.
+3. **Expect register-residue differences; check the consumers, not the
+   residue.** HLE implements the documented contract (outputs), not the
+   BIOS's scratch-register leftovers — e.g. post-Div R1 (contract:
+   remainder) vs LLE BIOS residue. Diff the census CSVs field-by-field;
+   every mismatch must trace to a contract-ignored register with no
+   downstream consumer (same subsequent sites/args, pixel-stable
+   content). Log the pattern in the decision log as a characterized
+   residual, and consider an upstream note (the HLE side usually matches
+   the documented contract, which is the defensible behavior).
+
 ## The observe server: single client, and the savestate trap
 
 The `--tcp-observe` surface serves one client at a time; a long-lived
