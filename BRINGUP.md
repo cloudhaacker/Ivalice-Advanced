@@ -4573,3 +4573,17 @@ Cycle PASS (discovery 55350 -> 55763, attract 1EF4C1... unchanged);
 strict replay of the session trace (`resolve.py --trace
 trace_prev_20261011_000537 --load-state game.state1`) PASSED with 0
 seeds. Commit after this entry.
+
+## 2026-10-11 — new regression route B: user-played battle movement + actions
+
+Recorded live (`play.sh --scale 2 --load-state game.state1
+--tcp-observe 19870`, faithful 240 view): 81-row trace, frames
+24722 -> 29816 (5094 f, monotonic, no mid-session reload), D-pad
+movement + A/B actions throughout. Frozen local-only in
+`saves/regress/` (trace + `battle_move_start.state` =
+untouched `game.state1`, sha `2066d61c` + `battle_move.sav`).
+Session frag held only the 3 already-seeded PCs — zero new gaps;
+`resolve.py` strict replay PASSED with 0 seeds. Wired as `route_B`
+in `tools/check.py` via a new `strict_route_state` helper
+(`strict_route` is boot-only); self-test
+`FULLY_STATIC dispatch_misses=0` in 21.5 s. Commit after this entry.

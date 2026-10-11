@@ -290,7 +290,7 @@ GBARECOMP_INPUT_REPLAY=logs/playthrough.csv ./build/FFTARecomp ...` — expect
   attract gate, the widescreen smoke,
   and strict route
   replays (user
-  save-load, sessions G/K) against frozen fixtures in `saves/regress/`
+  save-load, sessions G/K, battle movement route B) against frozen fixtures in `saves/regress/`
   (sha-pinned). Run it before declaring "no regressions"; checks run
   concurrently by default (`--jobs N`; auto = min(8, CPUs) — `--jobs 1` for
   serial) with per-run save/coverage isolation; `--fast` for the quick
@@ -373,7 +373,10 @@ compared windows).
   `tools/dualrun.py` for lockstep region/pixel probes.
 - **Acceptance replays in the repo today:** boot → new game
   (`inputs/title_to_newgame.csv`, 6000 f), the battle continuation
-  (`inputs/session2_battle_trace.csv` + a matching state), each session's
+  (`inputs/session2_battle_trace.csv` + a matching state), battle movement
+  + actions (`saves/regress/battle_move_trace.csv` from
+  `battle_move_start.state`, 5094 f — `route_B` in `check.py`, state-based
+  via `strict_route_state`), each session's
   own trace (via `resolve.py`), and the found-save load repro
   (`saves/found_save.mGBA.sav` + `saves/trace_sessionL_1736.csv`). All
   strict-clean as of the last commit.

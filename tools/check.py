@@ -4,7 +4,8 @@
 Runs: host unit tests (C++ + Python) -> patch validity -> device-free
 Android checks -> attract golden gate -> widescreen smoke (margin census /
 center-crop / stale guard, needs the local game.state1/state2 fixtures) ->
-strict route replays (user save-load repro, session G, session K) against
+strict route replays (user save-load repro, session G, session K, battle
+movement route B) against
 the frozen fixtures in saves/regress/.
 
 The checks are independent processes, so they run concurrently by default
@@ -107,6 +108,28 @@ def strict_route(trace, frames):
         pathlib.Path(tempfile.gettempdir()) / f"ffta_check_{trace.stem}_cov.json")
     r = run([str(EXE), "--bios", str(BIOS), "--rom", str(ROM),
              "--save-path", str(save), "--frames", str(frames),
+             "--no-window"], env=env, timeout=1800)
+    cov = next((l for l in r.stdout.splitlines()
+                if "self_heal_coverage" in l), "")
+    return r.returncode == 0 and "FULLY_STATIC" in cov, cov or f"exit {r.returncode}"
+
+
+def strict_route_state(trace, state, save, frames):
+    for p in (trace, state, save):
+        if not p.exists():
+            return False, f"missing fixture {p.name}"
+    env = clean_env()
+    env["GBARECOMP_STRICT_STATIC"] = "1"
+    env["GBARECOMP_INPUT_REPLAY"] = str(trace)
+    # Parallel safety: own save copy (the runner flushes "<save>.tmp" then
+    # renames) and own coverage-json path (see strict_route).
+    run_save = pathlib.Path(tempfile.gettempdir()) / f"ffta_check_{trace.stem}.sav"
+    shutil.copyfile(save, run_save)
+    env["GBARECOMP_COVERAGE_JSON"] = str(
+        pathlib.Path(tempfile.gettempdir()) / f"ffta_check_{trace.stem}_cov.json")
+    r = run([str(EXE), "--bios", str(BIOS), "--rom", str(ROM),
+             "--save-path", str(run_save), "--load-state", str(state),
+             "--frames", str(frames),
              "--no-window"], env=env, timeout=1800)
     cov = next((l for l in r.stdout.splitlines()
                 if "self_heal_coverage" in l), "")
@@ -358,6 +381,9 @@ CHECKS = {
     "user_load": lambda: strict_route(REG / "user_load_trace.csv", 1600),
     "route_G": lambda: strict_route(REG / "sessionG_trace.csv", 19400),
     "route_K": lambda: strict_route(REG / "sessionK_trace.csv", 29884),
+    "route_B": lambda: strict_route_state(REG / "battle_move_trace.csv",
+                                          REG / "battle_move_start.state",
+                                          REG / "battle_move.sav", 5600),
 }
 FAST = ["unit-cpp", "unit-py", "savecheck", "patches", "android-static",
         "attract"]
@@ -366,7 +392,8 @@ FAST = ["unit-cpp", "unit-py", "savecheck", "patches", "android-static",
 OPTIONAL = {"android-apk"}
 # Checks that execute the game binary (require it to exist); the others run
 # on a fresh clone without the ROM (CI tier 1: unit-cpp, unit-py, patches).
-NEEDS_EXE = {"attract", "ws_smoke", "user_load", "route_G", "route_K"}
+NEEDS_EXE = {"attract", "ws_smoke", "user_load", "route_G", "route_K",
+             "route_B"}
 
 
 def main():
