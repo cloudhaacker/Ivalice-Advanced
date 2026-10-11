@@ -4465,3 +4465,32 @@ environment-sensitive.
   code must fail) while both patch files carry all three tokens (new
   code passes); `.venv/bin/python tools/check.py --only
   unit-cpp,unit-py,patches,android-static` → ALL PASS 4/4.
+
+## 2026-10-10 (build_apk.py) — hardened after the debug-APK session
+
+Building the latest debug APK hit three script defects (all fixed in
+`build_apk.py`, verified live):
+
+- **Env propagation:** preflight auto-discovered the SDK but never exported
+  it, so Gradle died with "SDK location not found" on machines without
+  `ANDROID_HOME` set. Preflight now exports the validated `ANDROID_HOME`
+  and `JAVA_HOME` (setdefault — an explicit user export or
+  `local.properties` stays authoritative). Proven by a clean-env run
+  (`env -u ANDROID_HOME -u JAVA_HOME ... --no-install` → DONE).
+- **Preflight failure didn't abort:** `run_step` returned None but `main`
+  barreled into Gradle anyway. Now returns 1 immediately (verified with a
+  bogus `ANDROID_HOME` → FAIL at [1/3], no Gradle).
+- **Stale-APK acceptance:** an UP-TO-DATE Gradle run was accepted on
+  presence alone. The accepted APK must now be newer than
+  `FRESHNESS_INPUTS` (corpus, game.toml, src/main.cpp, CMakeLists,
+  game_android.toml, build.gradle, payload state.toml), else it dies
+  pointing at `rm -rf android/app/build`. Tripwire tested via a
+  backdated-APK monkeypatch (dies with the stale message + hint).
+
+Session notes (not script defects): the first native compile hit a
+transient ninja failure that passed on retry; the APK then failed the
+content guard at 64.3 MiB — the documented incremental-repack junk class
+(28.7 MB slack) — fixed by `rm -rf android/app/build` + rebuild → 35.6
+MiB, `android-apk: OK (8/8)`. `--clean` flag deliberately deferred (not
+requested). Docs: worked save-import example added to
+`android/README.md` § Saves & states (`154e06c`).

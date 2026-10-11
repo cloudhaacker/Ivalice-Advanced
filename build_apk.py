@@ -50,6 +50,19 @@ GRADLE_MIN_JDK = (21, 21)  # Gradle 8.11.1: JDK 21 works; JDK 27 is too new
 SDL_SUBMODULE = REPO / "gbarecomp/platform/android/third_party/SDL/Android.mk"
 APK_DIR = ANDROID / "app/build/outputs/apk/debug"
 PRIVATE_MARKER = "-PRIVATE-rom-included.apk"
+# Sources the accepted APK must not be older than: if Gradle calls the build
+# UP-TO-DATE while any of these are newer, the artifact is silently stale.
+# (Payload-vs-staging drift is additionally caught by the content guard, which
+# byte-compares the packaged payload against these sources.)
+FRESHNESS_INPUTS = (
+    REPO / "generated/dispatch_table.cpp",
+    REPO / "game.toml",
+    REPO / "src/main.cpp",
+    REPO / "CMakeLists.txt",
+    ANDROID / "game_android.toml",
+    ANDROID / "app/build.gradle",
+    ANDROID / "payload/mods/state.toml",
+)
 
 
 class Fail(Exception):
@@ -136,7 +149,14 @@ def step_preflight():
         die("no usable JDK found (need >= 17 and <= 26 for Gradle 8.11.1)",
             hint="install JDK 21 (android/README.md § Build prerequisites) "
                  "or set JAVA_HOME")
-    details = [f"JDK {major} ({java})"]
+    # Gradle inherits this process' env, not our discovery: export what we
+    # validated so the build below sees it. setdefault keeps an explicit
+    # user export (or local.properties sdk.dir) authoritative.
+    if "JAVA_HOME" not in os.environ:
+        os.environ["JAVA_HOME"] = str(java.parent.parent)
+        details = [f"JDK {major} ({java}; exported JAVA_HOME)"]
+    else:
+        details = [f"JDK {major} ({java})"]
     sdk = os.environ.get("ANDROID_HOME") or os.environ.get("ANDROID_SDK_ROOT")
     if not sdk:
         # auto-discover the sdk
@@ -151,7 +171,11 @@ def step_preflight():
     if not ndk.is_dir() or not any(ndk.iterdir()):
         die(f"no NDK under {ndk}",
             hint="install an NDK via sdkmanager (android/README.md)")
-    details.append(f"SDK {sdk}")
+    if "ANDROID_HOME" not in os.environ:
+        os.environ["ANDROID_HOME"] = sdk
+        details.append(f"SDK {sdk} (exported ANDROID_HOME)")
+    else:
+        details.append(f"SDK {sdk}")
     # engine SDL submodule (Gradle's CMake needs its sources)
     if not SDL_SUBMODULE.exists():
         r = run(["git", "-C", REPO / "gbarecomp", "submodule", "update",
@@ -198,11 +222,25 @@ def step_gradle(abi, jobs):
         die("gradle assembleDebug failed (see output above)",
             hint="android/README.md § Build — JDK 21, SDK platform 35, "
                  "NDK, and the SDL submodule are the usual suspects")
-    # An up-to-date Gradle build does not rewrite the APK; presence is enough.
+    # An up-to-date Gradle build does not rewrite the APK; presence is enough,
+    # but the artifact must not predate its sources (a bogus UP-TO-DATE
+    # would otherwise ship silently stale output).
     apk = newest_apk()
     if not apk:
         die("gradle reported success but no APK found under "
             f"{APK_DIR.relative_to(REPO)}")
+    newest_src = 0
+    newest_name = ""
+    for src in FRESHNESS_INPUTS:
+        if src.exists():
+            mtime = src.stat().st_mtime
+            if mtime > newest_src:
+                newest_src, newest_name = mtime, str(src.relative_to(REPO))
+    if apk.stat().st_mtime < newest_src:
+        die(f"APK {apk.name} is older than {newest_name} — Gradle called "
+            "the build UP-TO-DATE but sources are newer (stale artifact)",
+            hint="rm -rf android/app/build and rebuild (native objects "
+                 "under android/app/.cxx are preserved)")
     return apk
 
 
@@ -293,7 +331,8 @@ def main():
     i = 0
 
     i += 1
-    run_step(i, total, "preflight", step_preflight)
+    if run_step(i, total, "preflight", step_preflight) is None:
+        return 1
 
     i += 1
     apk = run_step(i, total, "gradle assembleDebug (private)",
