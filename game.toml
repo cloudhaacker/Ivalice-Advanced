@@ -7205,3 +7205,31 @@ addr = 0x08019280
 mode = "thumb"
 note = "batch ai: interior of 0x08019268 (runtime-dispatched); split-interior seed"
 
+
+# ─── Batch 2026-10-11: user-playtest battle misses (frag_prev_20261011_000537) ───
+# 3 units from live play (healed_native=3, all bridged through the
+# interpreter; native_calls=0). Both 080F cases sit mid-run in code-pointer
+# tables, so the tables below cover the whole switches, not just the hits.
+
+[[jump_table]]
+addr = 0x0839A59C
+stride = 4
+count = 8
+format = "abs32"
+entries_mode = "auto"
+name = "table_0839A59C"
+note = "8-entry abs32 switch @0x0839A59C (ROM read: 080F123D/14D5/15C9/173D/1859/1949/1AED/1BE9, thumb|1; bounds header 0x1A4 above); covers hit 0x080F1858 (prologue push {r4,r5,r6,lr}, bridged x47); raw interworking pointers, entries_mode=auto"
+
+[[jump_table]]
+addr = 0x0839A8E8
+stride = 4
+count = 10
+format = "abs32"
+entries_mode = "auto"
+name = "table_0839A8E8"
+note = "10-entry abs32 switch @0x0839A8E8 (ROM read: 080F1F1D/21E9/244D/2575/2681/2875/29B5/2CDD/2CDD/2CDD, thumb|1, trailing default-case dups); covers hit 0x080F2680 (prologue push {r4-r7,lr}, bridged x144); raw interworking pointers, entries_mode=auto"
+
+[[extra_func]]
+addr = 0x08132450
+mode = "thumb"
+note = "prologue push {r4,lr} @0x08132450 (disarm); single ptr @0x83A8924; bridged x3; calls 0x08131DD4/0x080CDD64, flag bit 0x10 @[r4,#0x26]; between gf_tfunc_0813215C/0813254C; user-playtest battle 2026-10-11"

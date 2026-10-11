@@ -4558,3 +4558,18 @@ Conclusion: issue #8's audio symptom is a fast-guest-clock symptom
 (bridge floods → overflow micro-skips + dropped presents). Hunt
 continues at the codegen cost layer. Commit after this entry (probe +
 docs; no game behavior change).
+
+## 2026-10-11 — healed 3 user-playtest battle misses (2 switch tables + 1 func)
+
+Live play hit 3 unnamed functions (frag_prev_20261011_000537;
+healed_native=3, all bridged, native_calls=0): 0x080F1858 (x47),
+0x080F2680 (x144), 0x08132450 (x3). Misspack + own-ROM verification:
+both 080F cases sit mid-run in clean abs32 switch tables (8 entries
+@0x0839A59C, 10 @0x0839A8E8 with default-case dups), so seeded as
+`table_0839A59C`/`table_0839A8E8` (entries_mode=auto); 08132450 is a
+single-callsite helper (calls 0x08131DD4/0x080CDD64) seeded as
+`[[extra_func]].
+Cycle PASS (discovery 55350 -> 55763, attract 1EF4C1... unchanged);
+strict replay of the session trace (`resolve.py --trace
+trace_prev_20261011_000537 --load-state game.state1`) PASSED with 0
+seeds. Commit after this entry.
