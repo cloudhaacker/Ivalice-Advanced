@@ -4494,3 +4494,67 @@ content guard at 64.3 MiB — the documented incremental-repack junk class
 MiB, `android-apk: OK (8/8)`. `--clean` flag deliberately deferred (not
 requested). Docs: worked save-import example added to
 `android/README.md` § Saves & states (`154e06c`).
+
+## 2026-10-11 (issue #8) — audio/fast-clock hunt: producer +4-8% in battle, yield exonerated, codegen-side
+
+Issue #8 (performance feel, audio tied to FPS, quality) + what
+`GBARECOMP_AUDIO_DIRECT` does. No fix yet — diagnostics built, root cause
+narrowed to per-frame cycle overcharge on the recomp backend.
+
+- **Audio path anatomy (all verified in code):** producer = emulation
+  thread, one push per presented frame (~1097 samples @65536 Hz nominal,
+  `runtime.cpp:3699,4112`). Default bridge: RAB 32-tap windowed-sinc
+  (`recomp_audio_drc.h`), P-servo ±0.5%, 60 ms target, 250 ms boot preroll
+  (settles over ~40-90 s — by design, but the loop sits railed that whole
+  time). Direct (`GBARECOMP_AUDIO_DIRECT=1`, `host_window.cpp:1915`): raw
+  SDL_QueueAudio, no servo/concealment — underrun pauses + rebuilds 125 ms
+  (dropout), latency wanders unboundedly (observed 50→218 ms and climbing
+  in 25 s on PipeWire). Mixer is mono (`gba_audio.cpp:646`); MP2K shadow
+  exists but FFTA runs `shadow=false`; hard clip at ±32767 (peaks ~19k
+  observed, not exercised).
+- **Measurements (all windowed, battle = `--load-state game.state1`):**
+  title/bridge: servo railed +0.5%, fill 250→210 draining, 0 drops.
+  title/direct: 0 underruns, queue wandering/growing. battle/bridge:
+  overflow_drops 0→92k in 35 s (~2.5k/s ≈ 4% discarded as micro-skips),
+  fill pegged ~280 ms, ~1150 samples/push vs 1097 nominal.
+  battle/interp (`GBARECOMP_FORCE_INTERP=1`): ZERO drops, servo relaxes to
+  ~0.00%, fill holds 60 ms — perfect equilibrium, same state/scene.
+- **Exonerated with evidence:** SOUNDBIAS flicker (60 rapid TCP
+  `audio_state` reads: all 65536/cps-256/`0x4200`); tick double-paths
+  (single `audio().tick` caller); DMA-steal double-drain (`take_` zeroes);
+  idle elider (atexit `[idle]` line absent = 0 skips in battle run);
+  session-execution (netplay-only); pacer (phase CSV: visits 59.752/s,
+  pacer_us med 12.7 ms — absolute cadence exact).
+- **Yield-gate probe (new, `tools/patches/yield-gate-probe.patch` + table
+  row, default-off via `GBARECOMP_YIELD_PROBE=1`, attract hash unchanged):**
+  per-check blocks by term + per-window misses attributed to window-start
+  state. Battle result: **1804/1804 windows yielded, multi=0, all miss
+  counters 0** — the yield mechanism is exonerated; blocked(nest)=72M is
+  just the (correctly non-yielding) vblank-IRQ handler window. The
+  earlier "60 double-frame visits" (phase CSV frames/visit=1.0337) are
+  consistent with an ~8%-fast master, not skipped yields.
+- **Current verdict: the master clock advances ~4-8% fast on the recomp
+  backend only** (interp nominal on the same frames) — i.e. ~10-20k
+  phantom cycles/frame. Spin-loop audit (`gf_vblank_wait_loop`,
+  0x08000418, 82% wall duty): per-iteration charge 31 cycles fully
+  explained, all terms (fetch N/S, LDR/LDM + stall, prefetch gate,
+  refill) mirrored verbatim between codegen and interpreter — and
+  event-terminated spins contribute equal cycles in both backends anyway.
+  Remaining suspects: codegen emission on battle-hot (non-spin) code —
+  MUL/LDM block costs vs interp loop, or wait-table/prefetch-STATE
+  divergence (dynamic inputs, not rules). Next: per-PC cost comparison
+  via `GBARECOMP_CYC_LO/HI` full-frame captures under both backends, or
+  sampler-directed audit of the m4a/IWRAM hot frames.
+- **No new symbols:** every hot spot is already named
+  (`gf_vblank_wait_loop`, IWRAM `gf_afunc_030037xx` m4a frames, flag
+  `0x03000E10`). The one unnamed site found (sound-reg init at
+  0x08FE1370 writing `0x0200` to SOUNDBIAS) lacks naming evidence —
+  observation only, not seeded.
+- Scratch logs (`/tmp/opencode/audio_*.log`, `phase.csv`, `cyc.log`)
+  are not committed; numbers above are the record. Recipe bullet added
+  to `tests/README.md` § Recipes.
+
+Conclusion: issue #8's audio symptom is a fast-guest-clock symptom
+(bridge floods → overflow micro-skips + dropped presents). Hunt
+continues at the codegen cost layer. Commit after this entry (probe +
+docs; no game behavior change).

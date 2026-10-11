@@ -129,6 +129,19 @@ For deeper captures (no code changes): `GBARECOMP_INSN_TRACE=1` +
 - **A missing-coverage stretch.** Just play — every miss is journaled; then
   run the healing loop below (harvest → misspack → merge → resolve →
   cycle).
+- **Audio faults (crackle / ramping / dropouts).**
+  `GBARECOMP_AUDIO_PROBE=1` prints bridge stats every 120 pushes: healthy
+  is `corr` near 0 with `fill_ms` near 60 and zero underruns/stretch/
+  overflows; sick is `corr` railed at ±0.500% with high fill and climbing
+  `overflow_drops` (producer faster than the device) or `bridge_underrun`/
+  `stretch` (slower). A/B `GBARECOMP_AUDIO_DIRECT=1` (raw SDL queue, no
+  smoothing — dropouts instead of concealment). Deeper: TCP `audio_state`
+  (mixer rate, samples_generated, SOUNDBIAS, cycles/sample),
+  `GBARECOMP_FRAME_PHASE=path` (per-visit guest/pacer split),
+  `GBARECOMP_SAMPLE=1` (hot-PC histogram), `GBARECOMP_YIELD_PROBE=1`
+  (vblank-yield gate census). Knobs live in
+  `gbarecomp/src/runtime/host_window.cpp` + `recomp_audio_drc.h`; note the
+  mixer is mono and FFTA runs with the MP2K shadow off (`game.toml`).
 - **Save flows / external saves.** Play on a copy (`--save-path`), validate
   structurally with `tools/savecheck.py`; oracle comparisons:
   `tools/dualrun.py probe saveflow`.
