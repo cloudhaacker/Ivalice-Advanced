@@ -211,8 +211,13 @@ def check_bios_pins():
     need(android["bios"]["sha1"] == game["bios"]["sha1"],
          "BIOS sha1 mismatch: game.toml %s != game_android.toml %s"
          % (game["bios"]["sha1"], android["bios"]["sha1"]))
-    need(android["bios"]["hle"] is False,
-         "game_android.toml must keep [bios].hle = false (LLE)")
+    need(game["bios"]["hle"] is True,
+         "game.toml must keep [bios].hle = true (HLE)")
+    need(android["bios"]["hle"] is True,
+         "game_android.toml must keep [bios].hle = true (HLE)")
+    need(android["bios"]["hle"] == game["bios"]["hle"],
+         "BIOS HLE mismatch: game.toml hle=%r != game_android.toml hle=%r"
+         % (game["bios"]["hle"], android["bios"]["hle"]))
     need(Path(android["bios"]["path"]).name == Path(game["bios"]["path"]).name,
          "BIOS filename mismatch: %r vs %r"
          % (android["bios"]["path"], game["bios"]["path"]))
@@ -225,6 +230,17 @@ def check_bios_pins():
                   "engine biosSha1 default")
     need(default == android["bios"]["sha1"], "engine template default %s != "
          "game_android.toml [bios].sha1 %s" % (default, android["bios"]["sha1"]))
+
+
+def check_payload_version():
+    gradle = (REPO / "android/app/build.gradle").read_text(encoding="utf-8")
+    m = re.search(r'payloadVersion:\s*"([^"]+)"', gradle)
+    need(m, "payloadVersion missing in android/app/build.gradle")
+    ver = m.group(1)
+    need(ver != "1" and ver != "2",
+         "payloadVersion %r is stale: bump it whenever staged payload "
+         "content changes (game_android.toml or anything under payload/), "
+         "or reinstalls keep running the old payload" % ver)
 
 
 def check_save_config():
@@ -291,6 +307,35 @@ def check_save_external_wiring():
          and "/saves/ffta_us.sav" in lifecycle,
          "android_lifecycle_test.py must assert the external save/state "
          "locations (issue #6)")
+
+
+def check_logs_external_wiring():
+    # Diagnostics (runtime log, miss frag, coverage) must land in the
+    # user-visible external app directory next to saves/states, so they can
+    # be pulled without run-as. src/main.cpp resolves the external logs/ dir
+    # before the engine redirect (MobileProcessOptions.log_file) and points
+    # the frag/coverage env there; the engine hardens a failed log open with
+    # a logcat fallback instead of silent loss (2026-10-11 sessions).
+    main = read_text("src/main.cpp")
+    for token in ("ffta_redirect_diagnostics", "ffta_log_manifest",
+                  "GBARECOMP_MISS_FRAG", "GBARECOMP_COVERAGE_JSON",
+                  "recomp_master_misses_AFXE.toml.frag",
+                  "recomp_coverage_AFXE.json",
+                  "mobile.log_file", '/ "logs"'):
+        need(token in main,
+             "src/main.cpp missing diagnostics-redirect token %r" % token)
+    plat = read_text("gbarecomp/src/runtime/mobile_platform.cpp")
+    plat_ok = ("__android_log_print" in plat and "cannot open log" in plat)
+    if not plat_ok:
+        recorded = ""
+        path = REPO / "tools/patches/gbarecomp-local.patch"
+        if path.is_file():
+            recorded = path.read_text(encoding="utf-8")
+        plat_ok = ("__android_log_print" in recorded
+                   and "cannot open log" in recorded)
+    need(plat_ok,
+         "engine log-open fallback missing from gbarecomp/src/runtime/"
+         "mobile_platform.cpp and the recorded patch (silent-log class)")
 
 
 # ---------------------------------------------------------------------------
@@ -599,10 +644,14 @@ CHECKS = [
     ("identity: save type/size mirror the desktop config", check_save_config),
     ("identity: saves/states land in the user-visible app dir (issue #6)",
      check_save_external_wiring),
+    ("identity: logs/frag/coverage land in the user-visible app dir",
+     check_logs_external_wiring),
     ("payload: state.toml keeps the widescreen feature enabled",
      check_state_toml),
     ("payload: state.toml matches the preloaded catalog manifest",
      check_state_catalog),
+    ("payload: version bumped past stale installs",
+     check_payload_version),
     ("payload: mods catalog + payload dirs staged", check_payload_wiring),
     ("payload: resize_view opt-in present", check_resize_view),
     ("hygiene: no ROM/save/APK/bin artifacts tracked", check_tracked_artifacts),

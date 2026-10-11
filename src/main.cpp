@@ -212,6 +212,50 @@ void ffta_redirect_player_data(std::vector<std::string>& args) {
                  saves.c_str(), states.c_str());
 }
 
+// Diagnostics (log/frag/coverage) live in the user-visible external app
+// directory next to saves/states, so they can be pulled over USB/MTP or adb
+// without root or `run-as` — the app-private files/ tree is invisible to file
+// managers and (as of 2026-10-11) silently fails all writes on some sessions
+// (game runs, zero log/frag/json, no error — the engine's freopen has no
+// fallback). Sets GBARECOMP_MISS_FRAG/GBARECOMP_COVERAGE_JSON (env, Overwrite=0
+// keeps any externally provided path authoritative) and returns the absolute
+// log path for MobileProcessOptions.log_file. Empty when external storage is
+// unavailable: the engine's app-private defaults stand.
+std::string ffta_redirect_diagnostics() {
+    const char* ext = SDL_AndroidGetExternalStoragePath();
+    if (!ext || !*ext) {
+        std::fprintf(stderr, "[ffta] logs: external storage unavailable, "
+                             "keeping app-private files/\n");
+        return {};
+    }
+    const std::filesystem::path logs = std::filesystem::path(ext) / "logs";
+    std::error_code ec;
+    std::filesystem::create_directories(logs, ec);
+    if (ec) {
+        std::fprintf(stderr, "[ffta] logs: cannot create %s (%s)\n",
+                     logs.c_str(), ec.message().c_str());
+        return {};
+    }
+    setenv("GBARECOMP_MISS_FRAG",
+           (logs / "recomp_master_misses_AFXE.toml.frag").c_str(), 0);
+    setenv("GBARECOMP_COVERAGE_JSON",
+           (logs / "recomp_coverage_AFXE.json").c_str(), 0);
+    std::fprintf(stderr, "[ffta] logs: external logs=%s\n", logs.c_str());
+    return (logs / "android-runtime.log").string();
+}
+
+// Startup manifest: first log lines after the engine redirect, listing every
+// resolved diagnostics/player path. A missing file is then meaningful (never
+// written vs written-then-lost) without needing run-as to go look.
+void ffta_log_manifest(const std::string& log_path) {
+    const char* frag = std::getenv("GBARECOMP_MISS_FRAG");
+    const char* cov = std::getenv("GBARECOMP_COVERAGE_JSON");
+    std::fprintf(stderr, "[ffta] manifest log=%s frag=%s coverage=%s\n",
+                 log_path.empty() ? "(app-private android-runtime.log)" : log_path.c_str(),
+                 frag && *frag ? frag : "(app-private default)",
+                 cov && *cov ? cov : "(app-private default)");
+}
+
 }  // namespace
 #endif
 
@@ -235,7 +279,19 @@ int ffta_main(int argc, char** argv) {
     gbarecomp::MobileProcessOptions mobile;
     mobile.game_config = GBARECOMP_DEFAULT_GAME_CONFIG;
     mobile.program_name = "./FFTARecomp";
+#if defined(__ANDROID__)
+    // Diagnostics first: the external log path must be resolved before the
+    // engine redirects stderr (mobile_prepare_process opens log_file). The
+    // returned string owns the path, so hold it past the call.
+    const std::string external_log = ffta_redirect_diagnostics();
+    if (!external_log.empty()) mobile.log_file = external_log.c_str();
+#endif
     const bool on_mobile = gbarecomp::mobile_prepare_process(args, mobile);
+#if defined(__ANDROID__)
+    // Manifest after the redirect: stderr now flows to the log file, so
+    // these are its first lines.
+    if (on_mobile) ffta_log_manifest(external_log);
+#endif
 
     gbarecomp::RunOptions opts;
     opts.builtin_game_name = "Final Fantasy Tactics Advance";
@@ -273,10 +329,12 @@ int ffta_main(int argc, char** argv) {
     if (on_mobile) {
 #if defined(__ANDROID__)
         // Durable miss journaling on device (mobile has no exit-time report
-        // when a session hangs or is killed): every missed PC rewrites this
-        // proposal fragment in the app's files/ dir the moment it is bridged,
-        // so the device doubles as a harvestable audit surface. Overwrite=0
-        // keeps any externally provided path authoritative. on_mobile is only
+        // when a session hangs or is killed): every missed PC rewrites the
+        // proposal fragment the moment it is bridged, so the device doubles
+        // as a harvestable audit surface. ffta_redirect_diagnostics already
+        // pointed GBARECOMP_MISS_FRAG at external logs/; Overwrite=0 keeps
+        // that authoritative and this app-private default only stands when
+        // external storage is unavailable. on_mobile is only
         // true on Android (mobile_prepare_process returns false elsewhere),
         // so this is the same code path — just explicitly compiled out of the
         // Windows/POSIX-desktop targets, whose libc does not carry setenv

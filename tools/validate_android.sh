@@ -358,6 +358,16 @@ else
   note "could not clear the crash buffer — the crash scan may include pre-run entries (non-fatal)"
 fi
 
+# A previous session's log/frag would fail the miss assertions forever
+# (observed 2026-10-11: byte-identical stale counts across runs). Clear them
+# pre-launch so the gate only ever reads this run. Best effort like the
+# crash-buffer clear above — a failure notes, never aborts.
+if "${ADB[@]}" shell run-as "$PACKAGE" sh -c 'cd files && rm -f android-runtime.log recomp_master_misses_AFXE.toml.frag recomp_coverage_AFXE.json' >/dev/null 2>&1; then
+  info "cleared the previous session log/frag (fresh-run reads only)"
+else
+  note "could not clear the previous session log/frag — miss assertions may read stale entries (non-fatal)"
+fi
+
 if launch_out=$("${ADB[@]}" shell am start -n "$PACKAGE/$SETUP_ACTIVITY" --ez "$AUTOSTART_EXTRA" true 2>&1); then
   case "$launch_out" in
     *Error:*) abort_gate "am start reported an error: $(squeeze "$launch_out")" ;;

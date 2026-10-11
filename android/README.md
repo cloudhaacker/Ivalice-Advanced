@@ -261,6 +261,17 @@ directory**, so they can be backed up or imported without root or `run-as`:
 | Battery save (64 KiB flash) | `Android/data/org.gbarecomp.fftarecomp/files/saves/ffta_us.sav` |
 | Save-state slots 1–9 | `…/files/states/ffta_usa.state<N>` |
 | Suspend state + marker | `…/files/states/ffta_usa.suspend.state` (+ `.suspend.pending`) |
+| Runtime log | `…/files/logs/android-runtime.log` |
+| Miss proposal frag | `…/files/logs/recomp_master_misses_AFXE.toml.frag` (only when misses occur — absent is the clean state) |
+| Coverage report | `…/files/logs/recomp_coverage_AFXE.json` |
+
+Diagnostics land beside saves/states (`src/main.cpp ffta_redirect_diagnostics`,
+before the engine redirect; `MobileProcessOptions.log_file`). The session
+opens with a `[ffta] manifest` line listing every resolved path, so a missing
+file is meaningful (never written vs written-then-lost). When external
+storage is unavailable the app-private `files/` fallbacks stand. A failed
+log open falls back to logcat with a warning instead of silent loss (engine
+patch, proposed upstream).
 
 Browse it over USB/MTP, or via adb (`adb shell ls
 /sdcard/Android/data/org.gbarecomp.fftarecomp/files`; `adb pull/push` the

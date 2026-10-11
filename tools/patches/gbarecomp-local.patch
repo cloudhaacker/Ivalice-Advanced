@@ -763,10 +763,10 @@ index 6609185..f3cb97f 100644
      const std::string dir = exe_dir(args);
      const auto state_path = [&](const char* filename,
 diff --git a/src/runtime/mobile_platform.cpp b/src/runtime/mobile_platform.cpp
-index 176a73b..45b82d9 100644
+index 176a73b..7299924 100644
 --- a/src/runtime/mobile_platform.cpp
 +++ b/src/runtime/mobile_platform.cpp
-@@ -1,10 +1,19 @@
+@@ -1,31 +1,69 @@
  // mobile_platform.cpp — see mobile_platform.h.
  
 +#if defined(__linux__) && !defined(_GNU_SOURCE)
@@ -786,7 +786,12 @@ index 176a73b..45b82d9 100644
  #if defined(__ANDROID__)
  #include <pthread.h>
  #include <unistd.h>
-@@ -15,17 +24,44 @@
+ 
+ #include <SDL.h>
+ #include <SDL_system.h>
++
++#include <android/log.h>
+ #endif
  
  namespace gbarecomp {
  
@@ -831,7 +836,7 @@ index 176a73b..45b82d9 100644
      return nullptr;
  }
  }  // namespace
-@@ -38,6 +74,7 @@ int mobile_run_with_stack(int (*entry)(int, char**), int argc, char** argv,
+@@ -38,6 +76,7 @@ int mobile_run_with_stack(int (*entry)(int, char**), int argc, char** argv,
      call.entry = entry;
      call.argc = argc;
      call.argv = argv;
@@ -839,7 +844,7 @@ index 176a73b..45b82d9 100644
      pthread_attr_t attr;
      pthread_attr_init(&attr);
      // Reserved address space only; pages are committed as the stack grows.
-@@ -60,6 +97,43 @@ int mobile_run_with_stack(int (*entry)(int, char**), int argc, char** argv,
+@@ -60,6 +99,43 @@ int mobile_run_with_stack(int (*entry)(int, char**), int argc, char** argv,
  #endif
  }
  
@@ -883,6 +888,26 @@ index 176a73b..45b82d9 100644
  bool mobile_prepare_process(std::vector<std::string>& args,
                              const MobileProcessOptions& options) {
  #if defined(__ANDROID__)
+@@ -68,10 +144,16 @@ bool mobile_prepare_process(std::vector<std::string>& args,
+     const char* log = options.log_file ? options.log_file : "android-runtime.log";
+     // One open file description for both streams: separate freopen()s would
+     // give stderr and stdout independent offsets, and each would overwrite
+-    // the other's lines in the shared log.
+-    std::freopen(log, "w", stderr);
++    // the other's lines in the shared log. The open is checked: a failed
++    // freopen used to silence the session completely (game runs, zero log,
++    // no error — observed 2026-10-11). On failure the session keeps working
++    // but reports through logcat, the one channel that always exists.
++    if (!std::freopen(log, "w", stderr)) {
++        __android_log_print(ANDROID_LOG_WARN, "FFTARecomp",
++            "mobile: cannot open log %s; logging to logcat only", log);
++    }
+     std::fflush(stdout);
+-    dup2(fileno(stderr), fileno(stdout));
++    if (fileno(stderr) >= 0) dup2(fileno(stderr), fileno(stdout));
+     std::setvbuf(stderr, nullptr, _IONBF, 0);
+     std::setvbuf(stdout, nullptr, _IONBF, 0);
+     // No compiler on the device: misses bridge loudly and are reported for
 diff --git a/src/runtime/mobile_platform.h b/src/runtime/mobile_platform.h
 index a737a49..8b7a0bc 100644
 --- a/src/runtime/mobile_platform.h
