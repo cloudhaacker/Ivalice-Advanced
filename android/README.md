@@ -264,6 +264,20 @@ always owns its own external directory. **Import rule:** copy files in while
 the app is fully stopped (`am force-stop` first); a foreign `.sav` must
 still be the 65536-byte flash image or the boot warning fires.
 
+Example — loading a desktop/emulator save on the phone (the battery save
+is always named `ffta_us.sav` regardless of where the original came from):
+
+```sh
+adb shell am force-stop org.gbarecomp.fftarecomp
+adb push /path/to/your-old.sav \
+  /sdcard/Android/data/org.gbarecomp.fftarecomp/files/saves/ffta_us.sav
+```
+
+Over USB/MTP, copy the file into `Android/data/org.gbarecomp.fftarecomp/
+files/saves/` and rename it to `ffta_us.sav` (force-stop the app first,
+same rule). The one-time outward migration never overwrites an existing
+external copy, so an imported file is safe from it.
+
 How it works: `src/main.cpp` (Android only) resolves the external directory
 via `SDL_AndroidGetExternalStoragePath()`, one-time migrates any existing
 app-private files outward (copy + size-verify + remove original, only when
