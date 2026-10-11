@@ -290,11 +290,33 @@ presented-frame counts/timing differ from a real display — the guest-frame
 (PPU/vblank) counter is the rate signal, not presents. Live keyboard input
 cannot reach the session (fine for idle/rate/replay runs, useless for
 interactive play). Bound every run with a timeout. Unresolved (2026-10-11):
-TCP observe printed `listening` under dummy but three read attempts got
+TCP observe printed `listening` under dummy but reads got
 connection-refused with no listener in `ss` — prefer file-based probes
-(`GBARECOMP_FRAME_PHASE`, `GBARECOMP_YIELD_PROBE`, `GBARECOMP_AUDIO_PROBE`)
-under dummy until that is root-caused; do not document observe+dummy as
-working.
+(`GBARECOMP_FRAME_PHASE`, `GBARECOMP_AUDIO_PROBE`).
+
+## Banked presents run the guest fast (pace frames, not draws)
+
+A present hook that only presents on frame change (`frame != last`) skips
+the present *and its pacer wait* whenever it runs early enough to see a
+stale frame. Each skip banks a guest frame the pacer never throttles.
+Signature: per-visit frames average > 1 with paired +0/+2 visit deltas;
+stale-skip count == banked-frame excess exactly (both 227 in the case that
+found this: +5.1% guest rate); the audio bridge floods in the same window
+(overflow drops climbing, servo railed, fill pegged high) while the
+interpreter backend on the same state sits at equilibrium. The PPU, yield
+gate, DMA steal, and idle elider were all exonerated first — same evidence
+pattern each time (per-backend A/B with all probes in one window).
+Fix pattern: pass the banked count (`frame - last_presented_frame`) into
+the pacer and advance its deadline by that many periods per wait, so one
+wait throttles all banked frames. Keep the single-frame path exactly as
+before, exempt fast-forward (already 1:1), keep the behind-resync for real
+stalls, and pin it with a unit test on the pacer deadline arithmetic
+(short period, banked multi-frame wait must take multi periods —
+red-verified against single-period behavior).
+(The yield-gate/skip/frame-delta probes built for this hunt were
+scaffolding: removed once the counts closed, proof kept in the decision
+log. File-based engine probes — frame phase, audio probe, sampler — remain
+for the next hunt.)
 
 ## The observe server: single client, and the savestate trap
 

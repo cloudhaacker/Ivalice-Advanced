@@ -527,6 +527,56 @@ index 9739201..b34dcad 100644
              if (best != SIZE_MAX) {
                  functions_[best].alias_entries.push_back(c.addr);
                  c.is_alias = true;
+diff --git a/src/runtime/host_platform.cpp b/src/runtime/host_platform.cpp
+index 99c7813..07f5de5 100644
+--- a/src/runtime/host_platform.cpp
++++ b/src/runtime/host_platform.cpp
+@@ -50,11 +50,21 @@ void FramePacer::reset() {
+     next_ = clock::now() + period_;
+ }
+ 
+-void FramePacer::wait_for_next_frame() {
++void FramePacer::wait_for_next_frame(uint64_t frames) {
+     if (uncapped_) {
+         next_ = clock::now();  // keep the deadline current for re-cap
+         return;
+     }
++    // Throttle banked frames: a present covering k>1 guest frames (after
++    // stale-frame skips) advances the deadline by the banked count before
++    // waiting, so this one wait paces all of them. Clamped defensively;
++    // a genuine multi-second stall still resyncs below. frames==1 skips
++    // the adjustment entirely (bit-identical to the old path).
++    if (frames > 1) {
++        uint64_t extra = frames - 1u;
++        if (extra > 15u) extra = 15u;
++        next_ += period_ * static_cast<std::chrono::nanoseconds::rep>(extra);
++    }
+     clock::time_point now = clock::now();
+     // If we've fallen more than one whole frame behind, resync instead
+     // of trying to replay the lost time (avoids a catch-up death spiral
+diff --git a/src/runtime/host_platform.h b/src/runtime/host_platform.h
+index 2b48ab3..42208db 100644
+--- a/src/runtime/host_platform.h
++++ b/src/runtime/host_platform.h
+@@ -41,7 +41,17 @@ public:
+ 
+     // Block until the next frame's deadline. Call once per presented
+     // frame. No-op while uncapped.
+-    void wait_for_next_frame();
++    //
++    // `frames` is the banked-frame count for this present (normally 1).
++    // A present can cover k>1 guest frames when stale-frame presents were
++    // skipped (the present hook only presents on frame change): without
++    // accounting, those banked frames escape throttling and the guest
++    // wall-clock runs fast (measured +5% in battle, with audio-bridge
++    // flood as the audible symptom). The deadline advances by the banked
++    // count so one wait throttles all of them; frames==1 is exactly the
++    // old behavior. Fast-forward presents one frame per wait already, so
++    // it is unaffected. The behind-resync below still bounds real stalls.
++    void wait_for_next_frame(uint64_t frames = 1);
+ 
+     // Realign the deadline to "now". Call after any non-real-time jump
+     // (startup, save-state load) so the pacer doesn't try to catch up.
 diff --git a/src/runtime/host_window.cpp b/src/runtime/host_window.cpp
 index 22ca157..855ff25 100644
 --- a/src/runtime/host_window.cpp
@@ -927,7 +977,7 @@ index 117db49..4d847fb 100644
      // DLLs are left loaded (immutable code, process-lifetime); the OS reclaims
      // them at exit. Drain any last results so counters/banner are accurate.
 diff --git a/src/runtime/runtime.cpp b/src/runtime/runtime.cpp
-index b560791..b2860c4 100644
+index b560791..ccc4950 100644
 --- a/src/runtime/runtime.cpp
 +++ b/src/runtime/runtime.cpp
 @@ -34,6 +34,7 @@
@@ -1044,7 +1094,42 @@ index b560791..b2860c4 100644
      };
      auto clear_suspend_marker = [&]() {
          std::error_code ec;
-@@ -4260,8 +4283,10 @@ int run_game(int argc, char** argv, const RunOptions& opts) {
+@@ -3687,12 +3710,16 @@ int run_game(int argc, char** argv, const RunOptions& opts) {
+                 // the same frame-indexed input as headless acceptance runs.
+                 if (input_replay_requested) apply_input_replay();
+                 if (phase_active) fp_t4 = FramePhaseRing::now_ns();
++                // Banked frames for the pacer: this present covers every guest
++                // frame since the last one (normally 1; 2 after a stale-frame
++                // skip). The pacer throttles all of them.
++                const uint64_t banked_frames = frame - last_presented_frame;
+                 last_presented_frame = frame;
+                 if (present_frame) {
+                     ++frames_presented;
+                     if (args.frames >= 0 && frames_presented >= args.frames)
+                         host_quit = true;
+-                    if (pacer) pacer->wait_for_next_frame();
++                    if (pacer) pacer->wait_for_next_frame(banked_frames);
+                 }
+                 if (phase_active) {
+                     frame_phase.record(frame, fp_t0, fp_t1, fp_t2, fp_t3,
+@@ -4092,6 +4119,7 @@ int run_game(int argc, char** argv, const RunOptions& opts) {
+                 pump_host_input();
+                 if (phase_active) fp_t4 = FramePhaseRing::now_ns();
+                 dispatches_since_pump = 0;
++                const uint64_t banked_frames = frame - last_presented_frame;
+                 last_presented_frame = frame;
+                 if (present_frame) {
+                     ++frames_presented;
+@@ -4101,7 +4129,7 @@ int run_game(int argc, char** argv, const RunOptions& opts) {
+                     // Normal play presents/paces every frame. Fast-forward
+                     // runs N guest frames per one paced host presentation,
+                     // making its selected multiplier independent of monitor Hz.
+-                    if (pacer) pacer->wait_for_next_frame();
++                    if (pacer) pacer->wait_for_next_frame(banked_frames);
+                 }
+                 if (phase_active) {
+                     frame_phase.record(frame, fp_t0, fp_t1, fp_t2, fp_t3,
+@@ -4260,8 +4288,10 @@ int run_game(int argc, char** argv, const RunOptions& opts) {
          }
      }
  
@@ -1300,7 +1385,7 @@ index 72de208..2b08404 100644
              std::abort();
          }
 diff --git a/src/runtime/runtime_bus_bridge.cpp b/src/runtime/runtime_bus_bridge.cpp
-index 044fc13..34e18a4 100644
+index 044fc13..2501670 100644
 --- a/src/runtime/runtime_bus_bridge.cpp
 +++ b/src/runtime/runtime_bus_bridge.cpp
 @@ -8,6 +8,7 @@
@@ -1311,122 +1396,7 @@ index 044fc13..34e18a4 100644
  #include "multiplayer_slice.h"
  #include "../armv4t/arm_ir.h"
  #include "../armv4t/symbol_lookup.h"
-@@ -543,6 +544,104 @@ struct DeviceTickGuard {
-     ~DeviceTickGuard() { g_in_device_tick = prev; }
- };
- 
-+// ── Yield-gate probe (env GBARECOMP_YIELD_PROBE=1) ────────────────────────
-+// Diagnostic for fast-clock hunts: classifies vblank windows whose yield
-+// never fired (their guest frames collapse into a neighboring pacer visit,
-+// letting the guest wall-clock run fast). Two lenses, both cheap:
-+//  * per-check blocks: while a yield is pending, which gate term fails
-+//    (IRQ nesting vs CPU mode, with a mode histogram);
-+//  * per-window misses: at each vblank increment, whether the previous
-+//    window saw any yield; a miss is attributed to the state snapshotted
-+//    at that window's start (mode / in-handler / CPU-halted).
-+// Off by default: the hot path pays one predictable branch.
-+namespace {
-+struct YieldProbe {
-+    bool on = false;
-+    bool have_prev = false;
-+    bool yielded_in_window = false;
-+    uint32_t prev_mode = 0;
-+    bool prev_nest = false;
-+    bool prev_halted = false;
-+    unsigned long long windows = 0;
-+    unsigned long long yields = 0;
-+    unsigned long long multi_yields = 0;  // yield spanning 2+ vblanks
-+    unsigned long long miss_mode = 0;
-+    unsigned long long miss_nest = 0;
-+    unsigned long long miss_halted = 0;
-+    unsigned long long miss_open = 0;
-+    unsigned long long miss_mode_hist[32] = {};
-+    unsigned long long blk_nest = 0;
-+    unsigned long long blk_mode = 0;
-+    unsigned long long blk_mode_hist[32] = {};
-+    unsigned long long last_yield_vb = 0;
-+    bool have_yield = false;
-+};
-+YieldProbe g_yield_probe;
-+void yield_probe_print() {
-+    YieldProbe& p = g_yield_probe;
-+    if (!p.on) return;
-+    std::fprintf(stderr,
-+        "[yield-probe] win=%llu yields=%llu multi=%llu "
-+        "miss(mode=%llu nest=%llu halted=%llu open=%llu) "
-+        "blocked(nest=%llu mode=%llu)\n",
-+        p.windows, p.yields, p.multi_yields,
-+        p.miss_mode, p.miss_nest, p.miss_halted, p.miss_open,
-+        p.blk_nest, p.blk_mode);
-+    for (int m = 0; m < 32; ++m) {
-+        if (p.blk_mode_hist[m] || p.miss_mode_hist[m])
-+            std::fprintf(stderr,
-+                "[yield-probe] mode=0x%02x blocked=%llu missed=%llu\n",
-+                m, p.blk_mode_hist[m], p.miss_mode_hist[m]);
-+    }
-+    std::fflush(stderr);
-+}
-+void yield_probe_ensure_init() {
-+    static bool done = false;
-+    if (done) return;
-+    done = true;
-+    const char* e = std::getenv("GBARECOMP_YIELD_PROBE");
-+    g_yield_probe.on = (e && *e && *e != '0');
-+    if (g_yield_probe.on) std::atexit(yield_probe_print);
-+}
-+// Called at each vblank increment, with the guest state as of this tick.
-+inline void yield_probe_on_vblank(uint32_t mode, bool nest, bool halted,
-+                                  unsigned long long vb) {
-+    yield_probe_ensure_init();
-+    YieldProbe& p = g_yield_probe;
-+    if (!p.on) return;
-+    if (p.have_prev && !p.yielded_in_window) {
-+        // The previous window elapsed with no yield: attribute it to the
-+        // state recorded when that window opened.
-+        if (p.prev_nest) ++p.miss_nest;
-+        else if (p.prev_mode != 0x10u && p.prev_mode != 0x1Fu) {
-+            ++p.miss_mode;
-+            ++p.miss_mode_hist[p.prev_mode & 31u];
-+        } else if (p.prev_halted) ++p.miss_halted;
-+        else ++p.miss_open;  // gate was open at window start: the guest must
-+                             // have become unyieldable mid-window (e.g. halted
-+                             // mid-window, so no further checks ran)
-+    }
-+    p.prev_mode = mode;
-+    p.prev_nest = nest;
-+    p.prev_halted = halted;
-+    p.yielded_in_window = false;
-+    p.have_prev = true;
-+    ++p.windows;
-+}
-+// Called wherever the vblank yield fires (hook + unwind paths share the
-+// yielded_vblank_start assignment below).
-+inline void yield_probe_on_yield(unsigned long long vb) {
-+    YieldProbe& p = g_yield_probe;
-+    if (!p.on) return;
-+    ++p.yields;
-+    if (p.have_yield && vb >= p.last_yield_vb + 2) ++p.multi_yields;
-+    p.last_yield_vb = vb;
-+    p.have_yield = true;
-+    p.yielded_in_window = true;
-+    if ((p.yields % 600ull) == 0ull) yield_probe_print();
-+}
-+}  // namespace
-+
- static void tick_devices(gba::GbaBus* bus, gba::GbaPpu* ppu, uint32_t cycles) {
-     DeviceTickGuard _dtg;
-     // Stage 2: materializing device state can raise IF, advance the PPU phase,
-@@ -597,6 +696,9 @@ static void tick_devices(gba::GbaBus* bus, gba::GbaPpu* ppu, uint32_t cycles) {
-         if (events.vblank_started) {
-             ppu->mark_framebuffer_latched();
-             ++g_runtime_vblank_starts;
-+            yield_probe_on_vblank(g_cpu.cpsr & 0x1Fu,
-+                                  g_irq_nest_depth != 0u,
-+                                  bus->io().halted(), g_runtime_vblank_starts);
-             bus->io().run_timed_dma(1);   // VBlank-timed DMA
-             if (!g_session_execution && g_vblank_input_hook) g_vblank_input_hook();
-         }
-@@ -988,7 +1090,43 @@ void runtime_set_vblank_input_hook(std::function<void()> h) {
+@@ -988,7 +989,43 @@ void runtime_set_vblank_input_hook(std::function<void()> h) {
      g_vblank_input_hook = std::move(h);
  }
  
@@ -1470,34 +1440,7 @@ index 044fc13..34e18a4 100644
      if (g_session_execution) {
          if (gbarecomp::runtime_dispatch_suspended()) return true;
          auto* bus = gbarecomp::g_active_bus;
-@@ -1051,11 +1189,14 @@ extern "C" bool runtime_should_yield(void) {
-         const char* e = std::getenv("GBARECOMP_YIELD_ON_VBLANK");
-         return !(e && e[0] == '0' && e[1] == '\0');
-     }();
--    if (yield_on_vblank && g_irq_nest_depth == 0u &&
--        g_runtime_vblank_starts != g_runtime_yielded_vblank_start) {
--        const uint32_t mode = g_cpu.cpsr & 0x1Fu;
--        if (mode == 0x10u || mode == 0x1Fu) {
--            g_runtime_yielded_vblank_start = g_runtime_vblank_starts;
-+    if (yield_on_vblank && g_runtime_vblank_starts != g_runtime_yielded_vblank_start) {
-+        if (g_irq_nest_depth != 0u) {
-+            if (g_yield_probe.on) ++g_yield_probe.blk_nest;
-+        } else {
-+            const uint32_t mode = g_cpu.cpsr & 0x1Fu;
-+            if (mode == 0x10u || mode == 0x1Fu) {
-+                g_runtime_yielded_vblank_start = g_runtime_vblank_starts;
-+                yield_probe_on_yield(g_runtime_vblank_starts);
-             // Present-in-place when a hook is registered (windowed runner): the
-             // frame is presented from here and the guest resumes WITHOUT
-             // unwinding — no interior-PC re-dispatch, so no frame-boundary
-@@ -1087,9 +1228,14 @@ extern "C" bool runtime_should_yield(void) {
-                 return false;
-             }
-             return true;
-+        } else if (g_yield_probe.on) {
-+            ++g_yield_probe.blk_mode;
-+            ++g_yield_probe.blk_mode_hist[mode & 31u];
-+        }
+@@ -1090,6 +1127,7 @@ extern "C" bool runtime_should_yield(void) {
          }
      }
  
@@ -1505,7 +1448,7 @@ index 044fc13..34e18a4 100644
      // ── Always-on hang watchdog ──────────────────────────────────────
      // A healthy GBA game HALTs (VBlankIntrWait) ~60x/sec; the MC-HP-002
      // freeze is a busy-spin in the M4A mixer that NEVER halts (the PPU
-@@ -1133,6 +1279,18 @@ extern "C" bool runtime_should_yield(void) {
+@@ -1133,6 +1171,18 @@ extern "C" bool runtime_should_yield(void) {
      }
  
      if (g_runtime_break_pc != 0u && g_cpu.R[15] == g_runtime_break_pc) {

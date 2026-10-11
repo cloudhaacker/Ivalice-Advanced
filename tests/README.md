@@ -20,6 +20,14 @@ the repo-local `.venv/`.
   mid-copy-resume regressions (sentinel `r2 == -1` from any address,
   including a byte-matching re-plant, must pass through; two-byte-early
   entries only run on a byte-match) and the copy-count clamp semantics.
+- **Frame pacer (`tests/unit/test_frame_pacer.cpp`, same binary):**
+  `wait_for_next_frame(k)` throttles k periods (the issue-#8 fix — a
+  4-frame present must take ~4 periods, not 1), the default paces one
+  frame, uncapped returns immediately, and absurd banks clamp instead of
+  sleeping for seconds. Wide timing margins (no flakes); red-verified
+  against the pre-fix single-period behavior. Pristine-checkout policy
+  mirrors the stack-guard test (`PACER_BANKED_API` probe — compiles to a
+  skip where the patched header is absent).
 - **Python tooling:** `.venv/bin/python tests/python/test_tools.py`
   (needs capstone — the `.venv`; run by `tools/check.py --only unit-py`).
   Covers the pure healing/audit logic (trace_split, cache_harvest,
@@ -138,8 +146,7 @@ For deeper captures (no code changes): `GBARECOMP_INSN_TRACE=1` +
   smoothing — dropouts instead of concealment). Deeper: TCP `audio_state`
   (mixer rate, samples_generated, SOUNDBIAS, cycles/sample),
   `GBARECOMP_FRAME_PHASE=path` (per-visit guest/pacer split),
-  `GBARECOMP_SAMPLE=1` (hot-PC histogram), `GBARECOMP_YIELD_PROBE=1`
-  (vblank-yield gate census). Knobs live in
+  `GBARECOMP_SAMPLE=1` (hot-PC histogram). Knobs live in
   `gbarecomp/src/runtime/host_window.cpp` + `recomp_audio_drc.h`; note the
   mixer is mono and FFTA runs with the MP2K shadow off (`game.toml`).
 - **Save flows / external saves.** Play on a copy (`--save-path`), validate

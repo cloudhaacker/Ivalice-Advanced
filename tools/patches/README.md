@@ -47,7 +47,7 @@ patch to re-apply; use these files to see what each change was for.
 | `swi-return-ledger.patch` | `gbarecomp/src/armv4t/runtime_arm.cpp` | **Yes** (high; the issue #30 R1 root containment) | SWI-return continuation ledger: `runtime_swi`'s LLE entry records the SVC-return continuation (`return_address` — the SWI site + instruction width); every SVC-mode exception return (`runtime_exception_return` + the interpreted note) validates `new_pc` against the ledger top and keeps the recorded continuation on mismatch (loud log). Ring-proven root (2026-10-09): the BIOS SWI epilogue (`0x184 pop {fp,ip,lr}` / `0x188 movs pc,lr`, disarm-verified) returned to the IRQ-interrupted PC (`0x080033BA`) instead of the recorded veneer continuation (`0x814186E`) when the shared R[14] slot was clobbered mid-drive — on hardware LR_svc is banked and untouchable, so this pins the recomp divergence, not guest behavior. Ledger cleared at every machine-reset / savestate-load origin (`runtime_fp_reset`); SoftReset's never-returned SWI leaves only a harmless stale entry. |
 | `android-external-state-dir.patch` | `gbarecomp/src/runtime/runtime.cpp` | Feature (low) | `--state-dir <dir>` (ffta-recomp issue #6): save-state slots (`.stateN`) and the mobile suspend state/marker (`.suspend.state`/`.suspend.pending`) are written under the given directory (ROM basename kept) instead of next to the ROM. Empty (desktop default) preserves historical behavior. The game side (`src/main.cpp`, Android only) points it at the user-visible external app directory with a one-time migration from app-private storage. |
 | `launcher-force-ui.patch` | `gbarecomp/src/runtime/launcher_seam.h` | Proposal (medium) | `--launcher` forces the pre-boot UI even when headless-classified flags (`--rom`, `--frames`, …) are present (ffta-recomp issue #5: `play.sh` always passes `--rom`, so the flag never took effect). Without `--launcher`, headless detection still skips silently. Behavior-change proposal for upstream: the previous contract only forced past a persisted skip. |
-| `yield-gate-probe.patch` | `gbarecomp/src/runtime/runtime_bus_bridge.cpp` | Diagnostic (no) | Env-gated (`GBARECOMP_YIELD_PROBE=1`) vblank-yield gate census for fast-clock hunts (ffta-recomp issue #8): per-check blocks by term (IRQ-nest vs CPU-mode + mode histogram) and per-window misses attributed to the state at window start (mode/nest/halted). Default-off; hot path pays one predictable branch. Attract hash unchanged with it applied. |
+| `frame-pacer-banked-wait.patch` | `gbarecomp/src/runtime/{host_platform.h,host_platform.cpp,runtime.cpp}` | **Yes** (high) | Banked-frame pacer wait (ffta-recomp issue #8 fix): `FramePacer::wait_for_next_frame(frames=1)` advances the deadline by the banked count, and both present sites pass `frame - last_presented_frame`. Stale-frame present skips used to let banked frames escape throttling (+5% guest wall-clock in battle, audio-bridge flood); one wait now paces all of them. `frames==1` is the old path exactly; fast-forward (k==1 per wait) and the behind-resync are unchanged. |
 
 ## Upstream priority (re-audit 2026-10-09, late)
 
@@ -60,7 +60,11 @@ recovery (a handler that lost its iret anyway is closed coherently);
 
 Recommended order for proposing to gbarecomp:
 
-1. `mmio-cap-dma-reentrancy` — correctness bug; any game with 32-bit DMA
+1. `frame-pacer-banked-wait` — pacing correctness: stale-frame present
+   skips let banked guest frames escape throttling (measured +5% fast
+   clock with an audio-bridge flood on FFTA battle). Small, game-agnostic,
+   behavior-identical for the common single-frame case.
+2. `mmio-cap-dma-reentrancy` — correctness bug; any game with 32-bit DMA
    config writes loses DMA tracking. Still valid after upstream PR #29
    (2026-10-09): its shared-RAM DMA HLE is a compile-time opt-in that
    bypasses the per-unit bus service entirely (so the default LLE path —

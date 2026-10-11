@@ -4587,3 +4587,45 @@ Session frag held only the 3 already-seeded PCs — zero new gaps;
 in `tools/check.py` via a new `strict_route_state` helper
 (`strict_route` is boot-only); self-test
 `FULLY_STATIC dispatch_misses=0` in 21.5 s. Commit after this entry.
+
+## 2026-10-11 (issue #8) — FIXED: banked presents ran the guest +5% fast; pacer now paces frames
+
+Root cause, proven to exact counts in a single 74.45 s battle window
+(`game.state1`, dummy video, all probes): the present hook only presents
+on frame change, and 227 times it ran early enough to see a stale frame —
+skipping the present *and its ~12.6 ms pacer wait*. Yields 4675 = rows
+4448 + skips 227; framespan +4674 vs 4447 expected = excess 227.
+Skips == excess exactly. Each skip banks a guest frame the pacer never
+throttles: 62.778 fps (+5.1%), audio-bridge flood in the same window
+(221k overflow drops, servo railed +0.5%, fill ~280 ms, ~1150
+samples/push vs 1097 nominal). Mechanism: the post-vblank hook usually
+lands after the frame wrap but straddles it when handler length varies
+(all skips from spin PCs, mode 0x1f) — a tiny handler charge difference
+between backends decides the straddle (interp: 59.725 fps, zero drops,
+servo +0.035%, zero skips on the same state).
+Exonerated with evidence along the way: audio bridge (correctly
+wall-clocked), SOUNDBIAS flicker, tick double-paths, DMA steal (24.8k vs
+26.2k), idle elider (0 skips), session exec, pacer cadence, yield gate
+(4675/4675 windows, zero misses), per-PC charges (681124 ticks identical
+both backends over 2M cycles), PPU monotonicity (per-window frame deltas
+all exactly 1 — no double-fire). PIP=0 changes nothing (same 227), which
+killed the hook-timing theory and pointed at the shared gate.
+Fix (`tools/patches/frame-pacer-banked-wait.patch`, upstream-proposed #1):
+`FramePacer::wait_for_next_frame(frames=1)` advances the deadline by the
+banked count; both present sites pass `frame - last_presented_frame`.
+Single-frame path is the old logic exactly; fast-forward (always k=1 per
+wait) and the behind-resync are untouched; absurd banks clamp at 16.
+Verification: dummy 59.53 fps + zero drops + servo tracking ±0.25% +
+fill ~60 ms; real display 59.48 fps, zero drops; full gate 14/14 green
+(attract hash unchanged, all strict routes FULLY_STATIC, ws smoke green);
+new `tests/unit/test_frame_pacer.cpp` (banked multi-period wait,
+default, uncapped, clamp — red-verified against pre-fix behavior,
+pristine-CI skips via `PACER_BANKED_API` probe). Device: clean-rebuilt
+APK (35.7 MiB, content guard 8/8, gate PASS), on-device battle replay via
+new `tools/android_trace_replay.py` (state + trace, frame-driven
+set_keyinput) + user manual test — both pass. Residuals: the underlying
+handler charge wobble is still unidentified but now harmless (absorbed by
+debt pacing); fast-forward multiplier has no gate coverage (logic-only).
+Probes (`yield-gate-probe.patch`: yield census, frame deltas, skip counts)
+were scaffolding — stripped after the counts closed; proof is this entry.
+Commit after this entry.

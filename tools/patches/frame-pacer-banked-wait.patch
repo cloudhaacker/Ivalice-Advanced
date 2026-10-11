@@ -1,0 +1,60 @@
+--- a/src/runtime/host_platform.cpp
++++ b/src/runtime/host_platform.cpp
+@@ -52,3 +52,3 @@ void FramePacer::reset() {
+ 
+-void FramePacer::wait_for_next_frame() {
++void FramePacer::wait_for_next_frame(uint64_t frames) {
+     if (uncapped_) {
+@@ -57,2 +57,12 @@ void FramePacer::wait_for_next_frame() {
+     }
++    // Throttle banked frames: a present covering k>1 guest frames (after
++    // stale-frame skips) advances the deadline by the banked count before
++    // waiting, so this one wait paces all of them. Clamped defensively;
++    // a genuine multi-second stall still resyncs below. frames==1 skips
++    // the adjustment entirely (bit-identical to the old path).
++    if (frames > 1) {
++        uint64_t extra = frames - 1u;
++        if (extra > 15u) extra = 15u;
++        next_ += period_ * static_cast<std::chrono::nanoseconds::rep>(extra);
++    }
+     clock::time_point now = clock::now();
+--- a/src/runtime/host_platform.h
++++ b/src/runtime/host_platform.h
+@@ -43,3 +43,13 @@ public:
+     // frame. No-op while uncapped.
+-    void wait_for_next_frame();
++    //
++    // `frames` is the banked-frame count for this present (normally 1).
++    // A present can cover k>1 guest frames when stale-frame presents were
++    // skipped (the present hook only presents on frame change): without
++    // accounting, those banked frames escape throttling and the guest
++    // wall-clock runs fast (measured +5% in battle, with audio-bridge
++    // flood as the audible symptom). The deadline advances by the banked
++    // count so one wait throttles all of them; frames==1 is exactly the
++    // old behavior. Fast-forward presents one frame per wait already, so
++    // it is unaffected. The behind-resync below still bounds real stalls.
++    void wait_for_next_frame(uint64_t frames = 1);
+ 
+--- a/src/runtime/runtime.cpp
++++ b/src/runtime/runtime.cpp
+@@ -3689,2 +3723,6 @@ int run_game(int argc, char** argv, const RunOptions& opts) {
+                 if (phase_active) fp_t4 = FramePhaseRing::now_ns();
++                // Banked frames for the pacer: this present covers every guest
++                // frame since the last one (normally 1; 2 after a stale-frame
++                // skip). The pacer throttles all of them.
++                const uint64_t banked_frames = frame - last_presented_frame;
+                 last_presented_frame = frame;
+@@ -3694,3 +3732,3 @@ int run_game(int argc, char** argv, const RunOptions& opts) {
+                         host_quit = true;
+-                    if (pacer) pacer->wait_for_next_frame();
++                    if (pacer) pacer->wait_for_next_frame(banked_frames);
+                 }
+@@ -4094,2 +4144,3 @@ int run_game(int argc, char** argv, const RunOptions& opts) {
+                 dispatches_since_pump = 0;
++                const uint64_t banked_frames = frame - last_presented_frame;
+                 last_presented_frame = frame;
+@@ -4103,3 +4154,3 @@ int run_game(int argc, char** argv, const RunOptions& opts) {
+                     // making its selected multiplier independent of monitor Hz.
+-                    if (pacer) pacer->wait_for_next_frame();
++                    if (pacer) pacer->wait_for_next_frame(banked_frames);
+                 }

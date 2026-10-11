@@ -161,15 +161,34 @@ if(FFTA_BUILD_TESTS AND NOT ANDROID)
     add_executable(ffta_unit_tests
         tests/unit/test_ram_dispatch.cpp
         tests/unit/test_host_stack_guard.cpp
-        "${GBARECOMP_ROOT}/src/runtime/mobile_platform.cpp")
+        tests/unit/test_frame_pacer.cpp
+        "${GBARECOMP_ROOT}/src/runtime/mobile_platform.cpp"
+        "${GBARECOMP_ROOT}/src/runtime/host_platform.cpp")
     target_include_directories(ffta_unit_tests PRIVATE
         "${GBARECOMP_ROOT}/src/armv4t"
         "${GBARECOMP_ROOT}/src/runtime"
         src)
     find_package(Threads REQUIRED)
     target_link_libraries(ffta_unit_tests PRIVATE Threads::Threads)
+    if(WIN32 AND NOT MSVC)
+        target_link_libraries(ffta_unit_tests PRIVATE winmm)
+    endif()
     if(HOST_STACK_GUARD_API)
         target_compile_definitions(ffta_unit_tests PRIVATE HOST_STACK_GUARD_API=1)
+    endif()
+    # Same pristine-checkout policy for the frame-pacer banked-wait test:
+    # compile it live only where the patched header declares the frames
+    # parameter; elsewhere it builds to a skip.
+    file(READ "${GBARECOMP_ROOT}/src/runtime/host_platform.h"
+         _pacer_header_text)
+    if(_pacer_header_text MATCHES "wait_for_next_frame\\(uint64_t")
+        set(PACER_BANKED_API ON)
+        message(STATUS "frame-pacer banked-wait API present: testing")
+        target_compile_definitions(ffta_unit_tests PRIVATE PACER_BANKED_API=1)
+    else()
+        set(PACER_BANKED_API OFF)
+        message(STATUS "frame-pacer banked-wait API absent (pristine "
+                       "submodule): pacer test compiles to a skip")
     endif()
     add_test(NAME ram_dispatch COMMAND ffta_unit_tests)
 endif()

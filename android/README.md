@@ -168,7 +168,12 @@ specifically, `tools/android_press_test.py` drives it over the observe TCP
 (`--tcp-observe`) on a live device session — savestate load, A press via
 `set_keyinput`, frame advancement, anomaly scan, crash buffer. Run this
 protocol manually after every engine-affecting change until the gate grows
-native input injection.
+native input injection. For longer gameplay reproduction,
+`tools/android_trace_replay.py` replays a desktop-recorded input trace the
+same way (push state + save, relaunch with observe TCP, feed each
+`(frame, keyinput)` row by frame counter — timing good to ~1-3 frames,
+enough for feel/audio checks, not cycle-exact work):
+`tools/android_trace_replay.py --state saves/regress/battle_move_start.state --trace saves/regress/battle_move_trace.csv`.
 
 **Prep:** fresh APK (`tools/cycle.py` regenerates `generated/`, then
 `./gradlew :app:assembleDebug …` per § Build), `adb install -r`, a game save
