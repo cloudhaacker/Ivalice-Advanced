@@ -270,6 +270,32 @@ address identifies the spinning call site; the frames above it name the
 flow that entered it. Full recipe: this project's
 `reference/dev-gotchas.md` § Android device forensics.
 
+## Focus-safe paced runs (dummy video)
+
+`--no-window` headless runs are uncapped (no pacer), so they cannot measure
+wall-clock rate. `SDL_VIDEODRIVER=dummy` keeps the windowed code path —
+pacer constructed, real audio device — with no visible window: nothing
+steals focus, no stray keyboard input can reach the guest, and the machine
+stays usable during the run. The renderer falls back to software.
+Verified: no window appears, savestate load nominal, pacer + probes run.
+
+```sh
+SDL_VIDEODRIVER=dummy tools/play.sh --load-state <state> --tcp-observe <port>
+```
+
+Use for idle rate runs (guest fps vs wall/monotonic clocks), background
+diagnostics, and any bounded run where a popping-up window would disturb
+the operator. Caveats: present is a near-no-op under dummy, so
+presented-frame counts/timing differ from a real display — the guest-frame
+(PPU/vblank) counter is the rate signal, not presents. Live keyboard input
+cannot reach the session (fine for idle/rate/replay runs, useless for
+interactive play). Bound every run with a timeout. Unresolved (2026-10-11):
+TCP observe printed `listening` under dummy but three read attempts got
+connection-refused with no listener in `ss` — prefer file-based probes
+(`GBARECOMP_FRAME_PHASE`, `GBARECOMP_YIELD_PROBE`, `GBARECOMP_AUDIO_PROBE`)
+under dummy until that is root-caused; do not document observe+dummy as
+working.
+
 ## The observe server: single client, and the savestate trap
 
 The `--tcp-observe` surface serves one client at a time; a long-lived
