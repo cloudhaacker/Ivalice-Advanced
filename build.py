@@ -33,8 +33,13 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent
 ROM = REPO / "game.gba"
 ROM_SHA1 = "4ac05441f4de70a4ec3dd932116346c61b8783d9"
-BIOS = REPO / "gbarecomp/bios/gba_bios.bin"
-BIOS_SHA1 = "300c20df6731a33952ded8c436f7f186d25d3492"
+# The launch BIOS is the committed clean-room emibios (LGPL-3.0-or-later,
+# coolbho3k/emibios main @c4d5d71; issue #17) — repo material, staged with
+# the build, so users supply only the ROM. The retail Nintendo dump is no
+# longer part of any flow.
+BIOS = REPO / "bios/emibios_gba_bios.bin"
+BIOS_SHA1 = "0c0d404d16c6b55b3071aba714f82077da132f14"
+BIOS_CONFIG = REPO / "bios/emibios_gba_bios.toml"
 CAPSTONE_PIN = "5.0.7"
 BIOS_OUT = REPO / "gbarecomp/src/runtime/generated_bios/bios_recompiled.cpp"
 PATCH_DIR = REPO / "tools/patches"
@@ -134,13 +139,17 @@ def step_submodules():
 
 
 def step_dumps():
+    # ROM: the only user-supplied dump (legally-dumped FFTA USA cart).
+    # BIOS: committed clean-room emibios — verify the repo material too so
+    # a corrupted checkout fails here with a clear message, not deep in
+    # the BIOS recompile.
     checks = [
         (ROM, ROM_SHA1, 16777216, "ROM", "game.gba",
          "place your own legally-dumped FFTA (USA) ROM at game.gba "
          "(never commit or download it)"),
-        (BIOS, BIOS_SHA1, 16384, "BIOS", "gbarecomp/bios/gba_bios.bin",
-         "place your own GBA BIOS dump at gbarecomp/bios/gba_bios.bin "
-         "(do not download a BIOS)"),
+        (BIOS, BIOS_SHA1, 16384, "BIOS", "bios/emibios_gba_bios.bin",
+         "restore the committed emibios binary from the repository "
+         "(clean-room LGPL material — do not substitute a Nintendo dump)"),
     ]
     for path, want, size, label, where, hint in checks:
         if not path.exists():
@@ -234,8 +243,9 @@ def step_bios(force):
     if (not force and BIOS_OUT.exists()
             and BIOS_OUT.stat().st_mtime >= BIOS.stat().st_mtime):
         return "up to date"
-    r = run(["./build/gba_recompile", "--bios", "bios/gba_bios.bin",
-             "--config", "bios/gba_bios.toml"], cwd=REPO / "gbarecomp")
+    r = run(["./build/gba_recompile", "--bios",
+             str((BIOS).resolve()), "--config", str(BIOS_CONFIG.resolve())],
+            cwd=REPO / "gbarecomp")
     if r.returncode != 0:
         die("BIOS recompile failed", hint=tail(r))
     if not BIOS_OUT.exists() or BIOS_OUT.stat().st_size == 0:
@@ -293,7 +303,7 @@ def step_smoke():
     env = {k: v for k, v in os.environ.items()
            if not k.startswith("GBARECOMP_")}
     env["GBARECOMP_STRICT_STATIC"] = "1"
-    r = run(["./build/FFTARecomp", "--bios", "gbarecomp/bios/gba_bios.bin",
+    r = run(["./build/FFTARecomp", "--bios", "bios/emibios_gba_bios.bin",
              "--rom", "game.gba", "--frames", "2400", "--no-window"], env=env)
     line = next((l.strip() for l in r.stdout.splitlines()
                  if "self_heal_coverage" in l), "")

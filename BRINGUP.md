@@ -4679,3 +4679,76 @@ today; the log-clear fixes that class.
 **Still pending:** scanline/DMA HLE track (PRs #29/#31 — pin move +
 revalidation). The HLE flip is proven on desktop routes; the device
 boot path is converged (11 seeds, user playtest clean).
+
+## 2026-10-11 (issue #17) — E2b/c: the emibios swap — linked, seeded, 15/15 green, golden unchanged
+
+**Action.** Swapped the launch BIOS from the retail Nintendo dump to the
+committed clean-room emibios (milestone 1 `735084e` committed the bin +
+TOML; this milestone linked and pinned it everywhere):
+
+- `game.toml` / `android/game_android.toml` `[bios]` →
+  `bios/emibios_gba_bios.bin`, sha1 `0c0d404d…` (emibios `main @c4d5d71`).
+- `build.py`: `step_bios` recompiles emibios from the committed material
+  (836→837 units after seeds); `step_dumps` no longer asks for a user BIOS
+  (ROM is the only user-supplied dump); `step_smoke` repointed. All 21
+  harness tools' `--bios` paths repointed (`check`, `attract_check`,
+  `hle_audit`, `ws_check`, `hangrepro`, oracle tools, …) — `framediff`
+  now hands emibios to the oracle too, so both sides run the same BIOS.
+- Engine (recorded in `tools/patches/`, replay-verified):
+  `emibios-launcher-pin-set.patch` (`GbaBios::kEmibiosSha1` + the
+  launcher `bios_verify` accepts {retail, emibios}; the config
+  `[bios].sha1` pin stays the runtime gate),
+  `emibios-public-guard-bundled.patch` (Android public-artifact guard
+  exempts a 16 KiB `.bin` whose SHA-1 equals the game-declared non-retail
+  `biosSha1` pin), `emibios-bios-dispatch-table.patch` (data-only: the
+  regeneration overwrites the upstream-provenance retail table — its
+  `.gitignore` documents exactly this workflow).
+- Android: `biosSha1` manifest pin override, `biosRequired=false`,
+  payloadDirs stages the bin at `payload/bios/`, `payloadVersion` 3→4;
+  `build_apk.py` drops `-PprivateBios` (the BIOS arrives via payload
+  staging; private builds still embed only the ROM).
+- Checks: `check_bios_pins` now pins all-emibios (both TOMLs == manifest
+  pin == committed bin; upstream template default must stay the retail
+  fallback), new `check_emibios_engine_acceptance` (tree or recorded
+  patch), `check_emibios_integrity` from milestone 1. 22 checks green,
+  red-verified on TOML-pin corruption.
+
+**Two strict-miss seeds, both statically undiscoverable, evidence in the
+TOML notes.** The first LLE run of the emibios corpus missed at
+`pc=0x3E74` (frame ~264–276 = the final-burn/handoff window):
+
+- `0x3E74` `.vc_irqh` — emibios's own interim VBlank IRQ handler,
+  installed into `[0x03007FFC]` at runtime by `boot_final_burn` (0x3DBC),
+  reachable only via the `0x128` trampoline's `ldr pc,[r0,#-4]` (a runtime
+  pointer, same class as a game handler). Confirmed by ELF local labels +
+  non-strict bridge (1 distinct PC, 7 insns) + empty ring reg-scan for
+  0x3E74 (no register ever held it — no static reference exists).
+- `0x138` `after_interrupt` — the IRQ trampoline epilogue; unreferenced
+  statically (the `0x130 add lr,pc,#0` installs it as the runtime return
+  target). Retail's `gbarecomp/bios/gba_bios.toml` seeds the identical
+  fragment at the identical address — same class, same fix.
+
+The SWI halfword table at `0x194` (dispatch `0x144 ldrb ip,[lr,#-2]` /
+`0x148 add fp,pc,ip,lsl#1` / `0x14c ldrh ip,[fp,#0x44]` — emibios reads
+the number from bits 23..16, the commercial `swi #(n<<16)` encoding FFTA
+uses) needed NO new seeds: every 0x00–0x2A target already had a same-mode
+dispatch row. Apparent gaps beyond 0x2A were past-table garbage (the
+table is documented 0x00–0x2A), not real targets.
+
+**Result.** Full gate 15/15 PASS with the emibios corpus linked: all
+strict routes (user_load, B, G, K) FULLY_STATIC with zero misses;
+`patches` replay byte-matches (431-file tree, 15 patch files); **the
+attract golden sha256 `1EF4C118…` is UNCHANGED and the hle_audit routeB
+frame pin `43D5B3B6…` survived** — emibios hands off on the same VBlank
+phase, and everything downstream is pure game code, so a full BIOS swap
+renders bit-identically at both pinned frames. No repin needed; the
+unchanged hashes are the phase-equivalence evidence.
+
+**Conclusion.** The binary no longer contains translated Nintendo BIOS
+code and users supply only the ROM. The retail dump's remaining role is
+the launcher's accepted alternative (pin-set patch) and the local-only
+`BiosBytePinTests` (retail-contract documentation). Still open for E3+:
+device gate + APK guard rework (public builds must CONTAIN emibios, forbid
+ROM/retail), LGPL compliance (LICENSES/, attribution row), and the upstream
+proposal (launcher pin-set + public-guard exemption — the config-driven
+shape preferred over the hardcoded constant).

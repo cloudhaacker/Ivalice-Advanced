@@ -776,3 +776,15 @@ addr = 0x00003E88
 mode = "arm"
 name = "handoff_latch_prime"
 
+
+[[extra_func]]
+addr = 0x00003E74
+mode = "arm"
+name = "vc_irqh"
+note = "emibios .vc_irqh (build ELF local label): its own interim VBlank IRQ handler, installed into [0x03007FFC] at runtime by boot_final_burn (0x3DBC) and reached only via the 0x18->0x128 trampoline's 'ldr pc,[r0,#-4]' — statically undiscoverable (runtime pointer, like a game handler). Body disarm-verified: mov r3,#4; strh r3,[r1,#2]; mov r3,#0; strh r3,[r1,#8]; bx lr (returns to the trampoline epilogue 0x138). Executes once at the final-burn/handoff window (~frame 264-276 under LLE, interpreter-bridged x1 / 7 insns, ring + miss frag 2026-10-11)."
+
+[[extra_func]]
+addr = 0x00000138
+mode = "arm"
+name = "after_interrupt"
+note = "IRQ trampoline epilogue: 'pop {r0-r3,ip,lr}; subs pc,lr,#4' (disarm-verified 0x138-0x13C). Unreferenced statically — the 0x130 'add lr,pc,#0' installs 0x138 as the runtime return target that BIOS/game IRQ handlers reach via 'bx lr' (retail gba_bios.toml seeds the identical fragment as 'after_interrupt' @0x138). LLE strict-miss 2026-10-11 after .vc_irqh returned into it."

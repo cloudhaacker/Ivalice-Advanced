@@ -11,7 +11,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from framediff import Client
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
-BIOS = REPO / "gbarecomp/bios/gba_bios.bin"
+BIOS = REPO / "bios/emibios_gba_bios.bin"
 ROM = REPO / "game.gba"
 NATIVE = REPO / "build/FFTARecomp"
 ORACLE = REPO / "gbarecomp/build/oracle/gbarecomp_oracle"

@@ -16,10 +16,10 @@ git submodule update --init --recursive
 # If a submodule worktree comes up empty, re-run with --checkout --recursive
 ```
 
-**2. Place your dumps** — `game.gba` at the repo root (FFTA USA) and
-`gbarecomp/bios/gba_bios.bin` (your own BIOS dump). Launch verifies both
-hashes (SHA-1s in the root README) and fails loudly if either is wrong or
-missing.
+**2. Place your ROM dump** — `game.gba` at the repo root (FFTA USA). Launch
+verifies the ROM hash (SHA-1 in the root README) and fails loudly if it is
+wrong or missing. No BIOS dump is needed: the launch BIOS is the bundled
+clean-room emibios at `bios/emibios_gba_bios.bin` (issue #17).
 
 **3. Python venv for the tooling** (disassembler, audit harness):
 ```sh
@@ -54,12 +54,14 @@ cmake --build gbarecomp/build --target gba_recompile gba_scan --parallel 8
 
 **6. Recompile the BIOS (one-time).** Run it *from `gbarecomp/`* so the
 output lands in `gbarecomp/src/runtime/generated_bios/`, and pass the
-project's BIOS config — it seeds the 770 named BIOS functions and
-identity-checks the dump (without it only 666 are discovered and strict
-runs abort on a miss at pc `0x300`):
+project's BIOS config — it seeds the named emibios functions from the build
+ELF (plus the two statically-unreachable fragments: the `after_interrupt`
+trampoline epilogue and the runtime-installed `.vc_irqh` boot handler) and
+identity-checks the committed clean-room BIOS (issue #17):
 ```sh
-cd gbarecomp && ./build/gba_recompile --bios bios/gba_bios.bin \
-  --config bios/gba_bios.toml && cd ..
+cd gbarecomp && ./build/gba_recompile \
+  --bios ../bios/emibios_gba_bios.bin \
+  --config ../bios/emibios_gba_bios.toml && cd ..
 ```
 
 **7. Generate the game's static code corpus** (also after every `game.toml`
@@ -85,7 +87,7 @@ widescreen hooks; verified gate-neutral.)
 banner:
 ```sh
 GBARECOMP_STRICT_STATIC=1 ./build/FFTARecomp \
-  --bios gbarecomp/bios/gba_bios.bin --rom game.gba --frames 2400 --no-window
+  --bios bios/emibios_gba_bios.bin --rom game.gba --frames 2400 --no-window
 ```
 And optionally the attract gate, which pins the exact frame hash:
 ```sh

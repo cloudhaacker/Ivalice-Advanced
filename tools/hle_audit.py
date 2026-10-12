@@ -41,7 +41,7 @@ import tempfile
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 EXE = REPO / "build/FFTARecomp"
-BIOS = REPO / "gbarecomp/bios/gba_bios.bin"
+BIOS = REPO / "bios/emibios_gba_bios.bin"
 ROM = REPO / "game.gba"
 REG = REPO / "saves/regress"
 FIXTURE_SAVE = REG / "skyemu_20261007.sav"

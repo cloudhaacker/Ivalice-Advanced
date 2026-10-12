@@ -30,7 +30,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 RECOMPILER = REPO / "gbarecomp/build/gba_recompile"
 NATIVE = REPO / "build/FFTARecomp"
-BIOS = REPO / "gbarecomp/bios/gba_bios.bin"
+BIOS = REPO / "bios/emibios_gba_bios.bin"
 ROM = REPO / "game.gba"
 DISPATCH = REPO / "generated/dispatch_table.cpp"
 LOGS = REPO / "logs"

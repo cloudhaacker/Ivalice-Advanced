@@ -44,5 +44,5 @@ done
 exec env -u GBARECOMP_STRICT_STATIC \
   GBARECOMP_INPUT_RECORD="$PWD/logs/playthrough.csv" \
   GBARECOMP_MISS_FRAG="$PWD/logs/playtest_misses.frag" \
-  ./build/FFTARecomp --bios gbarecomp/bios/gba_bios.bin --rom game.gba \
+  ./build/FFTARecomp --bios bios/emibios_gba_bios.bin --rom game.gba \
   --save-path saves/playtest.sav "$@"

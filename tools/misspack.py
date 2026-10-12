@@ -25,7 +25,7 @@ Usage:
 
 Harvest a fresh fragment first (repo root):
   GBARECOMP_MISS_FRAG=logs/missN.frag ./build/FFTARecomp --bios \
-    gbarecomp/bios/gba_bios.bin --rom game.gba --frames N --no-window
+    bios/emibios_gba_bios.bin --rom game.gba --frames N --no-window
 """
 from __future__ import annotations
 

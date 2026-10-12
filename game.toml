@@ -38,19 +38,24 @@ sha1 = "4ac05441f4de70a4ec3dd932116346c61b8783d9"
 md5 = "cd99cdde3d45554c1b36fbeb8863b7bd"
 
 [bios]
-path = "gbarecomp/bios/gba_bios.bin"
-sha1 = "300c20df6731a33952ded8c436f7f186d25d3492"
-# HLE: mGBA-derived clean-room SWI services (Div/Sqrt/ArcTan, CpuSet/
-# CpuFastSet, affine + decompression SWIs, SoundBias, MidiKey2Freq).
-# Zero LLE-fallback across the census routes — attract 1317/1317, battle
-# route B 7341/7341, suspend route G 11474/11474 HLE-taken (SWI_LOG + trace,
-# enforced by tools/hle_audit.py). LLE stays linked for unimplemented SWIs
-# (SoftReset/Halt/IntrWait/sound-driver) + IRQ dispatch (vector 0x18), and
-# the SWI-return ledger only tracks LLE entries (push sits below the HLE
-# early-return, runtime_arm.cpp) so HLE-taken SWIs never touch it. The dump
-# is still required at boot (verification + fallback); dropping it needs
-# the upstream no-BIOS tier. Golden stays LLE (attract_check pins
-# GBARECOMP_BIOS_HLE=0 — the intro movie is timing-chaotic, not HLE-wrong).
+path = "bios/emibios_gba_bios.bin"
+sha1 = "0c0d404d16c6b55b3071aba714f82077da132f14"
+# Clean-room emibios (https://github.com/coolbho3k/emibios, LGPL-3.0-or-
+# later, main @c4d5d71) — committed at bios/ as repo material, so the
+# BIOS ships with the build; the retail Nintendo dump is no longer
+# required at launch (issue #17). HLE: mGBA-derived clean-room SWI
+# services (Div/Sqrt/ArcTan, CpuSet/CpuFastSet, affine + decompression
+# SWIs, SoundBias, MidiKey2Freq). Zero LLE-fallback across the census
+# routes — attract 1317/1317, battle route B 7341/7341, suspend route G
+# 11474/11474 HLE-taken (SWI_LOG + trace, enforced by tools/hle_audit.py).
+# LLE stays linked for unimplemented SWIs (SoftReset/Halt/IntrWait/sound-
+# driver) + IRQ dispatch (vector 0x18 — emibios exception_irq), and the
+# SWI-return ledger only tracks LLE entries (push sits below the HLE
+# early-return, runtime_arm.cpp) so HLE-taken SWIs never touch it.
+# Golden stays LLE (attract_check pins GBARECOMP_BIOS_HLE=0 — the intro
+# movie is timing-chaotic, not HLE-wrong); the emibios boot screen +
+# IRQ-trampoline timing shift the attract frame, repinned with oracle
+# agreement (BRINGUP 2026-10-11).
 hle = true
 
 [rom]

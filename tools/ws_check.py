@@ -188,7 +188,7 @@ def margin_changed(a: bytes, b: bytes) -> float:
 
 
 def run_case(case: dict, width: int, png: pathlib.Path, sav: pathlib.Path) -> tuple[bool, str]:
-    cmd = ["./build/FFTARecomp", "--bios", "gbarecomp/bios/gba_bios.bin",
+    cmd = ["./build/FFTARecomp", "--bios", "bios/emibios_gba_bios.bin",
            "--rom", "game.gba", "--load-state", case["state"],
            "--save-path", str(sav),
            "--frames", str(case["frames"]), "--dump-png", str(png), "--no-window"]

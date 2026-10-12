@@ -39,7 +39,7 @@ def main():
         logf = open(f"{work}/run.log", "wb")
         proc = subprocess.Popen(
             [f"{REPO}/build/FFTARecomp",
-             "--bios", f"{REPO}/gbarecomp/bios/gba_bios.bin",
+             "--bios", f"{REPO}/bios/emibios_gba_bios.bin",
              "--rom", f"{REPO}/game.gba",
              "--save-path", f"{work}/card.sav",
              "--scale", "2", "--view-width", "320",

@@ -75,7 +75,7 @@ def main():
 
     runner = subprocess.Popen(
         [str(REPO / "build" / "FFTARecomp"),
-         "--bios", str(REPO / "gbarecomp" / "bios" / "gba_bios.bin"),
+         "--bios", str(REPO / "bios" / "emibios_gba_bios.bin"),
          "--rom", str(REPO / "game.gba"),
          "--save-path", str(card), "--tcp", str(PORT)],
         cwd=str(REPO), stdout=open(LOG, "wb"), stderr=subprocess.STDOUT,

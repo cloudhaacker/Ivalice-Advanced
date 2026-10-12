@@ -81,7 +81,7 @@ def main():
     def strict_run():
         env = {k: v for k, v in os.environ.items() if not k.startswith("GBARECOMP_")}
         env.update({"GBARECOMP_STRICT_STATIC": "1", "GBARECOMP_INPUT_REPLAY": a.trace})
-        cmd = ["./build/FFTARecomp", "--bios", "gbarecomp/bios/gba_bios.bin",
+        cmd = ["./build/FFTARecomp", "--bios", "bios/emibios_gba_bios.bin",
                "--rom", "game.gba", "--frames", str(a.frames), "--no-window"]
         if a.load_state:
             cmd += ["--load-state", a.load_state]

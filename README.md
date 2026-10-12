@@ -6,30 +6,37 @@ This is not an emulator. The game's ARM/Thumb code is statically translated to
 host C++ (AOT), compiled, and executed natively — with a **self-healing
 coverage** loop so the next build is fully static.
 
-> **You must own the game and BIOS.** Both are user-supplied, hash-verified at
+> **You must own the game.** The ROM is user-supplied, hash-verified at
 > launch, and **never committed** (no ROM-derived bytes in git history, ever —
 > that includes `generated/`, `saves/`, `logs/`, patches, and frame dumps).
 > No game code, graphics, text, or audio is included — this repository is
 > tooling and notes only — and the project is unofficial: not affiliated with
 > or endorsed by Square Enix or Nintendo.
+>
+> **The BIOS is bundled, not dumped:** the launch BIOS is
+> [emibios](https://github.com/coolbho3k/emibios) — a clean-room,
+> LGPL-3.0-or-later BIOS replacement committed at `bios/` (issue #17). It is
+> recompiled and linked like the rest of the machine; a retail Nintendo dump
+> is no longer required (the launcher still accepts one if you point the
+> config at it).
 
 - ROM: Final Fantasy Tactics Advance (USA), SHA-1
   `4ac05441f4de70a4ec3dd932116346c61b8783d9`, 16,777,216 bytes → `game.gba`
-- BIOS: SHA-1 `300c20df6731a33952ded8c436f7f186d25d3492` →
-  `gbarecomp/bios/gba_bios.bin` (dump your own; do not download one)
+- BIOS (bundled): emibios `main @c4d5d71`, SHA-1
+  `0c0d404d16c6b55b3071aba714f82077da132f14`, 16,384 bytes →
+  `bios/emibios_gba_bios.bin`
 
 ---
 
 ## Quick start
 
 Requirements: CMake ≥ 3.20 + Ninja, GCC or Clang (C++17), SDL2 (dev), git,
-Python 3.10+ — plus the two dumps above. Everything after cloning is one
-idempotent script:
+Python 3.10+ — plus the ROM above (the only user-supplied file). Everything
+after cloning is one idempotent script:
 
 ```sh
 git clone --recursive <repo-url> ffta-recompiled && cd ffta-recompiled
 cp /path/to/ffta-usa.gba game.gba
-cp /path/to/gba_bios.bin gbarecomp/bios/gba_bios.bin
 python3 build.py            # deps → recompile → build → smoke test (FULLY_STATIC)
 tools/play.sh --scale 4     # play: 4x window (960x640)
 ```

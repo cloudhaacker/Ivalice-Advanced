@@ -67,10 +67,12 @@ runtime args can only arrive via an app-private `debug-args.txt` (adb
 - **Mods** runtime is built in (the widescreen feature installs through the
   trusted-plugin lifecycle); the catalog and a default `state.toml` are staged
   into the payload.
-- **Testing** via private ROM-embedded APKs (`-PprivateRom/-PprivateBios`):
-  debug-signed, auto-named `…-PRIVATE-rom-included.apk`, never committed or
-  distributed (`.gitignore` covers `*.apk`). Public builds import ROM/BIOS
-  through the phone UI with SHA-1 pins.
+- **Testing** via private ROM-embedded APKs (`-PprivateRom`): debug-signed,
+  auto-named `…-PRIVATE-rom-included.apk`, never committed or distributed
+  (`.gitignore` covers `*.apk`). Public builds import the ROM through the
+  phone UI with a SHA-1 pin; the launch BIOS is the bundled clean-room
+  emibios staged into every payload (`bios/emibios_gba_bios.bin`,
+  `biosRequired=false` — issue #17), so no BIOS is ever picked.
 - **Pad idle auto-hide**: the touch pad hides after 15 s of screen-wide
   touch inactivity (`touch_pad_idle_hide_seconds = 15` in `src/main.cpp`);
   any touch reveals it and then acts normally — a tap after the quiet
@@ -110,11 +112,12 @@ default JDK 27 is too new for Gradle 8.11.1), Android SDK at
 ```sh
 cd android
 export JAVA_HOME=/usr/lib/jvm/java-21-openjdk ANDROID_HOME=/opt/android-sdk
-# Private test build (ROM+BIOS embedded; arm64 only for speed; the
-# -Pprivate* paths resolve relative to android/app, hence ../../):
+# Private test build (ROM embedded; arm64 only for speed; the -PprivateRom
+# path resolves relative to android/app, hence ../../; the BIOS is staged
+# from the committed bios/ dir by payloadDirs, not a private flag):
 ./gradlew :app:assembleDebug -PgbaAbis=arm64-v8a -PgbaNativeJobs=12 \
-  -PprivateRom=../../game.gba -PprivateBios=../../gbarecomp/bios/gba_bios.bin
-# Distributable build (no ROM/BIOS; import via the phone UI):
+  -PprivateRom=../../game.gba
+# Distributable build (no ROM; import via the phone UI):
 ./gradlew :app:assembleDebug -PgbaAbis=arm64-v8a -PgbaNativeJobs=12
 ```
 
