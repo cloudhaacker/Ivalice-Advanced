@@ -38,9 +38,14 @@ no Nintendo BIOS dump is required.
 | Start | Enter |
 | Select | Backspace |
 | L / R | C / V |
+| Fast-forward (hold) | Tab |
 
 Controllers are detected automatically, and button mappings can be changed
-from the launcher. On Android, use the on-screen touch controls.
+from the launcher. Fast-forward runs the game faster while held; its speed
+(2–10x) and key/pad bindings are configurable in the launcher's Assist
+Tools page and the in-game menu. On Android, use the on-screen touch
+controls — tap the `FF` pill at the top of the screen to toggle the speed
+boost.
 
 ## Quick start
 
