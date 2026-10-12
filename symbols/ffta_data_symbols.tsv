@@ -120,6 +120,21 @@
 # JP +0x156, u16 +0x182 (the "No Cards" code target; reads 0 on all 24 slots
 # in two field states — plausible cards-held counter, semantics unverified),
 # name-mode +0x186 (Section 12; re-verified on battle enemies 2026-10-12).
+# Class-change live diff (2026-10-12; Marche Soldier->Thief; read-only
+# full-EWRAM before/after; record-relative offsets — absolute for slot 0 =
+# 0x02000080 + offset): +0x07 active job id 0x02 -> 0x05; +0x2A..+0x33 five
+# equipped-item u16s cleared (Silver Sword 0x0002, Gold Armor 0x0124, Choco
+# Shield 0x0106, Headband 0x0118, Battle Boots 0x0153 — gInventory
+# equipped-counters each -1, see § 17); +0x35 mirrors active job record
+# +0x10 (decomp: "A-ability index"), 24/24 slots; +0x45 one ability-state
+# byte 0x8C -> 0x0C (bit 7 cleared; semantics open); +0xFC..+0xFF movement
+# profile [01,02,J,~J], J = effective jump = job+0x29 + sum(equipped item
+# +0x17), 24/24. Also live: +0x04 type (1 = ordinary path per decomp; 2
+# Marche / 8 Montblanc), +0x05 base job (story units hold 0x50/0x52 proxy
+# records; generic == active; unchanged by the class change), +0x06 race
+# (1..5 = Human/Bangaa/Nu Mou/Viera/Moogle), +0x34 race ability count
+# (0x8E/0x4D/0x5F/0x55/0x58 = 142/77/95/85/88; decomp: "Human's 142
+# entries").
 # gClanSkills slot names (the AlmAR "Max X" code set = 8 encrypted writes for
 # the 8 u16s; SuperCheats dispatch hints confirm "smithing level" as a real
 # dispatch skill): Appraise, Combat, Craft, Gather, Magic, Negotiate,
@@ -234,9 +249,16 @@
 # 0x02000000 — gPartyUnits moved to § 6 corrected (vanilla stride-loop
 # evidence there). Corollaries: gInventory @0x02001940 sits exactly at the
 # array end (0x02000080 + 24*0x108), matching EH's "end of unit data"; the
-# inventory layout itself (14x4 B {id,count} + alt table +0x5A4) is now
-# independently confirmed by inventory_item_consume @0x080CA9E8 (symbols
-# § 21). Bytes [0x02000000,0x02000080) are unidentified header/scratch
+# inventory layout itself is now independently confirmed by
+# inventory_item_consume @0x080CA9E8 (symbols § 21) and live-refined
+# 2026-10-12 (full-region scan + class-change diff; two snapshots):
+# stride-4 entries {id u16, count u8, equipped u8} from 0x02001940; 143
+# entries in use at capture (unique ids; count >= equipped). The +3 byte
+# == copies equipped across the 24-unit roster — exact for every entry (0
+# mismatches) and -1 per copy unequipped (five on Marche's class change).
+# Trailing zero slots run to gShopStock @+0x5A4 (0x02001EE4); exact slot
+# capacity not established (>=143). Bytes [0x02000000,0x02000080) are
+# unidentified header/scratch
 # (live: 0x45544646 magic-ish word at +0x00) — deliberately unnamed.
 0x02001940	ewram	0x0	gInventory
 0x02002AD0	ewram	0x0	gUnlockedJobsBitfield

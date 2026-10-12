@@ -5356,3 +5356,72 @@ the 414-formation count is their table-map value (all rows validated, end
 boundary not independently confirmed); randomizer table offsets are file
 offsets — cite as +0x08000000. Their ROM check is only "AFXE" at 0xAC (no
 hash/version branch); our strict SHA-1 identity gate stays.
+
+## 2026-10-12 (late 5) — clan-menu scan: clan counters staged in the save record
+
+User opened the clan menu ("clan points: 85, freed areas: 7, missions:
+71"); full-EWRAM scanning + save-stage mapping found no clean live cluster
+in low EWRAM, but the save staging window carries them:
+
+- stage+0x2037 (0x02003CB0+0x2037 = 0x02005CE7) = 0x55 (85) — clan-points
+  candidate (byte; stable across two snapshots).
+- stage+0x203E (0x02005CEE) = 0x07 — freed-areas candidate (byte).
+- neighbours open: stage+0x2036 = 0x01, +0x203F = 0x06, +0x2041..0x2044 =
+  03 07 00 26.
+- Older fixtures (state2, world_map) read 0 there — values appear only
+  after a save-load (staged copy); live-vs-copy unresolved.
+
+"missions: 71" unresolved: every clean 71 hit was a per-mission record
+field (mission-record area 0x02002350+); count may be derived (bit-popcount)
+or stored elsewhere — open.
+
+## 2026-10-12 (late 6) — live class-change diff: unit-record fields + gInventory equipped byte (issue #22 fuel)
+
+Marche changed class in the running session (Soldier -> Thief); read-only
+TCP probes (port 19870) diffed full-EWRAM snapshots before/after. Snapshots
+kept in the session /tmp only (ROM-derived; not committed).
+
+Exactly 14 bytes changed across all 24 unit records — every one in slot 0
+(record base 0x02000080, stride 0x108; offsets record-relative):
+
+- +0x07: 0x02 -> 0x05 — active job id. Names decoded via the ROM name
+  table (job record +0x00 name id -> 0x08526680): 0x02 Soldier, 0x05 Thief.
+  Decomp doc: "the job-change routine always writes the selected job here".
+- +0x2A..+0x33: five equipped-item u16s cleared to 0 — Silver Sword 0x0002,
+  Gold Armor 0x0124, Choco Shield 0x0106, Headband 0x0118, Battle Boots
+  0x0153. Inventory side: exactly those five gInventory entries' +3 byte
+  decremented by 1; count byte unchanged.
+- +0x35: 0x02 -> 0x18 — mirrors the new job record's +0x10 (decomp:
+  "A-ability index"); holds 24/24 slots, both snapshots.
+- +0x45: 0x8C -> 0x0C — one byte of the ability-state array (bit 7
+  cleared); semantics open.
+- +0xFE..+0xFF: 0x02/0xFD -> 0x03/0xFC — movement profile tail [.., J, ~J];
+  J = effective jump = job+0x29 + sum(equipped item +0x17); ~J = bitwise
+  complement; both 24/24. (+0xFC=01, +0xFD=02 constants.)
+
+Cross-checks (live roster, two snapshots; against charlie-troy/ffta-decomp
+docs, same ROM): +0x04 type (1 ordinary path; 2 Marche / 8 Montblanc),
++0x05 base job (story units hold 0x50/0x52 proxy records; generic ==
+active; unchanged by the change), +0x06 race (1..5 = Human/Bangaa/Nu Mou/
+Viera/Moogle), +0x34 race ability count (0x8E/0x4D/0x5F/0x55/0x58 =
+142/77/95/85/88; decomp "Human's 142 entries").
+
+gInventory live-refined: stride-4 {id u16, count u8, equipped u8}; the +3
+byte == copies equipped across the roster (exact for every entry, 0
+mismatches) and -1 per copy unequipped. 143 entries in use at capture;
+trailing zeros to gShopStock @+0x5A4. (Corrects the § 17 "14x4" line; a
+working cap at 0x1AD0 had hidden slots >100.)
+
+All other diff hits were menu/UI work areas and the shared save-stage
+scratch window — no other unit-record or inventory bytes changed.
+
+Leads: (a) all five equipment slots cleared — incompatibility-filter vs
+full strip unresolved (second class-change sample needed); (b) +0x45
+bit-7 semantics; (c) exact 0x108 record mirror at 0x02010F9C (zero before
+the change) + preview block ~0x020110A4 — purpose unverified, not
+symbolized; (d) § 21 race blocks: start-to-next-start spans are one row
+(8B) longer than the listed sizes (Human two) with a zero last row; +0x34
+counts match the spans — flagged, sizes left as imported.
+
+Files: symbols/ffta_data_symbols.tsv (§ 7 + § 17); symbols/ffta_symbols.tsv
+(accessor comment). TsvGuardTests 6/6 OK. Comment-only — no codegen impact.

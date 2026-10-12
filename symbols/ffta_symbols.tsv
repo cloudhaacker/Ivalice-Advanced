@@ -587,7 +587,7 @@
 0x0809F8EC	thumb	battle_wait_value_finalize
 # Item/learn/battle data accessors: item-record getter (base 0x0851D180,
 # id*0x20, jump table @0x080CA7CC; idx 0x12 = abilities id per 3 callers);
-# inventory consume (14x4 B {id,count} + alt table +0x5A4, 0/−1 returns);
+# inventory consume (stride-4 {id,count,equipped} entries from 0x02001940, alt table +0x5A4, 0/−1 returns);
 # job-bitmask permission via unit_growth_getter(0x24) + item_data_getter(3);
 # equip permission via the 0x080CAE2C worker (unit+0x2A slots,
 # race_ability_list_getter); icon gfx/palette tables 0x083B9004/0x083B8F50
