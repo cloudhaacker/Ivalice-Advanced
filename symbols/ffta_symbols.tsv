@@ -607,3 +607,11 @@
 0x080D3508	thumb	battle_animation_play
 0x080DDF68	thumb	weapon_animation_resolve
 0x0812AE8C	thumb	unit_name_tiles_refresh
+# Section 20 (naming-only): ability-animation command handlers (2026-10-11;
+# names ours; coverage evidence in game.toml § the same-date device-resume
+# batch). gAbilityAnimationTable dispatch (bl 0x08142250 -> bx r3) is
+# register-indirect — handlers unreachable by the static walker until a
+# playtest exercised them; entry PCs disarm-verified.
+0x080EDC08	thumb	ability_anim_cmd_080EDC08
+0x080F543C	thumb	ability_anim_cmd_080F543C
+0x08133618	thumb	sub_08133618

@@ -1,0 +1,790 @@
+# emibios_gba_bios.toml — per-binary recompile config for emibios (coolbho3k/emibios).
+#
+# Generated from the emibios build ELF (zig build -> bios.elf; 2026-10-11,
+# main @ c4d5d71). Function modes derive from the $a/$t mapping symbols;
+# hand-coded vector tail (0x08 SWI, 0x18 IRQ) mirrors bios/gba_bios.toml.
+# emibios is a clean-room LGPL-3.0-or-later BIOS replacement:
+# https://github.com/coolbho3k/emibios
+
+[program]
+name         = "emibios GBA BIOS"
+id           = "emibios_gba_bios"
+load_address = 0x00000000
+size         = 0x00004000  # 16 KB
+entry_pc     = 0x00000000
+static_resume_all = true  # BIOS instructions can be interrupted and resumed anywhere
+
+[identity]
+sha1 = "0c0d404d16c6b55b3071aba714f82077da132f14"  # emibios main @c4d5d71
+
+[[extra_func]]
+addr = 0x00000000
+mode = "arm"
+name = "bios_reset_vector"
+note = "B exception_reset @0x68"
+
+[[extra_func]]
+addr = 0x00000008
+mode = "arm"
+name = "bios_swi_vector"
+note = "B swi dispatcher @0x140 - runtime_swi() dispatches here (LLE fallback)"
+
+[[extra_func]]
+addr = 0x00000018
+mode = "arm"
+name = "bios_irq_vector"
+note = "B exception_irq @0x128 - runtime_irq() dispatches here"
+
+[[extra_func]]
+addr = 0x0000001C
+mode = "arm"
+name = "reserved_vector"
+note = "B exception_unused @0x1FC"
+
+[[extra_func]]
+addr = 0x00000020
+mode = "arm"
+name = "swi_HardReset"
+
+[[extra_func]]
+addr = 0x00000068
+mode = "arm"
+name = "exception_reset"
+
+[[extra_func]]
+addr = 0x00000128
+mode = "arm"
+name = "exception_irq"
+
+[[extra_func]]
+addr = 0x000001EA
+mode = "thumb"
+name = "swi_DoNothing"
+
+[[extra_func]]
+addr = 0x000001EC
+mode = "arm"
+name = "exception_undefined"
+
+[[extra_func]]
+addr = 0x000001FC
+mode = "arm"
+name = "exception_unused"
+
+[[extra_func]]
+addr = 0x00000200
+mode = "arm"
+name = "swi_SoftReset"
+
+[[extra_func]]
+addr = 0x00000224
+mode = "arm"
+name = "reset_modes"
+
+[[extra_func]]
+addr = 0x00000280
+mode = "arm"
+name = "hard_reset_multiboot"
+
+[[extra_func]]
+addr = 0x000002DC
+mode = "thumb"
+name = "swi_CpuSet"
+
+[[extra_func]]
+addr = 0x000003B8
+mode = "arm"
+name = "swi_CpuFastSet"
+
+[[extra_func]]
+addr = 0x0000043C
+mode = "arm"
+name = "swi_CpuFastSet_nv"
+
+[[extra_func]]
+addr = 0x00000494
+mode = "arm"
+name = "swi_LZ77UnCompWrite8bit_nv"
+
+[[extra_func]]
+addr = 0x000004AC
+mode = "arm"
+name = "swi_LZ77UnCompWrite8bit"
+
+[[extra_func]]
+addr = 0x000005DC
+mode = "arm"
+name = "swi_LZ77UnCompWrite16bit"
+
+[[extra_func]]
+addr = 0x00000768
+mode = "arm"
+name = "swi_BitUnpack"
+
+[[extra_func]]
+addr = 0x00000878
+mode = "thumb"
+name = "swi_Diff8bitUnfilterWrite8bit"
+
+[[extra_func]]
+addr = 0x000008F8
+mode = "arm"
+name = "swi_Diff8bitUnfilterWrite16bit"
+
+[[extra_func]]
+addr = 0x000009AC
+mode = "arm"
+name = "swi_Diff16bitUnfilter"
+
+[[extra_func]]
+addr = 0x00000A80
+mode = "arm"
+name = "swi_HuffUnCompReadNormal_nv"
+
+[[extra_func]]
+addr = 0x00000AB4
+mode = "arm"
+name = "swi_HuffUnCompReadNormal"
+
+[[extra_func]]
+addr = 0x00000D8C
+mode = "thumb"
+name = "swi_RLUnCompReadNormalWrite8bit"
+
+[[extra_func]]
+addr = 0x00000DFC
+mode = "thumb"
+name = "swi_RLUnCompReadNormalWrite16bit"
+
+[[extra_func]]
+addr = 0x00000F74
+mode = "arm"
+name = "swi_DivArm"
+
+[[extra_func]]
+addr = 0x00000F80
+mode = "arm"
+name = "swi_Div"
+
+[[extra_func]]
+addr = 0x00001064
+mode = "arm"
+name = "swi_Sqrt"
+
+[[extra_func]]
+addr = 0x00001164
+mode = "arm"
+name = "swi_ArcTan"
+
+[[extra_func]]
+addr = 0x000011EC
+mode = "arm"
+name = "swi_ArcTan2"
+
+[[extra_func]]
+addr = 0x0000134C
+mode = "arm"
+name = "at2_sdiv"
+
+[[extra_func]]
+addr = 0x000013DC
+mode = "arm"
+name = "swi_ObjAffineSet"
+
+[[extra_func]]
+addr = 0x00001458
+mode = "arm"
+name = "swi_BGAffineSet"
+
+[[extra_func]]
+addr = 0x00001534
+mode = "arm"
+name = "sine_lut"
+
+[[extra_func]]
+addr = 0x00001734
+mode = "arm"
+name = "swi_Halt"
+
+[[extra_func]]
+addr = 0x00001750
+mode = "arm"
+name = "swi_Stop"
+
+[[extra_func]]
+addr = 0x00001760
+mode = "arm"
+name = "swi_CustomHalt"
+
+[[extra_func]]
+addr = 0x0000176C
+mode = "arm"
+name = "swi_VBlankIntrWait"
+
+[[extra_func]]
+addr = 0x00001774
+mode = "arm"
+name = "swi_IntrWait"
+
+[[extra_func]]
+addr = 0x0000182C
+mode = "thumb"
+name = "swi_RegisterRamReset"
+
+[[extra_func]]
+addr = 0x00001994
+mode = "thumb"
+name = "t_cfs"
+
+[[extra_func]]
+addr = 0x00001996
+mode = "thumb"
+name = "t_pad4"
+
+[[extra_func]]
+addr = 0x000019C8
+mode = "arm"
+name = "swi_GetBiosChecksum"
+
+[[extra_func]]
+addr = 0x00001A00
+mode = "thumb"
+name = "swi_SoundBias"
+
+[[extra_func]]
+addr = 0x00001A4C
+mode = "thumb"
+name = "swi_SoundDriverInit"
+
+[[extra_func]]
+addr = 0x00001B1C
+mode = "thumb"
+name = "swi_SoundDriverVSync"
+
+[[extra_func]]
+addr = 0x00001B48
+mode = "arm"
+name = "swi_MidiKey2Freq"
+
+[[extra_func]]
+addr = 0x00001C30
+mode = "arm"
+name = "mk_freqtable"
+
+[[extra_func]]
+addr = 0x00001C64
+mode = "thumb"
+name = "swi_MusicPlayerFadeOut"
+
+[[extra_func]]
+addr = 0x00001C7C
+mode = "thumb"
+name = "swi_SoundDriverVSyncOff"
+
+[[extra_func]]
+addr = 0x00001CC2
+mode = "thumb"
+name = "swi_SoundDriverVSyncOn"
+
+[[extra_func]]
+addr = 0x00001CCE
+mode = "thumb"
+name = "swi_SoundGetJumpList"
+
+[[extra_func]]
+addr = 0x00001CEA
+mode = "thumb"
+name = "sound_jmpstub"
+
+[[extra_func]]
+addr = 0x00001CEC
+mode = "thumb"
+name = "sound_fine"
+
+[[extra_func]]
+addr = 0x00001D1E
+mode = "thumb"
+name = "sound_goto"
+
+[[extra_func]]
+addr = 0x00001D44
+mode = "thumb"
+name = "sound_patt"
+
+[[extra_func]]
+addr = 0x00001D7A
+mode = "thumb"
+name = "sound_pend"
+
+[[extra_func]]
+addr = 0x00001D8E
+mode = "thumb"
+name = "sound_priority"
+
+[[extra_func]]
+addr = 0x00001DA2
+mode = "thumb"
+name = "sound_keyshift"
+
+[[extra_func]]
+addr = 0x00001DBE
+mode = "thumb"
+name = "sound_volume"
+
+[[extra_func]]
+addr = 0x00001DDA
+mode = "thumb"
+name = "sound_pan"
+
+[[extra_func]]
+addr = 0x00001DF8
+mode = "thumb"
+name = "sound_bend"
+
+[[extra_func]]
+addr = 0x00001E16
+mode = "thumb"
+name = "sound_bendrange"
+
+[[extra_func]]
+addr = 0x00001E32
+mode = "thumb"
+name = "sound_lfospeed"
+
+[[extra_func]]
+addr = 0x00001E46
+mode = "thumb"
+name = "sound_lfodelay"
+
+[[extra_func]]
+addr = 0x00001E5A
+mode = "thumb"
+name = "sound_moddepth"
+
+[[extra_func]]
+addr = 0x00001E6E
+mode = "thumb"
+name = "sound_modtype"
+
+[[extra_func]]
+addr = 0x00001E8C
+mode = "thumb"
+name = "sound_tune"
+
+[[extra_func]]
+addr = 0x00001EAA
+mode = "thumb"
+name = "sound_endtie"
+
+[[extra_func]]
+addr = 0x00001EC6
+mode = "thumb"
+name = "sound_tempo"
+
+[[extra_func]]
+addr = 0x00001EE8
+mode = "thumb"
+name = "sound_setvoice"
+
+[[extra_func]]
+addr = 0x00001F12
+mode = "thumb"
+name = "sound_unlinkchan"
+
+[[extra_func]]
+addr = 0x00001F36
+mode = "thumb"
+name = "sound_clearstruct"
+
+[[extra_func]]
+addr = 0x00001F4C
+mode = "thumb"
+name = "gjl_ptr_table"
+
+[[extra_func]]
+addr = 0x00001FA4
+mode = "thumb"
+name = "swi_SoundChannelClear"
+
+[[extra_func]]
+addr = 0x00001FD4
+mode = "arm"
+name = "swi_SoundDriverMain"
+
+[[extra_func]]
+addr = 0x0000264C
+mode = "thumb"
+name = "swi_SoundDriverMode"
+
+[[extra_func]]
+addr = 0x00002740
+mode = "thumb"
+name = "mode_freqtable"
+
+[[extra_func]]
+addr = 0x000027B8
+mode = "thumb"
+name = "swi_MultiBoot"
+
+[[extra_func]]
+addr = 0x0000295C
+mode = "thumb"
+name = "mb_xfer"
+
+[[extra_func]]
+addr = 0x000029B0
+mode = "thumb"
+name = "mb_send_h"
+
+[[extra_func]]
+addr = 0x000029C2
+mode = "thumb"
+name = "mb_crcfold"
+
+[[extra_func]]
+addr = 0x00002A0C
+mode = "thumb"
+name = "multiboot_receiver_detect"
+
+[[extra_func]]
+addr = 0x00002A48
+mode = "thumb"
+name = "multiboot_receiver_listen"
+
+[[extra_func]]
+addr = 0x00002B0E
+mode = "thumb"
+name = "multiboot_receiver_joybus"
+
+[[extra_func]]
+addr = 0x00002B9E
+mode = "thumb"
+name = "mb_joy_seed"
+
+[[extra_func]]
+addr = 0x00002BBE
+mode = "thumb"
+name = "mb_joy_rearm"
+
+[[extra_func]]
+addr = 0x00002BD4
+mode = "arm"
+name = "mb_joy_irq"
+
+[[extra_func]]
+addr = 0x00002BDC
+mode = "thumb"
+name = "mb_joy_irq_t"
+
+[[extra_func]]
+addr = 0x00002D56
+mode = "thumb"
+name = "mb_boot_linger"
+
+[[extra_func]]
+addr = 0x00002D76
+mode = "thumb"
+name = "mb_crc"
+
+[[extra_func]]
+addr = 0x00002E40
+mode = "thumb"
+name = "multiboot_receiver_normal"
+
+[[extra_func]]
+addr = 0x00002ED6
+mode = "thumb"
+name = "rx_getbit"
+
+[[extra_func]]
+addr = 0x000030E2
+mode = "thumb"
+name = "mb_boot_handoff"
+
+[[extra_func]]
+addr = 0x000030F6
+mode = "thumb"
+name = "mb_boot_tail"
+
+[[extra_func]]
+addr = 0x00003136
+mode = "thumb"
+name = "rx_pack3"
+
+[[extra_func]]
+addr = 0x000031CC
+mode = "thumb"
+name = "bs_blob"
+
+[[extra_func]]
+addr = 0x0000341C
+mode = "arm"
+name = "boot_screen_entry"
+
+[[extra_func]]
+addr = 0x00003444
+mode = "thumb"
+name = "bs_call_arm"
+
+[[extra_func]]
+addr = 0x00003446
+mode = "thumb"
+name = "bs_trig_check"
+
+[[extra_func]]
+addr = 0x00003480
+mode = "thumb"
+name = "bs_wait_vblank"
+
+[[extra_func]]
+addr = 0x00003490
+mode = "thumb"
+name = "bs_draw_banner"
+
+[[extra_func]]
+addr = 0x000034A4
+mode = "thumb"
+name = "bs_mbrdy_fade"
+
+[[extra_func]]
+addr = 0x000034C4
+mode = "thumb"
+name = "bs_hold"
+
+[[extra_func]]
+addr = 0x00003518
+mode = "thumb"
+name = "boot_screen_show"
+
+[[extra_func]]
+addr = 0x0000358C
+mode = "thumb"
+name = "bs_draw"
+
+[[extra_func]]
+addr = 0x00003652
+mode = "thumb"
+name = "bs_hdr_check"
+
+[[extra_func]]
+addr = 0x0000367C
+mode = "thumb"
+name = "bs_hdr_sum"
+
+[[extra_func]]
+addr = 0x00003694
+mode = "thumb"
+name = "bs_logo_hash"
+
+[[extra_func]]
+addr = 0x000036B8
+mode = "thumb"
+name = "bs_puts"
+
+[[extra_func]]
+addr = 0x00003706
+mode = "thumb"
+name = "bs_put_names"
+
+[[extra_func]]
+addr = 0x00003722
+mode = "thumb"
+name = "bs_putr"
+
+[[extra_func]]
+addr = 0x0000372C
+mode = "thumb"
+name = "bs_put_okbad"
+
+[[extra_func]]
+addr = 0x0000373C
+mode = "thumb"
+name = "nib2char"
+
+[[extra_func]]
+addr = 0x00003746
+mode = "thumb"
+name = "bs_hex2"
+
+[[extra_func]]
+addr = 0x00003760
+mode = "thumb"
+name = "bs_draw_debug"
+
+[[extra_func]]
+addr = 0x000037E6
+mode = "thumb"
+name = "dbg_label"
+
+[[extra_func]]
+addr = 0x000037EE
+mode = "thumb"
+name = "dbg_hexrow"
+
+[[extra_func]]
+addr = 0x000038B4
+mode = "thumb"
+name = "mbp_lut"
+
+[[extra_func]]
+addr = 0x000038C4
+mode = "thumb"
+name = "mbp_str_rdy"
+
+[[extra_func]]
+addr = 0x000038D0
+mode = "thumb"
+name = "mbp_idle"
+
+[[extra_func]]
+addr = 0x000038D8
+mode = "thumb"
+name = "mbp_reset"
+
+[[extra_func]]
+addr = 0x000038F6
+mode = "thumb"
+name = "mbp_field"
+
+[[extra_func]]
+addr = 0x00003992
+mode = "thumb"
+name = "mbp_tint"
+
+[[extra_func]]
+addr = 0x000039D6
+mode = "thumb"
+name = "mbp_tick"
+
+[[extra_func]]
+addr = 0x00003A1C
+mode = "thumb"
+name = "mbp_finish"
+
+[[extra_func]]
+addr = 0x00003A3C
+mode = "thumb"
+name = "bs_fill16"
+
+[[extra_func]]
+addr = 0x00003A46
+mode = "thumb"
+name = "bs_map_clear"
+
+[[extra_func]]
+addr = 0x00003A4E
+mode = "thumb"
+name = "bs_place_logo"
+
+[[extra_func]]
+addr = 0x00003A6E
+mode = "thumb"
+name = "bs_cleanup"
+
+[[extra_func]]
+addr = 0x00003B0C
+mode = "thumb"
+name = "bs_anim"
+
+[[extra_func]]
+addr = 0x00003B80
+mode = "thumb"
+name = "an_fade8"
+
+[[extra_func]]
+addr = 0x00003C08
+mode = "thumb"
+name = "bs_frame"
+
+[[extra_func]]
+addr = 0x00003C32
+mode = "thumb"
+name = "bs_bcheck"
+
+[[extra_func]]
+addr = 0x00003C56
+mode = "thumb"
+name = "fill_copper"
+
+[[extra_func]]
+addr = 0x00003CBA
+mode = "thumb"
+name = "gr_chan"
+
+[[extra_func]]
+addr = 0x00003CD6
+mode = "thumb"
+name = "fill_wobble"
+
+[[extra_func]]
+addr = 0x00003D1C
+mode = "thumb"
+name = "bs_fade"
+
+[[extra_func]]
+addr = 0x00003D8C
+mode = "thumb"
+name = "bs_atlas_info"
+
+[[extra_func]]
+addr = 0x00003D94
+mode = "thumb"
+name = "bs_str_mbrdy"
+
+[[extra_func]]
+addr = 0x00003D9D
+mode = "thumb"
+name = "bs_str_clean"
+
+[[extra_func]]
+addr = 0x00003DA8
+mode = "thumb"
+name = "bs_str_logo"
+
+[[extra_func]]
+addr = 0x00003DAC
+mode = "thumb"
+name = "bs_str_header"
+
+[[extra_func]]
+addr = 0x00003DAF
+mode = "thumb"
+name = "bs_str_cksum"
+
+[[extra_func]]
+addr = 0x00003DB4
+mode = "thumb"
+name = "bs_str_fix"
+
+[[extra_func]]
+addr = 0x00003DB7
+mode = "thumb"
+name = "bs_str_ok"
+
+[[extra_func]]
+addr = 0x00003DB9
+mode = "thumb"
+name = "bs_str_bad"
+
+[[extra_func]]
+addr = 0x00003DBC
+mode = "arm"
+name = "boot_final_burn"
+
+[[extra_func]]
+addr = 0x00003E88
+mode = "arm"
+name = "handoff_latch_prime"
+
+
+[[extra_func]]
+addr = 0x00003E74
+mode = "arm"
+name = "vc_irqh"
+note = "emibios .vc_irqh (build ELF local label): its own interim VBlank IRQ handler, installed into [0x03007FFC] at runtime by boot_final_burn (0x3DBC) and reached only via the 0x18->0x128 trampoline's 'ldr pc,[r0,#-4]' — statically undiscoverable (runtime pointer, like a game handler). Body disarm-verified: mov r3,#4; strh r3,[r1,#2]; mov r3,#0; strh r3,[r1,#8]; bx lr (returns to the trampoline epilogue 0x138). Executes once at the final-burn/handoff window (~frame 264-276 under LLE, interpreter-bridged x1 / 7 insns, ring + miss frag 2026-10-11)."
+
+[[extra_func]]
+addr = 0x00000138
+mode = "arm"
+name = "after_interrupt"
+note = "IRQ trampoline epilogue: 'pop {r0-r3,ip,lr}; subs pc,lr,#4' (disarm-verified 0x138-0x13C). Unreferenced statically — the 0x130 'add lr,pc,#0' installs 0x138 as the runtime return target that BIOS/game IRQ handlers reach via 'bx lr' (retail gba_bios.toml seeds the identical fragment as 'after_interrupt' @0x138). LLE strict-miss 2026-10-11 after .vc_irqh returned into it."

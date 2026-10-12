@@ -5,7 +5,30 @@ Noncommercial 1.0.0 (see `LICENSE`). This file lists the third-party work
 the project builds on or derives from, and the terms that apply. **No game
 content is included in this repository**: no ROMs, BIOS dumps, game
 graphics/text/audio, saves, or recompiled output — everything runs from
-user-supplied dumps.
+the user's ROM dump plus the bundled clean-room BIOS below.
+
+## Bundled clean-room BIOS (emibios)
+
+`bios/emibios_gba_bios.bin` (16 KiB) is a build of
+[coolbho3k/emibios](https://github.com/coolbho3k/emibios) `main @c4d5d71`
+— a clean-room, *freely redistributable* GBA BIOS replacement, **LGPL-3.0-or-later**.
+It is not a dump and not Nintendo code: it ships as repo material
+(issue #17), is the launch BIOS pinned by `game.toml [bios]`, and is
+staged into every Android payload. The committed binary is the **unmodified**
+upstream build (SHA-256 verified against the upstream `bios.sha256` pin;
+SHA-1 `0c0d404d16c6b55b3071aba714f82077da132f14`); its recompilation
+config (`bios/emibios_gba_bios.toml`) documents the source URL and commit.
+
+- License text: [`LICENSES/LGPL-3.0-or-later.txt`](LICENSES/LGPL-3.0-or-later.txt)
+  (the FSF's combined LGPL-3.0 + GPL-3.0 document emibios ships as its
+  `LICENSE`; verbatim copying of the license document is permitted by its
+  own terms — the same class of exception as the GFDL texts below)
+- Source: <https://github.com/coolbho3k/emibios> (Zig 0.16 build;
+  `zig build` reproduces the binary)
+- Modification rights under the LGPL are preserved: the binary is
+  replaceable in place (`bios/emibios_gba_bios.bin` + the config pin), and
+  any rebuild of emibios flows through `build.py`'s BIOS recompile step
+  into the linked corpus without touching game code.
 
 ## Framework submodules
 

@@ -18,6 +18,7 @@ build, and self-tests the device gate script against a fake `adb`:
 Usage: tools/android_static_check.py        (stdlib only; runs from any cwd)
 Exit codes: 0 = all checks pass, 1 = at least one failure.
 """
+import hashlib
 import os
 import re
 import subprocess
@@ -33,7 +34,10 @@ except ModuleNotFoundError:  # Python 3.10 (tomllib landed in 3.11)
     _tomllib = None
 
 # Standard GBA BIOS dump hash, mirrored by the engine template's default.
-BIOS_SHA1 = "300c20df6731a33952ded8c436f7f186d25d3492"
+RETAIL_BIOS_SHA1 = "300c20df6731a33952ded8c436f7f186d25d3492"
+# The committed clean-room BIOS pin (emibios main @c4d5d71,
+# https://github.com/coolbho3k/emibios — LGPL-3.0-or-later).
+EMIBIOS_SHA1 = "0c0d404d16c6b55b3071aba714f82077da132f14"
 
 
 # ---------------------------------------------------------------------------
@@ -99,6 +103,10 @@ def _mini_load(path):
                              % (path, lineno, raw.strip()))
         current[key.strip()] = _parse_scalar(value)
     return root
+
+
+def sha1_bytes(data):
+    return hashlib.sha1(data).hexdigest()
 
 
 def load_toml(rel):
@@ -206,11 +214,24 @@ def check_rom_pins():
 
 
 def check_bios_pins():
+    # The launch BIOS is the committed clean-room emibios (issue #17):
+    # every pin — both game TOMLs, the build.gradle manifest pin, and the
+    # committed bin itself — must agree, the payload must stage it, and the
+    # engine-side acceptance (launcher pin-set + public-guard exemption)
+    # must exist in the tree or the recorded patch (fresh clones).
     game = load_toml("game.toml")
     android = load_toml("android/game_android.toml")
-    need(android["bios"]["sha1"] == game["bios"]["sha1"],
-         "BIOS sha1 mismatch: game.toml %s != game_android.toml %s"
-         % (game["bios"]["sha1"], android["bios"]["sha1"]))
+    for name, toml in (("game.toml", game), ("android/game_android.toml", android)):
+        need(toml["bios"]["sha1"] == EMIBIOS_SHA1,
+             "%s [bios].sha1 %s != the committed emibios pin %s"
+             % (name, toml["bios"]["sha1"], EMIBIOS_SHA1))
+    need(game["bios"]["path"] == "bios/emibios_gba_bios.bin",
+         "game.toml [bios].path %r must point at the committed bin"
+         % game["bios"]["path"])
+    need(android["bios"]["path"] == "../../bios/emibios_gba_bios.bin",
+         "game_android.toml [bios].path %r must resolve to the staged "
+         "payload bin (payload/bios/emibios_gba_bios.bin)"
+         % android["bios"]["path"])
     need(game["bios"]["hle"] is True,
          "game.toml must keep [bios].hle = true (HLE)")
     need(android["bios"]["hle"] is True,
@@ -218,9 +239,23 @@ def check_bios_pins():
     need(android["bios"]["hle"] == game["bios"]["hle"],
          "BIOS HLE mismatch: game.toml hle=%r != game_android.toml hle=%r"
          % (game["bios"]["hle"], android["bios"]["hle"]))
-    need(Path(android["bios"]["path"]).name == Path(game["bios"]["path"]).name,
-         "BIOS filename mismatch: %r vs %r"
-         % (android["bios"]["path"], game["bios"]["path"]))
+    gradle = (REPO / "android/app/build.gradle").read_text(encoding="utf-8")
+    pin = one(r'biosSha1\s*:\s*"([0-9a-f]{40})"', gradle, "build.gradle biosSha1")
+    need(pin == EMIBIOS_SHA1,
+         "android/app/build.gradle biosSha1 %s != the committed emibios "
+         "pin %s (the manifest verify pin must match the payload BIOS)"
+         % (pin, EMIBIOS_SHA1))
+    need(re.search(r"biosRequired\s*:\s*false", gradle) is not None,
+         "android/app/build.gradle must set biosRequired: false — the "
+         "clean-room BIOS is bundled, so the SAF setup must not prompt "
+         "for a BIOS dump (which the emibios pin would reject)")
+    need("bios/emibios_gba_bios.bin\"), into: \"bios\"" in gradle,
+         "android/app/build.gradle payloadDirs must stage "
+         "bios/emibios_gba_bios.bin into the payload bios/ dir")
+    # Upstream's engine template keeps the retail default as the fallback
+    # for games that do not declare their own BIOS; our build.gradle
+    # override is the pin that reaches the manifest. A change here means
+    # upstream moved the default and the exemption review needs a re-look.
     template = REPO / "gbarecomp/platform/android/gbarecomp-app.gradle"
     need(template.is_file(),
          "%s missing — initialize the gbarecomp submodule"
@@ -228,8 +263,41 @@ def check_bios_pins():
     default = one(r'gbaBiosSha1:\s*g\.biosSha1\s*\?:\s*"([0-9a-f]{40})"',
                   template.read_text(encoding="utf-8"),
                   "engine biosSha1 default")
-    need(default == android["bios"]["sha1"], "engine template default %s != "
-         "game_android.toml [bios].sha1 %s" % (default, android["bios"]["sha1"]))
+    need(default == RETAIL_BIOS_SHA1,
+         "engine template biosSha1 default changed from the retail "
+         "fallback %s to %s — deliberate? Re-review the public-guard "
+         "exemption (emibios-public-guard-bundled.patch)" % (RETAIL_BIOS_SHA1, default))
+
+
+def check_emibios_engine_acceptance():
+    # The engine must actually accept the clean-room BIOS on both surfaces:
+    # the launcher's bios_verify (pin set {retail, emibios}) and the Android
+    # public-artifact guard (declared-bundled-BIOS exemption). On a fresh
+    # clone (pristine submodule) the acceptance lives in the recorded
+    # patches, so accept either form (the `patches` suite pins fidelity).
+    sources = ""
+    for rel in ("gbarecomp/src/gba/gba_bios.h",
+                "gbarecomp/src/runtime/launcher_seam.h",
+                "gbarecomp/platform/android/gbarecomp-app.gradle"):
+        path = REPO / rel
+        if path.is_file():
+            sources += path.read_text(encoding="utf-8")
+    recorded = ""
+    for rel in ("tools/patches/gbarecomp-local.patch",
+                "tools/patches/emibios-launcher-pin-set.patch",
+                "tools/patches/emibios-public-guard-bundled.patch"):
+        path = REPO / rel
+        if path.is_file():
+            recorded += path.read_text(encoding="utf-8") + "\n"
+    def present(token, what):
+        need(token in sources or token in recorded,
+             "%s missing from both the gbarecomp tree and the recorded "
+             "patches" % what)
+    present("kEmibiosSha1", "the emibios pin constant (gba_bios.h)")
+    present("GbaBios::kEmibiosSha1",
+            "the launcher pin-set verify (launcher_seam.h)")
+    present("exemptBundledBios",
+            "the public-guard bundled-BIOS exemption (gbarecomp-app.gradle)")
 
 
 def check_payload_version():
@@ -241,6 +309,34 @@ def check_payload_version():
          "payloadVersion %r is stale: bump it whenever staged payload "
          "content changes (game_android.toml or anything under payload/), "
          "or reinstalls keep running the old payload" % ver)
+
+
+def check_emibios_integrity():
+    # The committed clean-room BIOS (LGPL-3.0-or-later, freely
+    # redistributable — NOT private material; see bios/emibios_gba_bios.toml
+    # header) is the launch-pinned [bios] target after the E2 swap. Guard it
+    # like any pinned fixture: exact size + SHA-1 against the TOML identity,
+    # so corruption or an accidental replacement fails tier-1 loudly instead
+    # of producing a subtly wrong BIOS corpus at build time.
+    bin_path = REPO / "bios/emibios_gba_bios.bin"
+    toml_path = REPO / "bios/emibios_gba_bios.toml"
+    need(bin_path.is_file(),
+         "bios/emibios_gba_bios.bin missing — the committed clean-room BIOS "
+         "is repo material (LGPL), not a dump; restore it from the branch")
+    need(toml_path.is_file(),
+         "bios/emibios_gba_bios.toml missing (the recompile config)")
+    data = bin_path.read_bytes()
+    need(len(data) == 16384,
+         "emibios bin is %d bytes, expected 16384 (16 KiB BIOS image)"
+         % len(data))
+    need(sha1_bytes(data) == EMIBIOS_SHA1,
+         "emibios bin sha1 %r != pin %r — corrupted or replaced?"
+         % (sha1_bytes(data), EMIBIOS_SHA1))
+    text = toml_path.read_text(encoding="utf-8")
+    m = re.search(r'sha1\s*=\s*"([0-9a-f]{40})"', text)
+    need(m and m.group(1) == EMIBIOS_SHA1,
+         "bios/emibios_gba_bios.toml [identity].sha1 does not match the "
+         "committed bin pin %s" % EMIBIOS_SHA1)
 
 
 def check_save_config():
@@ -639,8 +735,12 @@ CHECKS = [
     ("identity: variant matches [game] short_name (3 files)", check_variant),
     ("identity: ROM sha1/size/file consistent (build.gradle, game.toml, "
      "game_android.toml)", check_rom_pins),
-    ("identity: BIOS sha1 consistent (game.toml, game_android.toml, engine "
-     "default)", check_bios_pins),
+    ("identity: BIOS pins all-emibios (game TOMLs, manifest pin, payload "
+     "staging)", check_bios_pins),
+    ("identity: committed emibios bin matches its TOML pin (16 KiB)",
+     check_emibios_integrity),
+    ("identity: engine accepts the clean-room BIOS (launcher pin-set + "
+     "public-guard exemption)", check_emibios_engine_acceptance),
     ("identity: save type/size mirror the desktop config", check_save_config),
     ("identity: saves/states land in the user-visible app dir (issue #6)",
      check_save_external_wiring),

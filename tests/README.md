@@ -39,9 +39,26 @@ the repo-local `.venv/`.
     `*.patch` files.
   - **`gba_bios.bin` byte-pin** — sha1 + the exact words at every contract
     point the engine cites (vectors, IRQ wrapper epilogue, SWI dispatcher
-    service-switch + epilogue). **Local-only:** the dump is BIOS-derived and
-    never in git (`gbarecomp/.gitignore bios/*.bin`); the test skips on any
-    checkout without it (CI included).
+    service-switch + epilogue). **Local-only:** the retail dump is
+    BIOS-derived and never in git (`gbarecomp/.gitignore bios/*.bin`);
+    the test skips on any checkout without it (CI included). Since the
+    issue #17 swap this is REFERENCE material (the launcher-accepted
+    alternative + the oracle's default), not the launch BIOS.
+  - **`emibios_gba_bios.bin` byte-pin** (`EmibiosBytePinTests`) — the
+    same contract-point discipline for the COMMITTED launch BIOS
+    (clean-room emibios, `bios/`, LGPL): sha1/size, exception vectors,
+    the IRQ trampoline + its `0x138` epilogue, the SWI dispatcher + its
+    `0x194` halfword table (blob-hashed), the `.vc_irqh` handler body —
+    plus the recompile TOML's essential seed inventory (accidental
+    deletion fails with the name attached). **Runs EVERYWHERE** — repo
+    material, no skip: the unlocked path of committing the BIOS. A
+    missing bin is a broken checkout and fails loudly.
+  - **`.regen_stamp` contract** (`RegenStampContractTests`) — the
+    regen-date token must agree across `build.py` / `tools/cycle.py`
+    (writers) and `build_apk.py` (the freshness gate reader), and the
+    gate must never regress to comparing emitted corpus mtimes (the
+    recompiler preserves them for byte-identical output — the
+    2026-10-11 "corpus is stale forever" lesson).
 - `tools/check.py` runs both, plus the patches check (every per-feature
   patch must also **forward-apply on the pristine pin** — the CI condition;
   dev-based exports go INVALID there), the attract gate,
@@ -245,7 +262,24 @@ instruments everything:
 **3 — Merge reviewed seeds** into `game.toml` (`[[extra_func]]` /
 `[[jump_table]]` / `[[code_copy]]`, each with a disassembly-evidence `note`;
 `tools/misspack.py <frag>` builds the evidence pack). Never auto-write
-`game.toml`; proposals are reviewed.
+`game.toml`; proposals are reviewed. **Same-session symbols check** (the
+step that keeps getting missed): every newly-identified function gets a
+naming-only entry in `symbols/ffta_symbols.tsv`, and every newly-identified
+dispatch/pointer table gets a data-symbol entry in
+`symbols/ffta_data_symbols.tsv` with its measured size (walk to the
+terminator — replace the `0x0` size-unknown placeholder). Coverage comes
+from the `game.toml` seeds; the symbol tables are how the *next* session
+recognizes what this one found — skipping them is how a whole subsystem
+gets re-discovered from scratch (the 2026-10-11 gAbilityAnimationTable
+lesson).
+
+**Device playtests journal too** (report-only bridges): the runtime
+writes `recomp_master_misses_AFXE.toml.frag` to the external app dir
+(`/sdcard/Android/data/<pkg>/files/logs/`, issue #6 logging) — pull and
+review it in the same session, exactly like a desktop frag. An unharvested
+device journal is silent coverage debt (the 2026-10-11
+gAbilityAnimationTable batch: 218 records sat invisible until a gate run
+resumed that session's suspend state — BRINGUP same date).
 
 **4 — Resolve to static.** `.venv/bin/python tools/resolve.py --trace
 logs/playthrough.csv [--load-state saves/<state>] [--frames N]` — it
@@ -416,11 +450,14 @@ Two tiers, split by what may leave your machine:
   forward-validated against the **pristine pin**, so it works on a fresh
   clone), and the device-free Android checks (identity pins, payload
   contract, tracked-file hygiene, a fake-`adb` self-test of the device gate
-  script; no SDK needed). It needs no ROM, BIOS, or savestates, and
-  therefore cannot run the game itself (the BIOS byte-pin and stack-guard
-  tests skip there).
+  script; no SDK needed). It needs no ROM or savestates, and therefore
+  cannot run the game itself (the ROM byte-pin and stack-guard tests skip
+  there). The launch BIOS **is** repo material since the emibios swap
+  (`bios/`, LGPL — issue #17), so tier 1 verifies the BIOS pin end-to-end
+  (committed bin == TOML == manifest pin; the retail-dump byte-pin test
+  stays local-only and skips).
 - **Tier 2 — the full gate (`attract`, `ws_smoke`, route replays).** Needs
-  `game.gba` + BIOS + the sha-pinned local fixtures (`saves/ws_fixtures/`,
+  `game.gba` + the sha-pinned local fixtures (`saves/ws_fixtures/`,
   `saves/regress/`), which are game-derived and never committed. Run it on
   a **self-hosted runner with the material pre-placed**, or a job that
   fetches a private fixture bundle under a token — gated to

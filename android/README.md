@@ -67,10 +67,27 @@ runtime args can only arrive via an app-private `debug-args.txt` (adb
 - **Mods** runtime is built in (the widescreen feature installs through the
   trusted-plugin lifecycle); the catalog and a default `state.toml` are staged
   into the payload.
-- **Testing** via private ROM-embedded APKs (`-PprivateRom/-PprivateBios`):
-  debug-signed, auto-named `…-PRIVATE-rom-included.apk`, never committed or
-  distributed (`.gitignore` covers `*.apk`). Public builds import ROM/BIOS
-  through the phone UI with SHA-1 pins.
+- **Testing** via private ROM-embedded APKs (`-PprivateRom`): debug-signed,
+  auto-named `…-PRIVATE-rom-included.apk`, never committed or distributed
+  (`.gitignore` covers `*.apk`). Public builds import the ROM through the
+  phone UI with a SHA-1 pin; the launch BIOS is the bundled clean-room
+  emibios staged into every payload (`bios/emibios_gba_bios.bin`,
+  `biosRequired=false` — issue #17), so no BIOS is ever picked.
+- **After EVERY device playtest, harvest the miss journal** (same rule as
+  desktop `play.sh` sessions): the runtime writes
+  `logs/recomp_master_misses_AFXE.toml.frag` + `recomp_coverage_AFXE.json`
+  to the user-visible external dir
+  (`/sdcard/Android/data/org.gbarecomp.fftarecomp/files/logs/`) in
+  report-only mode — bridges are loud but tolerated. Pull it (`adb shell
+  cat …` or the gate's evidence dir), review, and merge genuine seeds
+  into `game.toml` **plus the same-session symbols check**
+  (`symbols/ffta_symbols.tsv` naming-only entries for new functions,
+  `symbols/ffta_data_symbols.tsv` entries with measured sizes for new
+  tables — see tests/README.md § the healing loop) — never auto-merged.
+  An unharvested device journal is silent coverage debt: the 2026-10-11
+  gAbilityAnimationTable batch (218 records, 137 handlers) sat invisible
+  in the app's log dir until a gate run happened to resume that
+  session's suspend state.
 - **Pad idle auto-hide**: the touch pad hides after 15 s of screen-wide
   touch inactivity (`touch_pad_idle_hide_seconds = 15` in `src/main.cpp`);
   any touch reveals it and then acts normally — a tap after the quiet
@@ -110,11 +127,12 @@ default JDK 27 is too new for Gradle 8.11.1), Android SDK at
 ```sh
 cd android
 export JAVA_HOME=/usr/lib/jvm/java-21-openjdk ANDROID_HOME=/opt/android-sdk
-# Private test build (ROM+BIOS embedded; arm64 only for speed; the
-# -Pprivate* paths resolve relative to android/app, hence ../../):
+# Private test build (ROM embedded; arm64 only for speed; the -PprivateRom
+# path resolves relative to android/app, hence ../../; the BIOS is staged
+# from the committed bios/ dir by payloadDirs, not a private flag):
 ./gradlew :app:assembleDebug -PgbaAbis=arm64-v8a -PgbaNativeJobs=12 \
-  -PprivateRom=../../game.gba -PprivateBios=../../gbarecomp/bios/gba_bios.bin
-# Distributable build (no ROM/BIOS; import via the phone UI):
+  -PprivateRom=../../game.gba
+# Distributable build (no ROM; import via the phone UI):
 ./gradlew :app:assembleDebug -PgbaAbis=arm64-v8a -PgbaNativeJobs=12
 ```
 
@@ -244,8 +262,10 @@ real phone stays the authority for runtime behavior.
 After a Gradle build, `tools/android_apk_check.py` (`--only android-apk` in
 `tools/check.py`; outside the default run — a desktop worktree has no APK)
 guards the artifact itself: the packaged payload must byte-match the staging
-sources, a private build's embedded ROM/BIOS must match the pins
-(hash-verified), a public build must embed neither, `libmain.so` must exist
+sources, a private build's embedded ROM must match the pin
+(hash-verified), a public build must embed **no ROM** — the bundled
+clean-room BIOS (emibios, hash-verified against the config pin) is
+expected in **every** build — `libmain.so` must exist
 exactly once per ABI, both activities must stay `sensorLandscape` with the
 build type's debuggable flag, and the zip must be free of duplicate / stray /
 oversized entries (the junk-blob class below). `--apk PATH` selects a

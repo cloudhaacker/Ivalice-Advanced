@@ -1,4 +1,5 @@
-# CI tier 1 — fork-safe, no private material (no ROM/BIOS/savestates).
+# CI tier 1 — fork-safe, no private material (no ROM/savestates; the launch
+# BIOS is committed clean-room repo material — bios/, issue #17).
 # Runs the host unit tests (C++/Python), patch integrity, and the
 # device-free Android checks on a fresh checkout. The full gate (attract,
 # widescreen smoke, route replays) needs game.gba + BIOS + the local

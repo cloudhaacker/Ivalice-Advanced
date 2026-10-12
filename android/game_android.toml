@@ -13,10 +13,13 @@ short_name = "final_fantasy_tactics_advance"
 default_region = "USA"
 
 [bios]
-path = "../../bios/gba_bios.bin"
-sha1 = "300c20df6731a33952ded8c436f7f186d25d3492"
-# HLE: same story as game.toml [bios] — zero-fallback census routes all
-# HLE-taken; LLE linked for fallback + IRQ dispatch; dump still required.
+path = "../../bios/emibios_gba_bios.bin"
+sha1 = "0c0d404d16c6b55b3071aba714f82077da132f14"
+# Clean-room emibios (LGPL-3.0-or-later) staged into the payload at
+# bios/emibios_gba_bios.bin (build.gradle payloadDirs; issue #17) —
+# bundled with the APK, no user-supplied BIOS dump. Same HLE story as
+# game.toml [bios]: zero-fallback census routes all HLE-taken; LLE linked
+# for fallback + IRQ dispatch.
 hle = true
 
 [rom]

@@ -2,9 +2,11 @@
 """build_apk.py — Android bootstrap: from a working checkout to a device-ready APK.
 
 Mirrors build.py's step pattern for the Android target. The public app shell
-imports the ROM/BIOS through the phone's SAF picker at first run; until that
-UI exists in this game's shell, the practical path is the **private test
-build** (ROM+BIOS embedded, debug-signed), which this script drives:
+imports the ROM through the phone's SAF picker at first run; the launch BIOS
+is the bundled clean-room emibios (LGPL; committed at bios/ and staged into
+the payload — issue #17), so no BIOS is ever picked or embedded. The
+practical path is the **private test build** (ROM embedded, debug-signed),
+which this script drives:
 
   1. preflight     JDK 21 on PATH or JAVA_HOME (Gradle 8.11.1 rejects 27),
                    ANDROID SDK platform+build-tools+NDK, engine SDL submodule
@@ -12,10 +14,11 @@ build** (ROM+BIOS embedded, debug-signed), which this script drives:
                    corpus present and fresh (regenerate with build.py /
                    tools/cycle.py on desktop — an Android build cannot)
   2. gradle        ./gradlew :app:assembleDebug -PgbaAbis=<abi>
-                   -PprivateRom/-PprivateBios (paths relative to android/)
+                   -PprivateRom (path relative to android/; the BIOS arrives
+                   via the payload staging, not a private flag)
   3. content guard tools/android_apk_check.py --expect private
-                   (payload matches staging, embedded ROM/BIOS hash-verified
-                   against the pins, packaging sanity)
+                   (payload matches staging, embedded ROM hash-verified
+                   against the pin, packaging sanity)
   4. install+gate  optional (default on with a device attached): adb install
                    and the boot-health gate tools/validate_android.sh
 
@@ -26,7 +29,8 @@ Flags: --abi <abi> (default arm64-v8a), --jobs N (native compile parallelism),
 
 The private APK is debug-signed and named *-PRIVATE-rom-included.apk —
 never commit or distribute it (.gitignore covers *.apk). Public builds
-(drop the -Pprivate* flags) embed nothing; ROM/BIOS arrive via the phone UI.
+(drop the -PprivateRom flag) embed nothing user-supplied; the ROM arrives
+via the phone UI.
 """
 import argparse
 import hashlib
@@ -42,8 +46,8 @@ REPO = Path(__file__).resolve().parent
 ANDROID = REPO / "android"
 ROM = REPO / "game.gba"
 ROM_SHA1 = "4ac05441f4de70a4ec3dd932116346c61b8783d9"
-BIOS = REPO / "gbarecomp/bios/gba_bios.bin"
-BIOS_SHA1 = "300c20df6731a33952ded8c436f7f186d25d3492"
+BIOS = REPO / "bios/emibios_gba_bios.bin"
+BIOS_SHA1 = "0c0d404d16c6b55b3071aba714f82077da132f14"
 ROM_SIZE = 16777216
 BIOS_SIZE = 16384
 GRADLE_MIN_JDK = (21, 21)  # Gradle 8.11.1: JDK 21 works; JDK 27 is too new
@@ -55,7 +59,6 @@ PRIVATE_MARKER = "-PRIVATE-rom-included.apk"
 # (Payload-vs-staging drift is additionally caught by the content guard, which
 # byte-compares the packaged payload against these sources.)
 FRESHNESS_INPUTS = (
-    REPO / "generated/dispatch_table.cpp",
     REPO / "game.toml",
     REPO / "src/main.cpp",
     REPO / "CMakeLists.txt",
@@ -185,13 +188,16 @@ def step_preflight():
                 hint="git -C gbarecomp submodule update --init "
                      "platform/android/third_party/SDL")
     details.append("SDL submodule ok")
-    # dumps (re-checked by Gradle too, but fail early and clear)
-    for path, want, label in ((ROM, ROM_SHA1, "ROM"),
-                               (BIOS, BIOS_SHA1, "BIOS")):
+    # dumps (re-checked by Gradle too, but fail early and clear): the ROM is
+    # the user-supplied dump embedded by the private build; the BIOS is the
+    # committed clean-room emibios staged into the payload (issue #17).
+    for path, want, label, size in ((ROM, ROM_SHA1, "ROM", ROM_SIZE),
+                                     (BIOS, BIOS_SHA1, "BIOS", BIOS_SIZE)):
         if not path.exists():
             die(f"{label} missing: {path}", hint="run build.py first "
-                "(README § Setup) — the private build embeds these dumps")
-        if path.stat().st_size != (ROM_SIZE if label == "ROM" else BIOS_SIZE):
+                "(README § Setup) — the private build embeds the ROM; the "
+                "BIOS is committed repo material")
+        if path.stat().st_size != size:
             die(f"{label} has the wrong size: {path}")
         if sha1_file(path) != want:
             die(f"{label} SHA-1 mismatch: {path}")
@@ -203,10 +209,20 @@ def step_preflight():
         die("no generated/ corpus", hint="run build.py (or tools/cycle.py) "
             "on desktop first — an Android build consumes it, cannot "
             "produce it")
-    if generated.stat().st_mtime < (REPO / "game.toml").stat().st_mtime:
-        die("generated/ corpus is stale", hint="re-run build.py "
-            "(game.toml is newer than generated/)")
-    details.append("corpus present")
+    # Freshness gate: the recompiler preserves mtimes for byte-identical
+    # output, so the emitted files cannot date a regen — build.py /
+    # cycle.py stamp it (generated/.regen_stamp). No stamp = never regen'd
+    # here; a stamp older than any build input = stale corpus.
+    stamp = generated.parent / ".regen_stamp"
+    if not stamp.exists():
+        die("generated/ corpus has no regen stamp", hint="re-run build.py "
+            "(or tools/cycle.py) on desktop — an Android build consumes "
+            "the corpus, cannot produce it)")
+    for source in FRESHNESS_INPUTS:
+        if source.stat().st_mtime > stamp.stat().st_mtime:
+            die("generated/ corpus is stale", hint="re-run build.py "
+                "(%s is newer than the last regen)" % source.name)
+    details.append("corpus present + fresh (regen stamp)")
     return ", ".join(details)
 
 
@@ -216,7 +232,7 @@ def step_gradle(abi, jobs):
     gradle = ANDROID / "gradlew"
     cmd = [gradle, ":app:assembleDebug",
            f"-PgbaAbis={abi}", f"-PgbaNativeJobs={jobs}",
-           f"-PprivateRom={ROM}", f"-PprivateBios={BIOS}"]
+           f"-PprivateRom={ROM}"]
     r = run(cmd, cwd=ANDROID, capture=False)
     if r.returncode != 0:
         die("gradle assembleDebug failed (see output above)",
@@ -305,7 +321,8 @@ def main():
     a = ap.parse_args()
 
     print(f"build_apk.py — {REPO}")
-    print("private test build: ROM+BIOS embedded, debug-signed. Never "
+    print("private test build: ROM embedded (BIOS is the bundled clean-room "
+          "emibios), debug-signed. Never "
           "commit or distribute the *-PRIVATE-rom-included.apk.\n")
     t0 = time.time()
     # The plan runs sequentially; later steps receive the previous step's

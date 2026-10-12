@@ -66,7 +66,7 @@ def main() -> int:
     ap.add_argument("--repin", action="store_true",
                     help="adopt the current run's frame hash as the new pin")
     ap.add_argument("--exe", default=str(REPO / "build/FFTARecomp"))
-    ap.add_argument("--bios", default=str(REPO / "gbarecomp/bios/gba_bios.bin"))
+    ap.add_argument("--bios", default=str(REPO / "bios/emibios_gba_bios.bin"))
     ap.add_argument("--rom", default=str(REPO / "game.gba"))
     args = ap.parse_args()
     frames = args.frames if args.frames is not None else EXPECTED_FRAMES

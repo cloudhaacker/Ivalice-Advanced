@@ -4679,3 +4679,237 @@ today; the log-clear fixes that class.
 **Still pending:** scanline/DMA HLE track (PRs #29/#31 — pin move +
 revalidation). The HLE flip is proven on desktop routes; the device
 boot path is converged (11 seeds, user playtest clean).
+
+## 2026-10-11 (issue #17) — E2b/c: the emibios swap — linked, seeded, 15/15 green, golden unchanged
+
+**Action.** Swapped the launch BIOS from the retail Nintendo dump to the
+committed clean-room emibios (milestone 1 `735084e` committed the bin +
+TOML; this milestone linked and pinned it everywhere):
+
+- `game.toml` / `android/game_android.toml` `[bios]` →
+  `bios/emibios_gba_bios.bin`, sha1 `0c0d404d…` (emibios `main @c4d5d71`).
+- `build.py`: `step_bios` recompiles emibios from the committed material
+  (836→837 units after seeds); `step_dumps` no longer asks for a user BIOS
+  (ROM is the only user-supplied dump); `step_smoke` repointed. All 21
+  harness tools' `--bios` paths repointed (`check`, `attract_check`,
+  `hle_audit`, `ws_check`, `hangrepro`, oracle tools, …) — `framediff`
+  now hands emibios to the oracle too, so both sides run the same BIOS.
+- Engine (recorded in `tools/patches/`, replay-verified):
+  `emibios-launcher-pin-set.patch` (`GbaBios::kEmibiosSha1` + the
+  launcher `bios_verify` accepts {retail, emibios}; the config
+  `[bios].sha1` pin stays the runtime gate),
+  `emibios-public-guard-bundled.patch` (Android public-artifact guard
+  exempts a 16 KiB `.bin` whose SHA-1 equals the game-declared non-retail
+  `biosSha1` pin), `emibios-bios-dispatch-table.patch` (data-only: the
+  regeneration overwrites the upstream-provenance retail table — its
+  `.gitignore` documents exactly this workflow).
+- Android: `biosSha1` manifest pin override, `biosRequired=false`,
+  payloadDirs stages the bin at `payload/bios/`, `payloadVersion` 3→4;
+  `build_apk.py` drops `-PprivateBios` (the BIOS arrives via payload
+  staging; private builds still embed only the ROM).
+- Checks: `check_bios_pins` now pins all-emibios (both TOMLs == manifest
+  pin == committed bin; upstream template default must stay the retail
+  fallback), new `check_emibios_engine_acceptance` (tree or recorded
+  patch), `check_emibios_integrity` from milestone 1. 22 checks green,
+  red-verified on TOML-pin corruption.
+
+**Two strict-miss seeds, both statically undiscoverable, evidence in the
+TOML notes.** The first LLE run of the emibios corpus missed at
+`pc=0x3E74` (frame ~264–276 = the final-burn/handoff window):
+
+- `0x3E74` `.vc_irqh` — emibios's own interim VBlank IRQ handler,
+  installed into `[0x03007FFC]` at runtime by `boot_final_burn` (0x3DBC),
+  reachable only via the `0x128` trampoline's `ldr pc,[r0,#-4]` (a runtime
+  pointer, same class as a game handler). Confirmed by ELF local labels +
+  non-strict bridge (1 distinct PC, 7 insns) + empty ring reg-scan for
+  0x3E74 (no register ever held it — no static reference exists).
+- `0x138` `after_interrupt` — the IRQ trampoline epilogue; unreferenced
+  statically (the `0x130 add lr,pc,#0` installs it as the runtime return
+  target). Retail's `gbarecomp/bios/gba_bios.toml` seeds the identical
+  fragment at the identical address — same class, same fix.
+
+The SWI halfword table at `0x194` (dispatch `0x144 ldrb ip,[lr,#-2]` /
+`0x148 add fp,pc,ip,lsl#1` / `0x14c ldrh ip,[fp,#0x44]` — emibios reads
+the number from bits 23..16, the commercial `swi #(n<<16)` encoding FFTA
+uses) needed NO new seeds: every 0x00–0x2A target already had a same-mode
+dispatch row. Apparent gaps beyond 0x2A were past-table garbage (the
+table is documented 0x00–0x2A), not real targets.
+
+**Result.** Full gate 15/15 PASS with the emibios corpus linked: all
+strict routes (user_load, B, G, K) FULLY_STATIC with zero misses;
+`patches` replay byte-matches (431-file tree, 15 patch files); **the
+attract golden sha256 `1EF4C118…` is UNCHANGED and the hle_audit routeB
+frame pin `43D5B3B6…` survived** — emibios hands off on the same VBlank
+phase, and everything downstream is pure game code, so a full BIOS swap
+renders bit-identically at both pinned frames. No repin needed; the
+unchanged hashes are the phase-equivalence evidence.
+
+**Conclusion.** The binary no longer contains translated Nintendo BIOS
+code and users supply only the ROM. The retail dump's remaining role is
+the launcher's accepted alternative (pin-set patch) and the local-only
+`BiosBytePinTests` (retail-contract documentation). Still open for E3+:
+device gate + APK guard rework (public builds must CONTAIN emibios, forbid
+ROM/retail), LGPL compliance (LICENSES/, attribution row), and the upstream
+proposal (launcher pin-set + public-guard exemption — the config-driven
+shape preferred over the hardcoded constant).
+
+## 2026-10-11 (issue #17) — E3/E4: device-verified, APK guard reworked, LGPL done
+
+**Action.** Closed the emibios milestone on device and in packaging:
+
+- **APK content guard reworked** (`tools/android_apk_check.py`): the
+  bundled clean-room BIOS is *staged material, byte-verified in every
+  build* — public included; ROMs are the only private assets left.
+  Red-verified against the pre-swap stale APK (failed: missing
+  `emibios_gba_bios.bin` + retail `gba_bios.bin` flagged as extra — a
+  retail dump is no longer acceptable payload material). Green 8/8 on
+  both the new private build and the new public build.
+- **Engine public-guard exemption live**: the public `assembleDebug`
+  (no `-PprivateRom`) ran `verifyNoPrivateAssets` with the emibios
+  staged in the payload — passed via the declared-pin exemption
+  (`emibios-public-guard-bundled.patch`); without it the build fails on
+  the 16 KiB `.bin`. The public APK is `app-debug.apk` (distributable
+  name), ROM-free, emibios hash-verified: the R3 "bring your own ROM"
+  artifact exists.
+- **LGPL compliance**: `LICENSES/LGPL-3.0-or-later.txt` (the FSF
+  combined LGPL-3.0 + GPL-3.0 text emibios ships; verbatim copying of a
+  license document is permitted by its own terms — same class as the
+  GFDL exception), a `THIRD_PARTY_ATTRIBUTION.md` § "Bundled clean-room
+  BIOS" row (unmodified upstream binary, source link, rebuild path), and
+  `bios/README.md` (what it is, the pins, the rebuild recipe).
+- **Device validation** (30c1f958): private build gate GATE PASSED
+  (4/4 build_apk steps; reworked guard green). Then a **fully wiped
+  install** (uninstall → gate): GATE PASSED 5/5, fresh boot log 17 lines,
+  **zero bridges, no frag written**, `cpu_backend=static-recompiled` —
+  payloadVersion-4 re-extract, emibios load under the TOML pin (the
+  runtime hard-fails on sha mismatch, so a green boot is the pin proof;
+  the mobile banner carries no bios_loaded line), HLE boot skip, no SAF
+  prompts of any kind (`biosRequired=false` + embedded ROM).
+- **Harness fix found during this**: the recompiler preserves mtimes for
+  byte-identical output, so corpus-file mtimes cannot date a regen —
+  build_apk.py's freshness gate and build.py's up-to-date check both
+  misfired ("corpus is stale" forever after a content-neutral game.toml
+  touch). Fix: `generated/.regen_stamp` (gitignored), written by
+  build.py step_regen and cycle.py; the freshness gates compare inputs
+  against the stamp.
+- **Docs**: tier-1/tier-2 wording (BIOS is repo material now; CI tier 1
+  verifies the pin; tier 2 needs no BIOS), README/AGENTS/manual-build
+  run commands repointed, CI header comment, .gitignore comment.
+
+**Discovered (not emibios, follow-up):** resuming the pre-swap
+mid-play suspend state (frame 45171) surfaced **4 game-corpus gaps** —
+`0x080EDC08`, `0x080EDC7E`, `0x080F543C` (×216 — hot bridged loop),
+`0x080F54B6`, all Thumb, no dispatch rows on desktop either. These are
+playtest-reachable game paths no strict route covers — classic
+healing-loop debt, orthogonal to the BIOS swap (same corpus before and
+after; the fresh-boot gate writes no frag). Next healing session should
+harvest + triage them.
+
+**Conclusion.** Issue #17's swap is device-verified on both boot paths,
+packaging-verified on both build modes, and legally documented. The
+emibios work is complete; what remains under issue #3 is the release
+pipeline (make_release.py, tag-triggered CI, first tagged release) plus
+the 4-miss healing session above.
+
+## 2026-10-11 (late) — healing loop: gAbilityAnimationTable batch (+6,954 units)
+
+**Source.** The E3/E4 device gate run — the first to auto-resume a
+mid-battle suspend state (frame 45171) from the ~12-min unharvested phone
+playtest. Bridge evidence (4 PCs): 0x080F543C x216 (hot per-frame
+animation-command loop), 0x080EDC08 x1, interiors 0x080F54B6 x1 /
+0x080EDC7E x1, plus 0x08133618 x1 (bridge-log only — NOT in the session
+frag; journal gap noted).
+
+**Root cause — why a "well-trodden" subsystem was uncovered.** The
+ability-animation command interpreter dispatches handlers via
+`bl 0x08142250 -> bx r3` (register-dispatch, disarm-verified) with the
+handler pointer read from gAbilityAnimationTable @0x083947D8 — 218
+`{u32 thumb ptr, u32 packed params}` records, 137 distinct handlers,
+region 0x080E4000..0x080F7xxx. Register-indirect + table-fed = invisible
+to the static walker; nothing short of executing an animation command
+covers its handler. Every battle touches this system — but each ability
+animation script uses only a few of the 218 command words, so coverage
+grows per-command-executed, not per-system. The frozen routes + desktop
+playtests had exercised ~28; the phone playtest (never harvested) hit
+more; the rest belong to abilities nobody had played. Not emibios: game
+ROM code, corpus byte-identical across the BIOS swap.
+
+**Seeds** (game.toml § device-resume batch): one [[jump_table]] over the
+whole registry (stride 8, count 218, format abs32, **entries_mode=auto**
+— the raw interworking pointers carry the thumb bit; a "thumb" mode
+leaves bit0 unmasked and dispatch-sanity fails on 5350 odd rows, caught
+and fixed same day), plus [[resume_range]] over the two observed
+handlers' extents (entry..exclusive end, covering whole switches not
+just hits), plus one [[extra_func]] for 0x08133618 (event-callback leaf,
+bl 0x08131DD4/0x080CDEC8, disarm-verified).
+
+**Validation.** cycle PASS: regen 57299→**63134 units** (+6,954 — the
+registry handlers pulled their whole call trees), dispatch sanity OK,
+build OK, **attract golden unchanged** (1EF4C118...). Coverage lenses:
+walker 97.8%→**98.7%**; pool proxy 99.3%→**94.8%** — honest reading: the
+pool denominator grew (speculative literal harvest now maps 3,485 more
+units), so the drop is a *map of the next frontier* (more dispatch
+families behind other tables in the same region), not a regression;
+executed-path lens stays 100% FULLY_STATIC, which is the acceptance
+that matters.
+
+**Process fixes (the "keeps getting missed" lessons, same date).**
+(1) Symbol-table step added to every healing-loop doc — playbook
+SKILL.md merge step, AGENTS.md workflow B step 2, tests/README.md § the
+healing loop, android/README.md § device playtests: naming-only
+ffta_symbols.tsv entries for new functions + measured-size
+ffta_data_symbols.tsv entries for new tables (replace the 0x0
+placeholder), in the same session as the seed merge. Applied now:
+Section 20 (3 functions), Section 18 data (gAbilityAnimationTable
+placeholder → measured 0x6D0 + the two sub-switch tables 0x20/0x28);
+TSV guards 27/27. (2) Device-playtest journals must be harvested in the
+same session (the unharvested phone journal was the silent debt that
+made this batch invisible until a gate resume).
+
+**Follow-up.** The pool-lens drop points at ~3,485 pointer-reachable
+units in the same handler region behind other tables — triage next
+session (misspack/oracle protocol, PRINCIPLES first). 0x08133618's
+journal gap (bridge-log line but no frag entry) noted for the
+selfheal-journal reviewer.
+
+## 2026-10-11 (late 2) — unlocked test paths: the committed BIOS is now CI-pinned
+
+**Prompt.** "We have BIOS in source control now — surely some test paths
+are unlocked?" Yes — and they had not been taken. The android-static suite
+had gained the integrity/acceptance/pin checks in the E2 milestones, but
+`tests/python/test_tools.py` still only had the LOCAL-ONLY
+`BiosBytePinTests` (skips on CI — the retail dump is gitignored). The
+emibios bin being committed repo material means its contract points can
+be byte-pinned in a test that runs EVERYWHERE.
+
+**Added** (both CI tier 1, red-verified each):
+
+- `EmibiosBytePinTests` (8 tests): sha1/size pins; exception vectors
+  (0x00→0x68, 0x08→0x140, 0x18→0x128 — mirroring retail — and 0x1C→0x1FC,
+  emibios's own reserved handler); the IRQ trampoline words incl. the
+  0x130 `add lr,pc,#0` (installs 0x138 as the runtime return target) and
+  0x134 `ldr pc,[r0,#-4]` ([0x03FFFFFC] mirror); the SWI dispatcher words
+  (0x140 push, 0x144 `ldrb ip,[lr,#-2]` — the `swi #(n<<16)` bits-23..16
+  read FFTA uses, 0x160 System-mode switch, 0x174/0x188 epilogue); the
+  0x194 halfword table as a 44-halfword blob hash (43 entries + the
+  boundary word — a size/extent change fails; bounds-check covers the 43
+  real entries, an off-by-one the red-run itself caught); the `.vc_irqh`
+  body at 0x3E74; and the TOML seed inventory (addr+name pairs — deletion
+  fails with the name attached). Missing bin = broken checkout: FAIL,
+  never skip.
+- `RegenStampContractTests` (2 tests): the `.regen_stamp` token agrees
+  across the three scripts (build.py + cycle.py writers, build_apk.py
+  reader), and `FRESHNESS_INPUTS` never regresses to emitted-corpus
+  mtimes (the 2026-10-11 mtime lesson).
+
+`BiosBytePinTests` docstring updated for its changed role: local-only
+RETAIL REFERENCE (the launcher-accepted alternative + the oracle's
+default), no longer the launch BIOS.
+
+**Explicit non-unlock:** a BIOS-corpus coverage test cannot run on CI —
+tier 1 checks out pristine submodules (patches validated, not applied)
+and does not build `gba_recompile`; the corpus files are gitignored. The
+TOML seed inventory + bin byte-pins ARE the CI-able form of corpus
+coverage.
+
+**Result.** unit-py 27→37 tests, fast gate 6/6, attract golden unchanged.

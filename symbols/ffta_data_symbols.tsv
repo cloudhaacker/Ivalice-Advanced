@@ -46,7 +46,7 @@
 0x080CE80C	rom	0x1	gGoldMultiplier
 0x0836DAA4	rom	0x4	gSoldierSpritePtr
 0x08390E44	rom	0x4	gActionTablePtr
-0x083947D8	rom	0x0	gAbilityAnimationTable
+0x083947D8	rom	0x6D0	gAbilityAnimationTable
 0x083A8444	rom	0x0	gEvasionFacingDivisors
 0x083A8448	rom	0x0	gEvasionFacingSubtracts
 0x08391BBC	rom	0x0	gTreasureHunt4
@@ -237,3 +237,11 @@
 0x0200F438	ewram	0x0	gCurrentCharPtr
 0x02002190	ewram	0x1	gStoryProgress
 0x03002818	iwram	0x0	gCurrentJobPtr
+# Section 18 (2026-10-11): ability-animation dispatch tables — sizes measured
+# by walking to each table's terminator (gAbilityAnimationTable: 218 x8
+# records, terminator 0x00000000 @0x08394EA8; the decomp import's size-unknown
+# placeholder replaced with 0x6D0). Sub-switch tables from the same-day
+# battle-miss batch (counts in game.toml jump_table entries; no terminator
+# convention — bounds from the 0x1A4 bounds-header read @0x0839A59C).
+0x0839A59C	rom	0x20	anim_effect_switch_0839A59C
+0x0839A8E8	rom	0x28	anim_effect_switch_0839A8E8

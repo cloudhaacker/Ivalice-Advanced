@@ -107,7 +107,7 @@ def delta(a: bytes, b: bytes) -> dict[int, tuple[int, int]]:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--rom", default=str(REPO / "game.gba"))
-    ap.add_argument("--bios", default=str(GBARECOMP / "bios" / "gba_bios.bin"))
+    ap.add_argument("--bios", default=str(REPO / "bios" / "emibios_gba_bios.bin"))
     ap.add_argument("--native-exe", default=str(REPO / "build" / "FFTARecomp"))
     ap.add_argument("--oracle", default=str(GBARECOMP / "build/oracle/gbarecomp_oracle"))
     ap.add_argument("--lo", type=int, default=4)

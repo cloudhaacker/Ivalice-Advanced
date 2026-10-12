@@ -7,7 +7,7 @@ is the last ~8.4 M instructions — size --frames so the event is in-window.
 
 Capture one (repo root):
   GBARECOMP_STRICT_STATIC=1 GBARECOMP_INSN_TRACE=1 GBARECOMP_FP_SAVE=/tmp/fp.bin \
-    ./build/FFTARecomp --bios gbarecomp/bios/gba_bios.bin --rom game.gba \
+    ./build/FFTARecomp --bios bios/emibios_gba_bios.bin --rom game.gba \
     --frames N --no-window
 
 Queries (filters combine with AND; output capped by --max):

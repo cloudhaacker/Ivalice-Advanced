@@ -132,7 +132,7 @@ def main() -> int:
     toml_text = GAME_TOML.read_text()
     rom = ROOT / (parse_toml_path(toml_text, "rom", "path") or "game.gba")
     bios = ROOT / (parse_toml_path(toml_text, "bios", "path")
-                   or "gbarecomp/bios/gba_bios.bin")
+                   or "bios/emibios_gba_bios.bin")
     for p, what in ((rom, "ROM"), (bios, "BIOS")):
         if not p.exists():
             print(f"error: {what} not found: {p}", file=sys.stderr)

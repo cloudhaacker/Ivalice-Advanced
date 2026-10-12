@@ -25,8 +25,9 @@ Usage:
   .venv/bin/python tools/check.py --jobs 1   # serial
   .venv/bin/python tools/check.py --only NAME[,NAME...]
 
-CI tier 1 runs the no-private-material subset (no ROM/BIOS/savestates
-needed): `--only unit-cpp,unit-py,patches,android-static` — see
+CI tier 1 runs the no-private-material subset (no ROM/savestates needed;
+the launch BIOS is committed clean-room repo material since the emibios
+swap): `--only unit-cpp,unit-py,patches,android-static` — see
 tests/README.md § Continuous integration.
 
 Opt-in suite (not in the default run): `android-apk` — the content guard for
@@ -46,7 +47,7 @@ import time
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 EXE = REPO / "build/FFTARecomp"
-BIOS = REPO / "gbarecomp/bios/gba_bios.bin"
+BIOS = REPO / "bios/emibios_gba_bios.bin"
 ROM = REPO / "game.gba"
 REG = REPO / "saves/regress"
 FIXTURE_SAVE = REG / "skyemu_20261007.sav"

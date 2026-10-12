@@ -1,0 +1,38 @@
+diff --git a/platform/android/gbarecomp-app.gradle b/platform/android/gbarecomp-app.gradle
+index 2410a71..8ea4629 100644
+--- a/platform/android/gbarecomp-app.gradle
++++ b/platform/android/gbarecomp-app.gradle
+@@ -247,14 +247,32 @@ tasks.named("preBuild").configure { dependsOn("stageGbarecompPayload") }
+ tasks.register("verifyNoPrivateAssets") {
+     dependsOn("stageGbarecompPayload")
+     doLast {
++        // A 16 KiB .bin whose SHA-1 equals the game-declared biosSha1 pin
++        // (which must differ from the retail default) is declared
++        // clean-room BIOS material (e.g. emibios, LGPL-3.0-or-later —
++        // ffta-recomp issue #17), staged on purpose for every build
++        // including public ones. Retail never gets this exemption: the
++        // retail dump is never bundleable, and the retail *filename*
++        // (gba_bios.bin) is not exemptable at all.
++        def bundledSha = (g.biosSha1 ?: "").toString().toLowerCase()
++        def retailSha = "300c20df6731a33952ded8c436f7f186d25d3492"
++        def exemptBundledBios = !bundledSha.isEmpty() && bundledSha != retailSha
+         if (privateRomPath == null && privateBiosPath == null) {
+             def root = stagedPayload.get().asFile
+             def offenders = []
+             root.eachFileRecurse { f ->
+                 def n = f.name.toLowerCase()
+                 if (f.isFile() && (n.endsWith(".gba") || n.endsWith(".agb") ||
+-                        n == "gba_bios.bin" || f.length() == 16384L && n.endsWith(".bin")))
++                        n == "gba_bios.bin" || f.length() == 16384L && n.endsWith(".bin"))) {
++                    if (exemptBundledBios && n.endsWith(".bin") &&
++                            f.length() == 16384L && n != "gba_bios.bin") {
++                        def sha = java.security.MessageDigest.getInstance("SHA-1")
++                                .digest(f.bytes).encodeHex().toString().toLowerCase()
++                        if (sha == bundledSha)
++                            return  // declared clean-room BIOS — not a private dump
++                    }
+                     offenders << f
++                }
+             }
+             if (!offenders.isEmpty())
+                 throw new GradleException("Public build payload contains private assets: ${offenders}")

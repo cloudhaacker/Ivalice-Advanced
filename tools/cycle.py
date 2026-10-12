@@ -30,7 +30,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 RECOMPILER = REPO / "gbarecomp/build/gba_recompile"
 NATIVE = REPO / "build/FFTARecomp"
-BIOS = REPO / "gbarecomp/bios/gba_bios.bin"
+BIOS = REPO / "bios/emibios_gba_bios.bin"
 ROM = REPO / "game.gba"
 DISPATCH = REPO / "generated/dispatch_table.cpp"
 LOGS = REPO / "logs"
@@ -59,6 +59,11 @@ def stage_regen():
         return False
     m = re.search(r"==> discovered (\d+) functions", out)
     t = re.search(r"TOTAL emitted:\s+(\d+)", out)
+    # Same mtime-preserving-output caveat as build.py step_regen: the
+    # stamp (not the emitted files' mtimes) dates this regen for the
+    # downstream freshness gates (build_apk.py).
+    (REPO / "generated").mkdir(parents=True, exist_ok=True)
+    (REPO / "generated" / ".regen_stamp").touch()
     print(f"regen: OK — discovered {m.group(1) if m else '?'} functions, "
           f"TOTAL emitted {t.group(1) if t else '?'}")
     return True
