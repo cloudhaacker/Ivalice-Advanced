@@ -31,17 +31,18 @@ no Nintendo BIOS dump is required.
 
 ## Controls
 
-| GBA control | Keyboard |
-|---|---|
-| D-Pad | Arrow keys |
-| A / B | X / Z |
-| Start | Enter |
-| Select | Backspace |
-| L / R | C / V |
-| Fast-forward (hold) | Tab |
+| GBA control | Keyboard | Controller |
+|---|---|---|
+| D-Pad | Arrow keys | D-Pad / left stick |
+| A / B | X / Z | A / B |
+| Start | Enter | Start |
+| Select | Backspace | Back (Select) |
+| L / R | C / V | LB / RB |
+| Fast-forward (hold) | Tab | Right trigger |
 
 Controllers are detected automatically, and button mappings can be changed
-from the launcher. Fast-forward runs the game faster while held; its speed
+from the launcher. The left analog stick doubles as the D-Pad.
+Fast-forward runs the game faster while held; its speed
 (2–10x) and key/pad bindings are configurable in the launcher's Assist
 Tools page and the in-game menu. On Android, use the on-screen touch
 controls — tap the `FF` pill at the top of the screen to toggle the speed
