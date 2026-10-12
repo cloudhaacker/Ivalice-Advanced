@@ -35,14 +35,18 @@ file(GLOB GAME_GENERATED_SOURCES CONFIGURE_DEPENDS
 
 # Android: SDLActivity loads libmain.so, so the game target must be a SHARED
 # library named `main`; desktop keeps the FFTARecomp executable name.
+# Both carry the FFTA-owned host code (launch wiring + speed pill).
+set(FFTA_HOST_SOURCES
+    src/main.cpp
+    src/ffta_speed_boost.cpp)
 if(ANDROID)
     add_library(main SHARED
-        src/main.cpp
+        ${FFTA_HOST_SOURCES}
         ${GAME_GENERATED_SOURCES})
     set(FFTA_TARGET main)
 else()
     add_executable(FFTARecomp
-        src/main.cpp
+        ${FFTA_HOST_SOURCES}
         ${GAME_GENERATED_SOURCES})
     set(FFTA_TARGET FFTARecomp)
 endif()
@@ -162,6 +166,7 @@ if(FFTA_BUILD_TESTS AND NOT ANDROID)
         tests/unit/test_ram_dispatch.cpp
         tests/unit/test_host_stack_guard.cpp
         tests/unit/test_frame_pacer.cpp
+        tests/unit/test_speed_boost.cpp
         "${GBARECOMP_ROOT}/src/runtime/mobile_platform.cpp"
         "${GBARECOMP_ROOT}/src/runtime/host_platform.cpp")
     target_include_directories(ffta_unit_tests PRIVATE

@@ -290,6 +290,13 @@ int main() {
         g_failures += run_frame_pacer_tests();
     }
 
+    // ── speed pill geometry + tap edges (src/ffta_speed_boost.h) ───
+    // Issue #11: placement rect + press-to-toggle tracker. No SDL needed.
+    {
+        extern int run_speed_boost_tests();
+        g_failures += run_speed_boost_tests();
+    }
+
     std::printf("%s (%d failure%s)\n", g_failures ? "FAIL" : "PASS",
                 g_failures, g_failures == 1 ? "" : "s");
     return g_failures ? 1 : 0;

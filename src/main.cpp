@@ -10,6 +10,7 @@
 #include "mod_runtime.h"
 #include "ffta_ram_dispatch.h"
 #include "ffta_lzss_guard.h"
+#include "ffta_speed_boost.h"
 #include "mobile_platform.h"
 
 #if defined(__ANDROID__)
@@ -325,6 +326,25 @@ int ffta_main(int argc, char** argv) {
     // request): after 15 s of screen-wide touch inactivity the pad hides;
     // any touch reveals it and then acts normally. Inert without a pad.
     opts.touch_pad_idle_hide_seconds = 15;
+
+    // Issue #11 (speed toggle, Phase 0): expose the engine's Assist Tools
+    // surface so fast-forward is discoverable and configurable — the
+    // launcher Assist page (Fast-forward key/pad bindings + 2-10x speed
+    // slider) and the in-game Fast-forward latch + speed rows. Hold-to-boost
+    // (Tab / 2 / right-trigger) already worked; this only surfaces it.
+    // Rewind stays suppressed: rewind_history_seconds defaults to 0, so no
+    // rewind row or history is created (known wart: the launcher still lists
+    // a Rewind binding row — engine hardcodes both rows; the binding is
+    // inert without history).
+    opts.expose_assist_tools = true;
+
+    // Issue #11 (speed toggle, Phase 1): FFTA-owned touch pill. Tap the
+    // top-center "FF" pill to latch the same boost the physical hold paths
+    // and menu latch provide; the engine polls speed_boost_requested() once
+    // per input pump under the shared Assist-enable gate. Presentation-only
+    // on desktop (the pill appears on touch activity, never for keyboard).
+    opts.host_overlay = &ffta::speed_boost_overlay;
+    opts.fast_forward_request = &ffta::speed_boost_requested;
 
     if (on_mobile) {
 #if defined(__ANDROID__)

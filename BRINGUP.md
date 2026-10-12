@@ -5425,3 +5425,56 @@ counts match the spans — flagged, sizes left as imported.
 
 Files: symbols/ffta_data_symbols.tsv (§ 7 + § 17); symbols/ffta_symbols.tsv
 (accessor comment). TsvGuardTests 6/6 OK. Comment-only — no codegen impact.
+
+## 2026-10-12 (late 5) — Issue #11 speed toggle: Assist surfacing + touch pill latch
+
+Request: virtual touch button + physical button for speed boost, optionally a
+settings value. Locked decisions with user (via question tool): keep physical
+defaults (`Tab` + `2` + right-trigger), keep `4x` / `2-10x`, fast-forward
+only (no Rewind), FFTA-local overlay pill with tap-to-latch, minimal engine
+seam. Investigation report + step plan posted to the issue; plan comment:
+#11#issuecomment-6132105925.
+
+Findings that shaped the work: the engine already implements fast-forward
+(pacer bypass, 1/N presents, audio mute; `runtime.cpp` assist block) with
+TWO hold paths (Tab `[KeyMap] Turbo` + Assist `2`/RT) and a latch + speed
+UI — all hidden because FFTA never set `expose_assist_tools`. The touch pad
+only carries the 10 GBA inputs (`pad_buttons_at`), and pad touches never
+reach TouchHub (consumed first), so a new control needs its own hub-observed
+surface. A draw-only `host_overlay` cannot drive the pacer — hence the seam.
+
+Changes:
+- Phase 0 (`src/main.cpp`): `opts.expose_assist_tools = true` — launcher
+  Assist page (bindings + speed slider) + in-game Fast-forward latch/speed
+  rows. Rewind suppressed (`rewind_history_seconds` stays 0). Known wart:
+  the launcher still lists a Rewind binding row (engine hardcodes both
+  rows); the binding is inert without history.
+- Seam (`gbarecomp/src/runtime/runtime.h` + `runtime.cpp`, carried as
+  `tools/patches/speed-toggle-ff-seam.patch`, consolidated re-exported):
+  `RunOptions::fast_forward_request` polled once per pump and ORed with
+  hold/menu latch under the shared Assist gate. Null elsewhere: byte-identical
+  path. Patch verified forward-on-pristine-pin + reverse-on-dev (check.py
+  `patches` enforces both).
+- Pill (`src/ffta_speed_boost.{h,cpp}`, wired in `main.cpp` + both CMake
+  game targets): top-center "FF" pill (15x5.5 mm, clear of L/R shoulders),
+  press-to-toggle on new-pointer Down edges via `TouchHub::points()`, gold
+  fill while latched, 15 s hub-idle hide mirroring the pad (Android starts
+  visible; desktop appears on first touch), latch clears after a 5 s present
+  gap (background/suspend never wakes boosted), 15 ms haptic tick on toggle.
+  Pure geometry/edge logic is header-inline and unit-tested
+  (`tests/unit/test_speed_boost.cpp`, aggregated in `test_ram_dispatch.cpp`).
+- Drive-by fix (`build.py step_patches`): consolidated `*-local.patch`
+  files apply first. Fresh-clone bootstrap was broken — per-feature files
+  applied before the consolidated patch, after which it no longer applied
+  forward (reproduced against a pristine archive). Reordered application
+  simulated clean: consolidated applies, all 15 others in-place skip.
+
+Gates: `cycle.py` PASS (63134 emitted, unchanged; attract `1EF4C118…`
+unchanged); `check.py` ALL PASS 15/15 (unit-cpp PASS incl. new tests;
+patches replay byte-matches 431-file tree; routes B/G/K + user_load
+FULLY_STATIC; hangrepro/desktop-accept/hle-audit green).
+
+Remaining: device feel pass (pill placement/size under thumb, haptic
+sanity) + a windowed launcher Assist-page screenshot; both need a
+phone/GUI session, not done headless. Long-press on the pill still opens
+the settings menu (unclaimed gesture, same as any screen tap) — accepted.

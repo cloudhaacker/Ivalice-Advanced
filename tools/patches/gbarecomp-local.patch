@@ -11415,7 +11415,7 @@ index 117db49..4d847fb 100644
      // DLLs are left loaded (immutable code, process-lifetime); the OS reclaims
      // them at exit. Drain any last results so counters/banner are accurate.
 diff --git a/src/runtime/runtime.cpp b/src/runtime/runtime.cpp
-index b560791..ccc4950 100644
+index b560791..93525d0 100644
 --- a/src/runtime/runtime.cpp
 +++ b/src/runtime/runtime.cpp
 @@ -34,6 +34,7 @@
@@ -11532,7 +11532,24 @@ index b560791..ccc4950 100644
      };
      auto clear_suspend_marker = [&]() {
          std::error_code ec;
-@@ -3687,12 +3710,16 @@ int run_game(int argc, char** argv, const RunOptions& opts) {
+@@ -3507,8 +3530,15 @@ int run_game(int argc, char** argv, const RunOptions& opts) {
+         fast_forward_multiplier = std::clamp(
+             win.fast_forward_multiplier(), 2, 10);
+ #endif
++        // Game-driven latch (RunOptions::fast_forward_request, e.g. a touch
++        // overlay pill): same boost, same Assist-enable gate. Folded in
++        // here -- after the menu state -- so all three sources share one gate
++        // and one implementation downstream.
++        const bool game_fast_forward =
++            opts.fast_forward_request && opts.fast_forward_request();
+         fast_forward_active = assist_tools_enabled() &&
+-                              (ev.fast_forward || fast_forward_latched);
++                              (ev.fast_forward || fast_forward_latched ||
++                               game_fast_forward);
+         // System hotkeys (config.ini [KeyMap], rebindable in the launcher).
+         if (ev.toggle_fullscreen) {
+             // Toggle between windowed and the configured mode. A session
+@@ -3687,12 +3717,16 @@ int run_game(int argc, char** argv, const RunOptions& opts) {
                  // the same frame-indexed input as headless acceptance runs.
                  if (input_replay_requested) apply_input_replay();
                  if (phase_active) fp_t4 = FramePhaseRing::now_ns();
@@ -11550,7 +11567,7 @@ index b560791..ccc4950 100644
                  }
                  if (phase_active) {
                      frame_phase.record(frame, fp_t0, fp_t1, fp_t2, fp_t3,
-@@ -4092,6 +4119,7 @@ int run_game(int argc, char** argv, const RunOptions& opts) {
+@@ -4092,6 +4126,7 @@ int run_game(int argc, char** argv, const RunOptions& opts) {
                  pump_host_input();
                  if (phase_active) fp_t4 = FramePhaseRing::now_ns();
                  dispatches_since_pump = 0;
@@ -11558,7 +11575,7 @@ index b560791..ccc4950 100644
                  last_presented_frame = frame;
                  if (present_frame) {
                      ++frames_presented;
-@@ -4101,7 +4129,7 @@ int run_game(int argc, char** argv, const RunOptions& opts) {
+@@ -4101,7 +4136,7 @@ int run_game(int argc, char** argv, const RunOptions& opts) {
                      // Normal play presents/paces every frame. Fast-forward
                      // runs N guest frames per one paced host presentation,
                      // making its selected multiplier independent of monitor Hz.
@@ -11567,7 +11584,7 @@ index b560791..ccc4950 100644
                  }
                  if (phase_active) {
                      frame_phase.record(frame, fp_t0, fp_t1, fp_t2, fp_t3,
-@@ -4260,8 +4288,10 @@ int run_game(int argc, char** argv, const RunOptions& opts) {
+@@ -4260,8 +4295,10 @@ int run_game(int argc, char** argv, const RunOptions& opts) {
          }
      }
  
@@ -11580,10 +11597,24 @@ index b560791..ccc4950 100644
      return save_ok ? 0 : 1;
  }
 diff --git a/src/runtime/runtime.h b/src/runtime/runtime.h
-index cb6717c..2c725e1 100644
+index cb6717c..e2e4417 100644
 --- a/src/runtime/runtime.h
 +++ b/src/runtime/runtime.h
-@@ -164,6 +164,11 @@ struct RunOptions {
+@@ -127,6 +127,13 @@ struct RunOptions {
+     std::uint8_t rewind_history_seconds = 0;
+     std::uint8_t rewind_capture_interval_frames = 15;
+ 
++    // Optional game-driven fast-forward latch (e.g. a touch overlay pill
++    // owned by the game, ffta-recomp issue #11). Polled once per input pump
++    // on the guest thread; true requests the same boost as the Assist
++    // hold/latch, under the same Assist-enable gate. Null leaves the
++    // established input path byte-identical.
++    bool (*fast_forward_request)() = nullptr;
++
+     // Optional game-owned content initializer. Called exactly once, after the
+     // first non-native view has been authorized and applied. For a fixed view
+     // that is during startup; for resize-driven view it is deferred until the
+@@ -164,6 +171,11 @@ struct RunOptions {
      // The player toggles it with the corner button; the choice persists.
      int touch_pad_default = -1;
  

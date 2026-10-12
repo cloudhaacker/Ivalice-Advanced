@@ -1,0 +1,35 @@
+--- a/src/runtime/runtime.h
++++ b/src/runtime/runtime.h
+@@ -126,6 +126,13 @@
+     std::uint8_t save_state_slot_count = 9;
+     std::uint8_t rewind_history_seconds = 0;
+     std::uint8_t rewind_capture_interval_frames = 15;
++
++    // Optional game-driven fast-forward latch (e.g. a touch overlay pill
++    // owned by the game, ffta-recomp issue #11). Polled once per input pump
++    // on the guest thread; true requests the same boost as the Assist
++    // hold/latch, under the same Assist-enable gate. Null leaves the
++    // established input path byte-identical.
++    bool (*fast_forward_request)() = nullptr;
+ 
+     // Optional game-owned content initializer. Called exactly once, after the
+     // first non-native view has been authorized and applied. For a fixed view
+--- a/src/runtime/runtime.cpp
++++ b/src/runtime/runtime.cpp
+@@ -3507,8 +3507,15 @@
+         fast_forward_multiplier = std::clamp(
+             win.fast_forward_multiplier(), 2, 10);
+ #endif
++        // Game-driven latch (RunOptions::fast_forward_request, e.g. a touch
++        // overlay pill): same boost, same Assist-enable gate. Folded in
++        // here -- after the menu state -- so all three sources share one gate
++        // and one implementation downstream.
++        const bool game_fast_forward =
++            opts.fast_forward_request && opts.fast_forward_request();
+         fast_forward_active = assist_tools_enabled() &&
+-                              (ev.fast_forward || fast_forward_latched);
++                              (ev.fast_forward || fast_forward_latched ||
++                               game_fast_forward);
+         // System hotkeys (config.ini [KeyMap], rebindable in the launcher).
+         if (ev.toggle_fullscreen) {
+             // Toggle between windowed and the configured mode. A session

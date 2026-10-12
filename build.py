@@ -192,8 +192,7 @@ def step_venv():
 def step_patches():
     if not (REPO / "gbarecomp/.git").exists():
         return "not a git submodule — skipped"
-    patches = sorted(PATCH_DIR.glob("*.patch"))
-    if not patches:
+    if not list(PATCH_DIR.glob("*.patch")):
         die("no framework patches found in tools/patches/",
             hint="incomplete checkout — the patches ship with this repo")
     # Route by filename prefix (the tools/patches/README.md convention):
@@ -203,6 +202,16 @@ def step_patches():
         return (REPO / "gbarecomp/external/arm-recomp-core"
                 if patch.name.startswith("arm-recomp-core")
                 else REPO / "gbarecomp")
+    # Consolidated patches first: each *-local.patch is its repo's whole-tree
+    # diff, so applying it up front leaves every per-feature reference diff
+    # already in place (reverse-check below → skip). Pure name order applied
+    # per-feature files first, after which the consolidated patch no longer
+    # applied forward — fresh clones died in this step (found 2026-10-12
+    # while adding speed-toggle-ff-seam.patch; verified by replaying the old
+    # order against a pristine archive).
+    patches = sorted(PATCH_DIR.glob("*.patch"),
+                     key=lambda p: (0 if p.name.endswith("-local.patch")
+                                    else 1, p.name))
     applied, in_place = [], 0
     for patch in patches:
         root = target_root(patch)
