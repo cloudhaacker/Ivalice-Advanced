@@ -5597,3 +5597,33 @@ byte-identical sha1 `92a4eb9f…` both times.
 (three `make_release.py` calls + a notes-table formatter); the canonical,
 tested machinery stays `tools/make_release.py` (+ guards). Release left as
 a draft for publish review.
+
+---
+
+## 2026-10-12 (late 9) — Issue #16: `.recomp.json` (recomp.board identity file)
+
+Added `.recomp.json` at the repo root, per https://recomp.fyi/spec
+(schema v1; readers fetch it from the default branch root). recomp.board
+currently lists this repo with a script-guessed row ("Final Fantasy
+Tactics Advance / GBA / recomp / Gbarecomp", no project, status or
+targets) — the file is the project's own word and supersedes the guess
+once it is on `main`.
+
+- `game`/`project` "Final Fantasy Tactics Advance"; `wikidata` Q1072868
+  (Wikidata search API 2026-10-12: "Final Fantasy Tactics Advance", 2003
+  video game); `system` "GBA"; `type` "recomp"; `original` {region USA,
+  serial AFXE, sha1 `4ac05441…`} — all pinned in `game.toml` (§ Phase 0).
+- `status` "released" (public v1.5/v1.6 builds, still maintained);
+  `targets` ["Windows", "Linux", "Android"] (the three v1.6 release
+  assets); `toolchain` "gbarecomp"; `maintainers` J. Doyle (GitHub link);
+  `links` releases page + repo + R.A.I.D. Discord (owner selection).
+  `help` omitted by owner decision (no "wants help" marker on the board).
+- `original.revision` omitted deliberately: software-version byte 0xBC = 0
+  (direct byte inspection 2026-10-12 — initial release), but the project
+  has not adopted a community revision label; per spec a missing field
+  means "not said", never "none".
+- Validation: `jsonschema` (draft 2020-12) against `schema/v1.json`,
+  pass; `.venv` lacks the package, system python3 used.
+- Metadata-only: no `game.toml`/`src/`/`generated/` change, so workflow A
+  is not invoked; the `tools/make_release.py` allowlist is untouched (the
+  file is repo identity, not a release artifact).

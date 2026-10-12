@@ -1,0 +1,26 @@
+{
+  "$schema": "https://recomp.fyi/schema/v1.json",
+  "game": "Final Fantasy Tactics Advance",
+  "wikidata": "Q1072868",
+  "system": "GBA",
+  "type": "recomp",
+  "original": {
+    "region": "USA",
+    "serial": "AFXE",
+    "sha1": "4ac05441f4de70a4ec3dd932116346c61b8783d9"
+  },
+  "project": "Final Fantasy Tactics Advance",
+  "status": "released",
+  "targets": ["Windows", "Linux", "Android"],
+  "toolchain": "gbarecomp",
+  "approach": "Static ahead-of-time translation of the retail ARM/Thumb binary to native C++, held strict fully-static (zero interpreter fallback) by a self-healing coverage loop",
+  "maintainers": [
+    { "name": "James Doyle", "link": "https://github.com/james2doyle" }
+  ],
+  "links": [
+    { "label": "Releases", "url": "https://github.com/james2doyle/ffta-recomp/releases" },
+    { "label": "GitHub", "url": "https://github.com/james2doyle/ffta-recomp" },
+    { "label": "R.A.I.D. Discord", "url": "https://discord.gg/Ad9BwSzctP" }
+  ],
+  "notes": "Full playthrough on Windows, Linux and Android — menus, battles, event scripts, cartridge saves and save states; validated widescreen view, fast-forward, keyboard/controller/touch input. The ROM is user-supplied and hash-verified at launch; the launch BIOS is bundled clean-room emibios. Experimental preview — back up saves and report repeatable crashes."
+}
