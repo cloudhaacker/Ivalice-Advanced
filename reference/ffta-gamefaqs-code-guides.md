@@ -137,6 +137,25 @@ Method note for future sweeps: exact-address ROM literal scans fail for
 any base-relative cell; scan for plausible bases (region windows) instead,
 and never settle engine-vs-cheat-scratch from single-scene reads.
 
+## Mission-info price verified + pub scene work table decoded (2026-10-12, live TCP)
+
+User hovered "Travel Aid" (400 gil) in the pub mission list:
+**0x02024A38 = 400 — VERIFIED**, and the value **persists after the menu
+closes** (last-quoted-price cache; explains why the "Mission Info $1/free"
+poke cheat works — it pre-stamps the cell). Gossip/rumor menu quotes
+nothing (free) — only the paid "mission info" list populates the cell.
+
+Full-EWRAM open/closed snapshots (diff 376 runs, mostly scene render
+churn in 0x02008xxx/0x02023xxx/0x02024Fxx+) also decoded the pub scene's
+runtime pointer table from 0x02024A40: ~16 mission-record ptrs
+(0x020021C8-0x02002378), then party-unit ptrs at 0x02024A80
+(0x02000290 + i×0x108 = gPartyUnits slots 2..23), then gMissionItems
+ptrs (0x02002B08 + 4k) — scene scratch, rebuilt per scene, unnamed by
+design. Menu-state byte 0x02024A2D (01 open → 02 closed) is a single-
+transition lead, unverified. gStoryProgress read 3 (fresh § 17
+confirmation); card store locked at that progress = story gate, and the
+"Access Card Shop" cheat bypasses by opening the UI directly.
+
 Session-notes discipline: probes of a user-launched session must be
 read-only (`read_ewram` etc.); `quit` in observe mode closes the debug
 listener permanently without touching the game (runtime.cpp spawns the

@@ -309,6 +309,20 @@
 # gShopPrice = current hovered item's price u16 (100 = sold bandage; the
 # "8202745C 0000/0001" free/$1 cheat writes exactly this cell).
 0x0202745C	ewram	0x2	gShopPrice
+# gMissionInfoPrice = last quoted mission-info viewing price u16 (pub
+# "mission info" menu). Live-verified 2026-10-12: hovered "Travel Aid"
+# quoted 400 -> u16 = 400; value PERSISTS after the menu closes (last-quote
+# cache, not transient). The "Mission Info Costs $1/is FREE" cheat writes
+# this cell (1/0). Scene-scoped scratch: populated by the pub mission-list
+# scene; 0 on fresh field states.
+0x02024A38	ewram	0x2	gMissionInfoPrice
+# gMissionInfoPriceStale leads, single transition each (UNVERIFIED):
+# byte 0x02024A2D flipped 01 (mission list open) -> 02 (pub menu) — plausible
+# pub-menu state; u16 0x02024A30 high byte moved 0x4C -> 0x3F. The block
+# 0x02024A40.. = the pub scene's runtime pointer table (scene scratch):
+# ~16 mission-record ptrs (0x020021C8-0x02002378), then party-unit ptrs
+# (0x02000290 + i*0x108 = gPartyUnits slots 2..23) at 0x02024A80, then
+# gMissionItems ptrs (0x02002B08 + 4k). Rebuilt per scene — no symbol.
 # STILL UNVERIFIED from the cheat sweep (see reference
 # ffta-gamefaqs-code-guides.md): 0x020273C9 (cheat init byte — likely also
 # menu-scoped scratch), 0x02001F6C unlock flag (no ROM literal hit; embedded

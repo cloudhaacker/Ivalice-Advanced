@@ -5276,6 +5276,30 @@ literal scans miss base-relative cells — scan region-window bases.
 Validation: TsvGuardTests 6/6 OK. Probe discipline held (read-only,
 no quit — after the earlier observe-quit mistake).
 
+## 2026-10-12 (late 3) — gMissionInfoPrice verified live; pub work table decoded
+
+Action: user opened the pub mission list (card store story-locked at
+gStoryProgress 3 — noted; the "Access Card Shop" cheat bypasses by
+opening the UI directly). Hovered "Travel Aid" (400 gil): 0x02024A38
+read exactly 400 → **gMissionInfoPrice VERIFIED**, and the value
+persists after menu close (last-quote cache — the $1/free cheat
+pre-stamps it). Gossip/rumors are free (cell stayed 0 there; user
+corrected my menu assumption — the paid menu is mission info).
+
+Also: two full-EWRAM snapshots (menu open / closed) via a recv-loop
+client (single recv() fails on 256 KB responses — noted for future
+probe scripts). Diff (376 runs) mostly scene render churn; the block
+0x02024A40.. decodes as the pub scene's runtime pointer table:
+~16 mission-record ptrs (0x020021C8-0x02002378), party-unit ptrs
+0x02024A80.. (0x02000290 + i×0x108 = gPartyUnits slots 2..23),
+gMissionItems ptrs — scene scratch, rebuilt per scene, unnamed by
+design. Byte 0x02024A2D (01→02 on close) = single-transition lead.
+
+Changes: symbols § 20 (gMissionInfoPrice entry + stale-lead note);
+reference/ffta-gamefaqs-code-guides.md section. TsvGuardTests 6/6 OK.
+Remaining uncovered: 4 (+0x182 cards, clan-skill order, u32 +0x94,
+byte +0x05, multi-write slide → battle/roster-scoped next).
+
 **Gates** (all live, all green): objdump import table = 29 system DLLs
 only (forbid-list: SDL2, libstdc++-6, libgcc_s_seh-1, winpthread, freetype,
 harfbuzz, zlib DLLs — none present); sweep (same ROM/BIOS/binary hash
