@@ -318,6 +318,10 @@ def stage_apk(version):
     print("preflight: " + build_apk.step_preflight())
     abi = "arm64-v8a"
     jobs = max(1, min(16, os.cpu_count() or 8))
+    # The APK manifest versionName follows the release version (engine
+    # gradle: -PgbaVersionName), so the installed app shows the release it
+    # came from. Strip the tag's "v" (manifest convention: 1.5, not v1.5).
+    version_name = version.lstrip("v")
     # A release artifact is ALWAYS a clean package: gradle's incremental
     # repackaging strands slack from prior builds between zip entries (the
     # junk class android_apk_check's packaging-sanity check exists for —
@@ -329,7 +333,8 @@ def stage_apk(version):
         shutil.rmtree(app_build)
     gradlew = REPO / "android" / "gradlew"
     r = subprocess.run([str(gradlew), ":app:assembleDebug",
-                        f"-PgbaAbis={abi}", f"-PgbaNativeJobs={jobs}"],
+                        f"-PgbaAbis={abi}", f"-PgbaNativeJobs={jobs}",
+                        f"-PgbaVersionName={version_name}"],
                        cwd=str(REPO / "android"))
     if r.returncode != 0:
         die("gradle assembleDebug (public) failed",

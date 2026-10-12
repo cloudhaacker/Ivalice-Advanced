@@ -61,19 +61,30 @@ jobs:
 
       # Both artifacts in one pass: the deterministic zip (allowlist stage
       # + private-material sweep) and the guarded public APK (clean
-      # repackage + android_apk_check --expect public). Deterministic zip
-      # names: at a tag, git describe is exactly the tag.
+      # repackage + android_apk_check --expect public). The version is
+      # pinned to the tag: build.py applies framework patches to the
+      # submodules, so `git describe --dirty` inside the job yields
+      # `v1.5-dirty` — the release IS the tag, unconditionally.
+      # (workflow_dispatch: GITHUB_REF_NAME is the branch name — a
+      # rehearsal artifact name, fine.)
       - name: Package (zip + public APK, guarded)
-        run: .venv/bin/python tools/make_release.py --apk
+        run: >
+          .venv/bin/python tools/make_release.py --apk
+          --version "$GITHUB_REF_NAME"
 
-      # Tag events only (dispatch is branch-named) — attach exactly the
-      # two guarded artifacts this pipeline just produced, by exact name.
+      # Tag events only (dispatch is branch-named). Idempotent: if the
+      # release already exists (cut manually before a runner picked this
+      # up), upload --clobber refreshes the assets; otherwise create it.
       - name: Attach artifacts to the release
         if: startsWith(github.ref, 'refs/tags/')
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            --generate-notes \
+          set -e
+          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" --generate-notes
+          fi
+          gh release upload "$GITHUB_REF_NAME" \
             "release-stage/FFTARecomp-${GITHUB_REF_NAME}-linux-x64.zip" \
-            "release-stage/FFTARecomp-${GITHUB_REF_NAME}-android-arm64-v8a.apk"
+            "release-stage/FFTARecomp-${GITHUB_REF_NAME}-android-arm64-v8a.apk" \
+            --clobber
         env:
           GH_TOKEN: ${{ github.token }}
