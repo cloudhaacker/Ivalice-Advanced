@@ -10964,10 +10964,18 @@ index 2b48ab3..42208db 100644
      // Realign the deadline to "now". Call after any non-real-time jump
      // (startup, save-state load) so the pacer doesn't try to catch up.
 diff --git a/src/runtime/host_window.cpp b/src/runtime/host_window.cpp
-index 22ca157..855ff25 100644
+index 22ca157..ec6c094 100644
 --- a/src/runtime/host_window.cpp
 +++ b/src/runtime/host_window.cpp
-@@ -374,6 +374,10 @@ struct Backend {
+@@ -18,6 +18,7 @@
+ 
+ #include "color_lut.h"
+ #include "host_overlay.h"
++#include "input_synth.h"
+ #include "presentation_layout.h"
+ #include "touch_input.h"
+ #if defined(GBARECOMP_RUNTIME_UI)
+@@ -374,6 +375,10 @@ struct Backend {
      bool touch_controls = false;
      bool pad_visible = false;
      bool pad_choice_saved = false;
@@ -10978,7 +10986,7 @@ index 22ca157..855ff25 100644
      // Player-placed pad toggle: centre as a fraction of the safe area, so it
      // keeps its place across rotation. Unset = bottom-right corner.
      bool toggle_pos_saved = false;
-@@ -748,6 +752,17 @@ bool pad_toggle_available(const Backend* b) {
+@@ -748,6 +753,17 @@ bool pad_toggle_available(const Backend* b) {
      return b && b->touch_policy && (b->touch_controls || b->touch_emulation);
  }
  
@@ -10996,7 +11004,7 @@ index 22ca157..855ff25 100644
  Backend::TouchPoint* find_touch(Backend* b, SDL_FingerID id) {
      if (!b) return nullptr;
      for (auto& touch : b->touches)
-@@ -1001,7 +1016,7 @@ private:
+@@ -1001,7 +1017,7 @@ private:
  #endif
  
  void draw_touch_pad(Backend* b, HostOverlay& ov) {
@@ -11005,7 +11013,7 @@ index 22ca157..855ff25 100644
      const PadLayout p = compute_pad_layout(b);
      const uint16_t held = active_touch_buttons(b);
      const auto S = OverlaySpace::Drawable;
-@@ -1054,7 +1069,7 @@ void draw_touch_pad(Backend* b, HostOverlay& ov) {
+@@ -1054,7 +1070,7 @@ void draw_touch_pad(Backend* b, HostOverlay& ov) {
      pill(p.start, 3, "START", p.start.h * 0.5f);
  }
  void draw_pad_toggle(Backend* b, HostOverlay& ov) {
@@ -11014,7 +11022,7 @@ index 22ca157..855ff25 100644
      const PadLayout p = compute_pad_layout(b);
      const auto S = OverlaySpace::Drawable;
      const PadRect& r = p.toggle;
-@@ -1348,6 +1363,29 @@ bool runtime_menu_open(const Backend* b) {
+@@ -1348,6 +1364,29 @@ bool runtime_menu_open(const Backend* b) {
  // builds) the settings menu on top. Nothing here reads or writes guest state
  // except through the game's own overlay callback.
  void draw_host_chrome(Backend* b, HostOverlay& ov, bool menu_open) {
@@ -11044,7 +11052,7 @@ index 22ca157..855ff25 100644
      if (menu_open) return;
      if (b->host_overlay) b->host_overlay(&ov);
      draw_touch_pad(b, ov);
-@@ -1362,8 +1400,8 @@ void render_host_layers(Backend* b) {
+@@ -1362,8 +1401,8 @@ void render_host_layers(Backend* b) {
      const bool menu_open = false;
  #endif
      const bool chrome = !menu_open &&
@@ -11055,7 +11063,7 @@ index 22ca157..855ff25 100644
      if (!chrome && !menu_open) return;
  
      // Native GBA presentation uses a 240x160 SDL logical size. Host chrome
-@@ -2508,12 +2546,16 @@ void HostWindow::set_runtime_ui(RecompRuntimeUi* ui) {
+@@ -2508,12 +2547,16 @@ void HostWindow::set_runtime_ui(RecompRuntimeUi* ui) {
  #endif
  
  void HostWindow::configure_touch(bool policy, std::uint32_t claims,
@@ -11073,7 +11081,7 @@ index 22ca157..855ff25 100644
      if (emulate_touch) {
          // SDL then reports the left mouse button as a touch finger
          // (touchId SDL_MOUSE_TOUCHID), exercising the real finger path.
-@@ -2583,6 +2625,10 @@ void HostWindow::set_touch_pad_visible(bool visible) {
+@@ -2583,6 +2626,10 @@ void HostWindow::set_touch_pad_visible(bool visible) {
      if (b->pad_visible == visible && b->pad_choice_saved) return;
      b->pad_visible = visible;
      b->pad_choice_saved = true;
@@ -11084,7 +11092,7 @@ index 22ca157..855ff25 100644
      // Any finger currently on a pad button is released with the pad.
      for (auto& t : b->touches)
          if (t.active && t.pad) t.buttons = 0;
-@@ -2793,13 +2839,19 @@ HostWindow::Events HostWindow::pump() {
+@@ -2793,13 +2840,19 @@ HostWindow::Events HostWindow::pump() {
                      &te.view_x, &te.view_y);
                  TouchHub::instance().submit(te);
              };
@@ -11105,7 +11113,26 @@ index 22ca157..855ff25 100644
                              ? pad_buttons_at(pad, px, py, b->px_per_mm) : 0;
                      // The toggle wins over the pad so it can never be buried
                      // under a button (it is small and player-movable).
-@@ -3113,7 +3165,8 @@ void HostWindow::set_resize_driven_view(bool /*enabled*/) {}
+@@ -2970,6 +3023,18 @@ HostWindow::Events HostWindow::pump() {
+             if (SDL_GameControllerGetButton(b->controller, binding.button))
+                 keys &= static_cast<uint16_t>(~(1u << binding.bit));
+         }
++        // The left analog stick doubles as the d-pad (issue #14): a common
++        // emulator courtesy for pad-only titles, additive with the physical
++        // d-pad and the keyboard. 25% deflection ignores thumb drift while
++        // still registering well before the physical stop.
++        constexpr int kStickDpadDeadzone = 8192;
++        const uint16_t stick_dpad = stick_to_dpad(
++            SDL_GameControllerGetAxis(b->controller,
++                                      SDL_CONTROLLER_AXIS_LEFTX),
++            SDL_GameControllerGetAxis(b->controller,
++                                      SDL_CONTROLLER_AXIS_LEFTY),
++            kStickDpadDeadzone);
++        keys &= static_cast<uint16_t>(~stick_dpad);
+     }
+     if (b->touch_controls) {
+         const uint16_t touch_buttons = active_touch_buttons(b);
+@@ -3113,7 +3178,8 @@ void HostWindow::set_resize_driven_view(bool /*enabled*/) {}
  void HostWindow::set_runtime_ui(RecompRuntimeUi* /*ui*/) {}
  #endif
  void HostWindow::configure_touch(bool /*policy*/, std::uint32_t /*claims*/,
@@ -11132,6 +11159,32 @@ index 261d693..84067d7 100644
      // Loads/persists the player's pad choice in <dir>/config.ini [Touch].
      void set_touch_config_dir(const char* dir);
      bool touch_pad_visible() const;
+diff --git a/src/runtime/input_synth.h b/src/runtime/input_synth.h
+index d1df4da..aab700e 100644
+--- a/src/runtime/input_synth.h
++++ b/src/runtime/input_synth.h
+@@ -27,6 +27,21 @@ enum GbaKey : std::uint16_t {
+     kGbaKeyAll = 0x03FFu,
+ };
+ 
++// Active-high d-pad bits for an SDL game-controller stick position (issue
++// #14): SDL axes run -32768..32767 with up/left negative, and a direction
++// registers when its axis passes beyond `deadzone` in magnitude. Inside the
++// deadzone nothing registers, so stick drift cannot press a direction; a
++// diagonal naturally sets two bits. Pure so host input policies (and tests)
++// can share one mapping.
++inline std::uint16_t stick_to_dpad(int axis_x, int axis_y, int deadzone) {
++    std::uint16_t keys = 0;
++    if (axis_x < -deadzone) keys |= kGbaKeyLeft;
++    if (axis_x > deadzone) keys |= kGbaKeyRight;
++    if (axis_y < -deadzone) keys |= kGbaKeyUp;
++    if (axis_y > deadzone) keys |= kGbaKeyDown;
++    return keys;
++}
++
+ class KeySynth {
+ public:
+     // Level-held keys stay down until released (walking direction, B-run).
 diff --git a/src/runtime/launcher_seam.h b/src/runtime/launcher_seam.h
 index 6609185..d54044a 100644
 --- a/src/runtime/launcher_seam.h

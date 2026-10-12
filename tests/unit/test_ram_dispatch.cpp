@@ -297,6 +297,13 @@ int main() {
         g_failures += run_speed_boost_tests();
     }
 
+    // ── left stick as d-pad (input_synth.h stick_to_dpad) ──────────
+    // Issue #14: deadzone semantics, cardinals, diagonals.
+    {
+        extern int run_stick_dpad_tests();
+        g_failures += run_stick_dpad_tests();
+    }
+
     std::printf("%s (%d failure%s)\n", g_failures ? "FAIL" : "PASS",
                 g_failures, g_failures == 1 ? "" : "s");
     return g_failures ? 1 : 0;

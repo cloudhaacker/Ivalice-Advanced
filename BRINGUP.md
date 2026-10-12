@@ -5517,3 +5517,52 @@ Visual: gold "FF" pill top-center confirmed on-device screenshot (clear of
 L/R shoulders, pad + game scene behind); user's own verdict: "the pill
 seems fine". Remaining #11 items: launcher Assist-page windowed screenshot
 (desktop GUI session) and the noted Rewind-row wart (upstream proposal).
+
+## 2026-10-12 (late 7) — Issue #14: left analog stick doubles as the D-pad
+
+Request (issue #14): allow the left analog stick to also act as the D-pad
+(standard emulator courtesy; every GBA game is d-pad driven).
+
+Prior state: gameplay controller input was a fixed SDL button list in
+`gbarecomp/src/runtime/host_window.cpp` (`HostWindow::pump`'s `pad_map`:
+A/B/Back/Start + DPAD + shoulders) with no analog path. Keyboard binds come
+from keybinds.ini; recomp-ui's per-GUID pad store is SNES/N64/PSX-only (the
+GBA profile explicitly has no analog vocabulary). The only stick→d-pad
+precedent in the tree was the dev frontend
+`gbarecomp/tools/gbaref/frontend.cpp` (DZ=16000), never linked into the game.
+
+Changes (framework carried as `tools/patches/stick-to-dpad.patch`;
+`gbarecomp-local.patch` re-exported, 431-file replay byte-match):
+- `gbarecomp/src/runtime/input_synth.h`: new pure
+  `stick_to_dpad(axis_x, axis_y, deadzone)` → active-high GBA d-pad bits;
+  SDL axis convention (-32768..32767, up/left negative); a direction fires
+  strictly beyond `deadzone`; diagonals set two bits.
+- `gbarecomp/src/runtime/host_window.cpp`: the controller block now ORs the
+  stick directions into the active-low KEYINPUT mask (25% deadzone = 8192),
+  additive with the physical d-pad, keyboard and touch. 25% ignores worn
+  stick drift while staying menu-responsive (mGBA-style default); gbaref's
+  16000 is a dev-tool threshold, too stiff for gameplay.
+
+Evidence:
+- Unit: `tests/unit/test_stick_dpad.cpp` (deadzone boundary semantics,
+  cardinals, diagonals, custom/zero deadzones, axis extremes) aggregated
+  into `ffta_unit_tests` behind the usual pristine-checkout probe.
+- Physical controller: user-verified in a windowed session with this build
+  ("works perfectly" — stick drives menus/movement, d-pad unaffected).
+- Synthetic-pad e2e attempt (uinput pad with Xbox 360 IDs +
+  SDL_GAMECONTROLLERCONFIG, `/tmp`-only tooling): SDL enumerated/opened it
+  and a live SDL probe read the axes, but an in-game
+  `GBARECOMP_INPUT_RECORD` trace showed no KEYINPUT changes — unresolved
+  quirk of the synthetic path only (the physical pad works). If a future
+  harness wants uinput input tests, start from that known gap.
+
+Testing note: an earlier user session (real pad, launched with
+`--view-width 320` — the open issue #23 area) appeared hung and was closed
+before read-only probing; no crash dump, not attributed, not part of this
+change. The verified run was without widescreen.
+
+Gates: `cycle.py` PASS (63134 emitted, unchanged; attract `1EF4C118…`
+unchanged); `check.py` ALL PASS 15/15 (unit-cpp PASS incl. the new test;
+patches replay byte-matches the 431-file tree; routes B/G/K + user_load
+FULLY_STATIC; hangrepro / desktop-accept / hle-audit / ws_smoke green; the
+windowed acceptance skipped on the concurrent-run lock, as designed).

@@ -167,6 +167,7 @@ if(FFTA_BUILD_TESTS AND NOT ANDROID)
         tests/unit/test_host_stack_guard.cpp
         tests/unit/test_frame_pacer.cpp
         tests/unit/test_speed_boost.cpp
+        tests/unit/test_stick_dpad.cpp
         "${GBARECOMP_ROOT}/src/runtime/mobile_platform.cpp"
         "${GBARECOMP_ROOT}/src/runtime/host_platform.cpp")
     target_include_directories(ffta_unit_tests PRIVATE
@@ -194,6 +195,17 @@ if(FFTA_BUILD_TESTS AND NOT ANDROID)
         set(PACER_BANKED_API OFF)
         message(STATUS "frame-pacer banked-wait API absent (pristine "
                        "submodule): pacer test compiles to a skip")
+    endif()
+    # Same pristine-checkout policy for the issue-#14 stick-to-d-pad
+    # mapping (input_synth.h locally): test the pure helper where present.
+    file(READ "${GBARECOMP_ROOT}/src/runtime/input_synth.h"
+         _stick_dpad_header_text)
+    if(_stick_dpad_header_text MATCHES "stick_to_dpad")
+        message(STATUS "stick-to-dpad API present: testing")
+        target_compile_definitions(ffta_unit_tests PRIVATE STICK_DPAD_API=1)
+    else()
+        message(STATUS "stick-to-dpad API absent (pristine submodule): "
+                       "test compiles to a skip")
     endif()
     add_test(NAME ram_dispatch COMMAND ffta_unit_tests)
 endif()
