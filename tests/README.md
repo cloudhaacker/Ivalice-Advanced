@@ -473,4 +473,13 @@ Two tiers, split by what may leave your machine:
   **APK content guard** is device-free but needs a Gradle build (SDK/NDK),
   so it stays opt-in (`--only android-apk`) until a suitable runner exists
   (build, run, guard: `android/README.md`).
+- The **release packager** (`tools/make_release.py`, `--only release`)
+  needs a built **and fresh** tree (it refuses a binary older than the
+  corpus or a regen input newer than `.regen_stamp`) but never the ROM —
+  its sweep would reject the ROM (hash-pinned, under any name) if one
+  leaked in. Local/tier-2 by nature: CI tier 1 builds no game binary. Its
+  pure logic (sweep + zip writer) is unit-tested on synthetic stages in
+  `tests/python/test_tools.py` (`ReleasePackTests`), which **does** run on
+  tier 1. The packaged zip is deterministic (fixed timestamps, sorted
+  entries), so a release job can hash it and users can diff releases.
 
