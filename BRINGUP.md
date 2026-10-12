@@ -5083,3 +5083,42 @@ earlier local runs.
 **Open items** (R5): the release signing key (`gbaKeystore` — debug-signed
 until decided), notes content beyond `--generate-notes`, and the runner
 label (`self-hosted` assumed — adjust to the actual label if different).
+
+## 2026-10-11 (late 6) — R-track: R5 — first tagged release v1.5 (issue #3)
+
+**Live**: <https://github.com/james2doyle/ffta-recomp/releases/tag/v1.5> —
+the first public APK release. Artifacts (both built by `tools/make_release.py`
+from the exact tree, both content-guarded before upload):
+
+- `FFTARecomp-v1.5-linux-x64.zip` — sha1 `da7d04db23365ef736fff4e26299c2fa5b9bcc56`,
+  45,727,168 B (ROM-less, bring-your-own-ROM)
+- `FFTARecomp-v1.5-android-arm64-v8a.apk` — sha1
+  `bcc12b1f65b56d6cbcc7b1ed316f7fbc1a15b2e8`, 35,081,167 B (ROM-less, SAF
+  setup at first launch; guard `--expect public` 8/8; **debug-signed**)
+
+**Path taken — manual cut, not the workflow**: no self-hosted runner is
+registered (`actions/runners` empty), so the `Release (tag)` job from the
+v1.5 tag push sits **queued**; the release was cut from this tier-2 machine
+where the full pipeline is green. The workflow's attach step was made
+idempotent first (`release view || create`, then `upload --clobber`) so the
+queued run can never conflict with a manual cut.
+
+**Pre-tag fix (found by reading the runner's flow, not by failing)**:
+`build.py` applies framework patches to the submodules, so `git describe
+--dirty` inside the job yields `v1.5-dirty` — the attach step's exact
+filenames would never match. The package step now pins
+`--version "$GITHUB_REF_NAME"`: the tag IS the release version. Also
+`-PgbaVersionName` → the installed app's manifest reads `1.5`.
+
+**Determinism, proven twice**: the zip rebuilt after the pull+merge (fresh
+checkout-smudged tree) is byte-identical to the pre-merge build
+(`da7d04db…` both sides).
+
+**Open decisions carried forward**: APK release signing key (`gbaKeystore`
+vs debug key — v1.5 ships debug-signed, so v1.6+ updates need the same key
+or a reinstall), runner registration (`FFTA_ROM` env + label
+`self-hosted`), R2 Windows stretch (time-boxed, unstarted).
+
+**Result**: fast gate 6/6 pre-tag; release live with both assets
+`uploaded`; tier-1 CI on main+v1.5 green-path (same suites the local gate
+ran); R2 the only unchecked R-track item.
