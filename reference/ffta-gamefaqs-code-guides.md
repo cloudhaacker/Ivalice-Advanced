@@ -104,24 +104,38 @@ gPartyNameBuffer).
 
 ## Shop-cluster cells demoted to cheat-private scratch (2026-10-12, live TCP)
 
-Live session (windowed --tcp-observe 19870, store scene + world map,
-read-only probes): the "Shops Sell Everything" cells 0x020273C9/CC,
-0x0202745C/60 and the 0x02024434 "count" read **0 in the store and 0 on
-the world map**, except the 0x02024420 block, which is a **UI/cursor
-descriptor** (consumed by blinker fn 0x08017F04 / draw helper 0x08017E80
-via the 0x02002180 halfword table; scene-independent, byte-identical
-between scenes). Its 0x02024464 pointer (→ 0x0202B240 table) and
-0x08017E81 are part of that UI machinery, not shop stock.
+**SUPERSEDED same day — see "Shop-stock system pinned" below.** Kept for
+the record: an in-store probe read all six cells 0, and an exact-address
+ROM literal scan found no references, which suggested cheat-private
+scratch. Both observations were real; the inference was wrong (below).
 
-Decisive negative: a **ROM-wide byte-pattern scan for every candidate
-address as a literal-pool word finds ZERO code references** for all six
-shop cells + 0x02024A38 (0x02001F6C's single "hit" 0x080CEA58 is embedded
-data, not a pool). Conclusion: the cheat set allocates its own EWRAM
-buffer and its encrypted master lines (CBA 12+12) are a **runtime code
-patch** — the raw 8+4 lines are the data half of a code-injection cheat,
-not engine shop cells. The real shop-stock engine stays unlocated (new
-ground; reachable via miss-harvest disasm when a shop scene is played on
-a fresh state).
+## Shop-stock system pinned (2026-10-12, live TCP + disasm) — CORRECTS the above
+
+A full transaction (buy potion −50g, sell bandage +100g) probed read-only
+mid-scene flipped the verdict: 0x0202745C = 100 (the sold item's price),
+0x02027460 = a 14×4 {id u16, count u8, pad} working stock list, 0x020273CC
+= 3 (menu page; the cheat conditional 720273CC 0004 gates on page 4),
+0x02024434 = list length (9 in buy menu, 4 after). Party inventory slot0
+count tracked the buy exactly (gMoney 4700→4750 ✓).
+
+Decisive positive: the engine reaches the canonical stock array by
+**literal base 0x02001EE4** (= gInventory 0x02001940 + 0x5A4) — two
+predicates loop 14 slots × 4 B over it: stock-full @0x08061E1C (count ==
+0x63) and has-stock @0x080680B4 (id != 0 && count != 0). That base+offset
+access pattern is why the exact-address literal scan failed. The menu
+cells are engine UI state mirroring/working-copying that array.
+
+New symbols (symbols/ffta_data_symbols.tsv § 20): gShopStock 0x02001EE4
+(14×4), gShopMenuStock 0x02027460 (working copy), gShopMenuPage 0x020273CC,
+gShopMenuStockCount 0x02024434, gShopPrice 0x0202745C. The 0x02024420-7F
+block remains UI/cursor machinery (blinker 0x08017F04 / draw 0x08017E80),
+not shop data. Issue #22 consequence: "Shops Sell Everything" needs no
+runtime injection — a cheat layer writing these live cells (page-gated)
+reproduces it.
+
+Method note for future sweeps: exact-address ROM literal scans fail for
+any base-relative cell; scan for plausible bases (region windows) instead,
+and never settle engine-vs-cheat-scratch from single-scene reads.
 
 Session-notes discipline: probes of a user-launched session must be
 read-only (`read_ewram` etc.); `quit` in observe mode closes the debug

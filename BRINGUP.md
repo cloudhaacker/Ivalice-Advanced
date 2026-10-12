@@ -5241,6 +5241,41 @@ amended (XP resolved, +0x94/+0x182 fields, clan-skill names) + §19 added
 tests/python/test_tools.py TsvGuardTests — 6/6 OK. Symbols are
 debug-name-only (no codegen impact); no regen required.
 
+## 2026-10-12 (late 2) — live shop probes pin the shop-stock system (issue #22)
+
+Action: user ran a windowed --tcp-observe session (19870) and transacted
+in a shop (buy potion −50, sell bandage +100) while I probed read-only.
+Sequence of verdicts — worth recording because two got overturned:
+
+1. First store read: all six "Shops Sell Everything" cells zero →
+   hypothesized cheat-private scratch; backed by an exact-address ROM
+   literal scan (0 hits; 0x080CEA58 was embedded data). WRONG — the menu
+   was closed (only the storefront browse state), and the scan is blind
+   to base-relative access.
+2. 0x02024420 block looked like a live shop descriptor (count 9, ptr
+   0x02024464, fn 0x08017E81) → disasm: blinker/draw UI machinery
+   (0x08017F04 toggles +0x11, draw 0x08017E80 reads the 0x02002180
+   halfword table). Correct rejection — that block is scene-scratch UI.
+3. Post-transaction probe flipped the shop cells live: 0x0202745C = 100
+   (sold item price), 0x02027460 = 14×4 {id u16, count u8, pad} stock
+   working copy, 0x020273CC = 3 (menu page; cheat conditional gates on
+   page 4), 0x02024434 = list length (9 buy menu → 4 after). gMoney
+   4700→4750 exact; party inventory slot0 tracked the buy.
+4. Decisive disasm: canonical stock array at literal 0x02001EE4
+   (= gInventory + 0x5A4); stock-full predicate @0x08061E1C (count==0x63,
+   14 slots) and has-stock @0x080680B4. Base-relative access — the exact
+   scan never had a chance.
+
+Result: NEW SYMBOLS gShopStock 0x02001EE4 (14×4), gShopMenuStock
+0x02027460, gShopMenuPage 0x020273CC, gShopMenuStockCount 0x02024434,
+gShopPrice 0x0202745C (symbols § 20). Issue #22: "Shops Sell Everything"
+is writable live cells — no injection needed. Method lessons in
+reference/ffta-gamefaqs-code-guides.md (superseding section kept for the
+record): single-scene reads can't settle engine-vs-scratch; exact-address
+literal scans miss base-relative cells — scan region-window bases.
+Validation: TsvGuardTests 6/6 OK. Probe discipline held (read-only,
+no quit — after the earlier observe-quit mistake).
+
 **Gates** (all live, all green): objdump import table = 29 system DLLs
 only (forbid-list: SDL2, libstdc++-6, libgcc_s_seh-1, winpthread, freetype,
 harfbuzz, zlib DLLs — none present); sweep (same ROM/BIOS/binary hash

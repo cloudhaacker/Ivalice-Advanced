@@ -276,3 +276,42 @@
 # (world_map fixture) = grows with story progress. Adjacent byte 0x02001FB4
 # moved 0x07 -> 0x08 across the same two states.
 0x02001FB6	ewram	0x2	gTotemaUnlocked
+
+# Section 20: shop-stock system (2026-10-12, LIVE-VERIFIED via a user's
+# windowed --tcp-observe session, read-only probes: world map, store browse,
+# buy menu, a buy (potion, -50g) and a sell (bandage, +100g)). CORRECTS the
+# earlier "cheat-private scratch" hypothesis — the cells are engine data; the
+# engine reaches them via literal base 0x02001EE4 + offset, which is why an
+# exact-address ROM literal scan finds nothing.
+# gShopStock = canonical shop stock array, 14 slots x 4 B {id u16, count u8,
+# pad u8}, at gInventory + 0x5A4 (0x02001940+0x5A4). Engine predicates read it
+# by literal 0x02001EE4: stock-full check @0x08061E1C (14 slots, flags when
+# count == 0x63) and has-stock check @0x080680B4 (count != 0 && id != 0).
+# Live after the buy+sell: {0x016A x11, 0x016F x4, 0x0175 x3, 0x0177 x2}.
+0x02001EE4	ewram	0x38	gShopStock
+# Shop-menu working copy of the stock list (same 14x4 layout), page-scoped —
+# matched gShopStock after the transaction. Menu UI cells are base-relative
+# (base 0x020273C0-ish region reached by pointer arithmetic in the shop UI
+# functions), live values: page 0x020273CC = 3 (buy page), list length
+# 0x02024434 = 4 distinct stock entries, price cell 0x0202745C = 100 (the
+# sold bandage's price, captured mid-transaction).
+0x02027460	ewram	0x38	gShopMenuStock
+# gShopMenuPage = current shop menu page/state u16 (0 = closed/browse;
+# 3 = buy page observed; the cheat conditional "720273CC 0004" gates on
+# page == 4, the sell page presumably). UNVERIFIED at page 4.
+0x020273CC	ewram	0x2	gShopMenuPage
+# gShopMenuStockCount = distinct stock entries shown in the current menu
+# (was 9 in the buy menu pre-transaction, 4 after — tracks the open list).
+# NOTE: the same word belongs to a UI descriptor block (0x02024420..) shared
+# with cursor/blink machinery 0x08017E80/0x08017F04 — treat the block
+# 0x02024420-0x0202447F as scene-scratch UI state, NOT shop data.
+0x02024434	ewram	0x2	gShopMenuStockCount
+# gShopPrice = current hovered item's price u16 (100 = sold bandage; the
+# "8202745C 0000/0001" free/$1 cheat writes exactly this cell).
+0x0202745C	ewram	0x2	gShopPrice
+# STILL UNVERIFIED from the cheat sweep (see reference
+# ffta-gamefaqs-code-guides.md): 0x020273C9 (cheat init byte — likely also
+# menu-scoped scratch), 0x02001F6C unlock flag (no ROM literal hit; embedded
+# 0x080CEA58 match is data), 0x02024A38 mission-info price, 0x02001F54
+# "money" pair (refuted in field context), unit +0x182 "No Cards", u32 +0x94,
+# byte +0x05, multi-write slide semantics, gClanSkills slot order.
