@@ -5204,6 +5204,43 @@ Conclusion: support splits into (a) pre-recomp patch application with
 format detection, (b) identity handling for patched ROMs, (c) runtime
 cheat-code layer keyed to the vanilla RAM map.
 
+## 2026-10-12 (late) — cheat-page deep dive → new symbols (issue #22 fuel)
+
+Action: deep-dived AlmAR CodeBreaker (+22 sub-pages), AlmAR AR,
+gamehacking.org/4576, SuperCheats for address-bearing codes; decoded the
+raw CodeBreaker/Xploder scheme (`8AAAAAAA VVVV` = 16-bit write to
+0x0|AAAAAAA; `42…/0000NNNN YYYY` = multi-write stride YYYY), then
+verified candidates by offline GBAS reads (offset +0xFC per the
+jokyr-hack-guide live-read note) of state2_prev_20261007_114607 (gMoney
+5000), ws_fixtures/world_map (4700) and ws_fixtures/battle_overview.
+
+Results:
+- VERIFIED: XP byte = unit-record +0x8A old / +0x0A corrected (slot0
+  lvl3/XP18; closes §7's "0x8A — likely XP?"); gMoney 0x02001F64 re-tracks
+  5000→4700. REFUTED: AlmAR's 0x02001F54 "money" pair (zero in field while
+  money varies). PLAUSIBLE: gTotemaUnlocked 0x02001FB6 u16 bitfield
+  (0x0007→0x0807 with progress); gClanSkills 0x020021B6 = 8×u16 — the 8
+  "Max Appraise…Track" codes are 8 encrypted writes into it (names set-level;
+  order unverified; SuperCheats confirms "smithing" is a dispatch skill).
+- NEW SYMBOL: gBattleEnemyUnits 0x02002FD8, 7 slots × 0x108, name-ptr
+  aligned, party-identical record layout — pins the battle unit framing
+  (EH's gFirstEnemyUnit 0x02002FC4 = same slots framed +0x14). Cheat
+  cross-refs: "Instantly Win Battle" zeroes u32+0x14 (=1 everywhere;
+  semantics open), "Weaken Enemies" hits +0x04/+0x05 (byte +0x05 ≈ atk
+  power: party 80, enemies 10–45). Name-mode +0x186 dispatch re-verified
+  on enemies (mode 0 → name-table-B).
+- UNVERIFIED (no shop-scene fixture): shop cluster 0x020273C9/CC,
+  0x0202745C/60, 0x02024434, 0x02001F6C, mission-info 0x02024A38 — scene
+  scratch (0 in field states), code-derived leads only; +0x182 "No Cards"
+  reads 0 on all slots (semantics open).
+
+Changes: reference/ffta-gamefaqs-code-guides.md extended (source table,
+decode scheme, verdict table); symbols/ffta_data_symbols.tsv §7 notes
+amended (XP resolved, +0x94/+0x182 fields, clan-skill names) + §19 added
+(gBattleEnemyUnits, gTotemaUnlocked). Validation:
+tests/python/test_tools.py TsvGuardTests — 6/6 OK. Symbols are
+debug-name-only (no codegen impact); no regen required.
+
 **Gates** (all live, all green): objdump import table = 29 system DLLs
 only (forbid-list: SDL2, libstdc++-6, libgcc_s_seh-1, winpthread, freetype,
 harfbuzz, zlib DLLs — none present); sweep (same ROM/BIOS/binary hash

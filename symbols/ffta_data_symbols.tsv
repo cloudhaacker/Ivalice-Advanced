@@ -112,9 +112,18 @@
 0x020021B6	ewram	0x10	gClanSkills
 0x02003C34	ewram	0x3	gBattleLaws
 # Unit-record field offsets (two code compilations agree; base+stride verified
-# in Section 6): name-ptr +0x80, level +0x89 (0x8A per one code — XP?),
+# in Section 6): name-ptr +0x80, level +0x89, XP +0x8A (verified 2026-10-12:
+# slot0 lvl3/XP18 live; the "Quick Level Up" code writes 0x63 here),
 # HP +0x98/+0x9A, MP +0x9C/+0x9E, Atk +0xA0, Def +0xA2, Pow +0xA4, Res +0xA6,
-# abilities bitmap +0xC0 (0x90 bytes), Speed +0x152, JP +0x156.
+# u32 +0x94 (=1 on every live slot; the "Instantly Win Battle" code zeroes it
+# — semantics unknown), abilities bitmap +0xC0 (0x90 bytes), Speed +0x152,
+# JP +0x156, u16 +0x182 (the "No Cards" code target; reads 0 on all 24 slots
+# in two field states — plausible cards-held counter, semantics unverified),
+# name-mode +0x186 (Section 12; re-verified on battle enemies 2026-10-12).
+# gClanSkills slot names (the AlmAR "Max X" code set = 8 encrypted writes for
+# the 8 u16s; SuperCheats dispatch hints confirm "smithing level" as a real
+# dispatch skill): Appraise, Combat, Craft, Gather, Magic, Negotiate,
+# Smithing, Track — ORDER UNVERIFIED (codes encrypted; set-level mapping only).
 # Section 8: widescreen W1 — world-map camera (2026-10-08; verified live via
 # savestate diffing + abort traces; see reference/widescreen.md).
 # +0x00 mode/flags byte · +0x02 strip pointer · +0x08 coordinate (eased) ·
@@ -245,3 +254,25 @@
 # convention — bounds from the 0x1A4 bounds-header read @0x0839A59C).
 0x0839A59C	rom	0x20	anim_effect_switch_0839A59C
 0x0839A8E8	rom	0x28	anim_effect_switch_0839A8E8
+
+# Section 19: cheat-code pages sweep (2026-10-12; AlmAR CodeBreaker +
+# gamehacking.org 4576 + SuperCheats; decode scheme and full harvest in
+# reference/ffta-gamefaqs-code-guides.md). Verified 2026-10-12 by offline
+# GBAS reads (per the live-read protocol note in reference/jokyr-hack-guide.md)
+# of saves/state2_prev_20261007_114607.state (gMoney=5000),
+# saves/ws_fixtures/world_map.state (gMoney=4700) and
+# saves/ws_fixtures/battle_overview.state (mid-battle).
+# gBattleEnemyUnits = enemy battle slots, name-ptr aligned, record layout
+# identical to gPartyUnits (name +0x00, lvl +0x09, XP +0x0A, u32 +0x14 = 1,
+# HP +0x18/1A, MP +0x1C/1E, name-mode +0x106 = 0 -> gNamePtrTableB). Seven
+# slots carry ROM name ptrs in battle_overview (0x0856734A / 0x085674EE /
+# 0x08566AD4 / 0x085679E7 / 0x08567CC1 / 0x08567E0A / 0x08551369); EH's
+# gFirstEnemyUnit 0x02002FC4 (Section 17) = the same slots framed +0x14
+# earlier (their name field = record+0x14). Size = 7 observed slots x 0x108;
+# larger battles may extend past this extent.
+0x02002FD8	ewram	0x738	gBattleEnemyUnits
+# gTotemaUnlocked = u16 bitfield of obtained totema (AlmAR "Have All Totema"
+# writes 0xFFFF here); live reads 0x0007 (2026-10-07 save) -> 0x0807
+# (world_map fixture) = grows with story progress. Adjacent byte 0x02001FB4
+# moved 0x07 -> 0x08 across the same two states.
+0x02001FB6	ewram	0x2	gTotemaUnlocked

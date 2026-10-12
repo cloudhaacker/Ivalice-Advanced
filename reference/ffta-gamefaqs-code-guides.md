@@ -53,3 +53,51 @@ encrypted code-word fragments, not addresses). The usable content (per-slot
 stat map) was already captured via 25621/22129, which cross-agree with it —
 see Section 7 of `symbols/ffta_data_symbols.tsv`. Re-open only if a CBA
 decryption is ever wired up; not needed today.
+
+# Cheat-code pages sweep — AlmAR / gamehacking.org / SuperCheats (2026-10-12)
+
+Three code databases swept (facts + addresses extracted with attribution;
+no page text redistributed):
+
+| Source | What it holds | Harvest |
+|---|---|---|
+| AlmAR CodeBreaker (USA/AUS) + 22 sub-pages (Character 1-20, AllCharacters, Misc, ShopsSellEverything) | raw CodeBreaker/Xploder codes | address-bearing — decode scheme below; per-slot unit map × 20 |
+| AlmAR Action Replay (USA/AUS) | GSA v1/v2 encrypted 8+8 | labels only |
+| gamehacking.org game 4576 | 262 entries: GSA/AR-MAX/CBA-12 formats + ~6 raw CB lines | slot naming (Marche/Montblanc/No 3-24 = 24 roster slots) + raw shop/money lines |
+| SuperCheats FFTA (landing + GameShark page) | GSA-encrypted + one raw "Gameshark Infinite Codes" block + a **Europe** set | 3 raw all-slot codes; EUR codes must never be decoded against AFXE |
+
+## CodeBreaker/Xploder decode scheme (empirical; anchored to verified symbols)
+
+- `8AAAAAAA VVVV` — 16-bit write to `0x0|AAAAAAA` (addr nibble 2=EWRAM,
+  3=IWRAM, 4=I/O). Verified against `gMoney` and the unit-record map.
+- `42AAAAAA VVVV / 0000NNNN YYYY` — multi-write of VVVV, NNNN+1 times,
+  stride YYYY (whether VVVV slides +1 per iteration is unverified).
+- `32AAAAAAA VVVV` — 16-bit write; auto-increment variant suspected
+  ("Quick Level Up" keeps XP climbing).
+- `74000130 xxxx` / `D0000020 xxxx` — button conditionals (KEYINPUT).
+- Everything else (GSA v1/v2 8+8, AR MAX 8+8, CBA/Xploder 12+12) is
+  encrypted — labels only, no addresses.
+
+## Field harvest + verification (2026-10-12, offline GBAS reads)
+
+Protocol: savestate file bytes at `addr - 0x02000000 + 0xFC`
+(`reference/jokyr-hack-guide.md` § live-read notes; live TCP form in BRINGUP
+2026-10-11 annotation). States: `saves/state2_prev_20261007_114607.state`
+(gMoney=5000), `saves/ws_fixtures/world_map.state` (gMoney=4700),
+`saves/ws_fixtures/battle_overview.state` (mid-battle).
+
+| Candidate | Verdict |
+|---|---|
+| XP byte = record +0x8A old / +0x0A corrected | **VERIFIED** — slot0 lvl 3 / XP 18; "Quick Level Up" writes 0x63 here (closes the §7 "likely XP" open item) |
+| 0x02001F54/56 "money" pair (AlmAR) | **REFUTED** in field context — zero while gMoney varies 5000→4700 at 0x02001F64; stale code, EUR drift, or battle scratch |
+| Totema flags 0x02001FB6 (u16) | **Plausible** — 0x0007 → 0x0807 across saves (bitfield grows with progress); "Have All Totema" writes 0xFFFF |
+| gClanSkills 0x020021B6 = 8 × u16 | **Shape confirmed** (values [1×8]); the 8 "Max Appraise/Combat/Craft/Gather/Magic/Negotiate/Smithing/Track" codes = 8 encrypted writes into this array — **slot order unverified**. SuperCheats dispatch hints independently call "smithing level" a real dispatch skill |
+| Shop cluster 0x020273C9/0x020273CC/0x0202745C/0x02027460/0x02024434 (cat/init, price mode, item list stride 4, length) + 0x02001F6C unlock | Code-derived only — reads 0 in field states, graphics garbage in battle states (scene scratch, populated when shop UI opens). **Not live-verified** (no shop scene fixture) |
+| 0x02024A38 mission-info price | Weak-plausible (0 / 300 in field states) — same scratch caveat |
+| Battle enemy units | **NEW SYMBOL** `gBattleEnemyUnits` 0x02002FD8 + i×0x108 (7 slots in battle_overview), name-ptr aligned, party-identical record layout (name +0x00, lvl +0x09, XP +0x0A, u32 +0x14 = 1, HP +0x18/1A, MP +0x1C/1E, name-mode +0x106 = 0 → gNamePtrTableB). EH's gFirstEnemyUnit 0x02002FC4 = same slots framed +0x14 earlier |
+| Cheat targets on that array | "Instantly Win Battle" zeroes u16 at record +0x14 (u32 =1 on every live slot; semantics unknown); "Weaken Enemies" writes at +0x04/+0x05 — byte +0x05 tracks an atk-power-like value (party 80, enemies 10-45) |
+| +0x102 old (+0x182) "No Cards" target | Reads 0 on all 24 slots in both field states — plausible "cards held" counter, **semantics unverified** |
+
+Fresh corroboration of § 12: record +0x106 name-mode dispatch works on
+battle enemies too (mode 0 → random-name table; party slot0 mode 2 →
+gPartyNameBuffer).
