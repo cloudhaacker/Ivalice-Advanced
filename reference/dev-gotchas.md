@@ -231,6 +231,8 @@ access, which is enough:
   md5-compare, relaunch. Validate the image first with
   `tools/savecheck.py`. The game keeps redundant record groups — an
   interrupted write is ignored in favor of the previous valid group.
+  (Players import through the setup screen's save card instead, issue #20;
+  this recipe is the forensics path for sessions where the UI is bypassed.)
 
 ## BIOS recompile, build, stack
 

@@ -372,7 +372,8 @@ GBARECOMP_INPUT_REPLAY=logs/playthrough.csv ./build/FFTARecomp ...` — expect
   `reference/dev-gotchas.md` § Android device forensics.
 - **Android, device-free:** `tools/android_static_check.py` (suite
   `android-static`; CI tier 1) — identity/pin consistency across
-  `android/app/build.gradle` / `game_android.toml` / `game.toml`, the mods
+  `android/app/build.gradle` / `game_android.toml` / `game.toml` (including
+  the optional `.sav` setup-import wiring, issue #20), the mods
   payload contract (`state.toml` keeps widescreen enabled), tracked-file
   hygiene, and a fake-`adb` self-test of the device gate script (clean run
   passes; SELF-HEAL / missing-log / crash / setup-still-resumed runs fail).
