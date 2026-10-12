@@ -9,7 +9,7 @@
     "serial": "AFXE",
     "sha1": "4ac05441f4de70a4ec3dd932116346c61b8783d9"
   },
-  "project": "Final Fantasy Tactics Advance",
+  "project": "FFTA Recomp",
   "status": "released",
   "targets": ["Windows", "Linux", "Android"],
   "toolchain": "gbarecomp",

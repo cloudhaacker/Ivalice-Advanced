@@ -5609,7 +5609,9 @@ Tactics Advance / GBA / recomp / Gbarecomp", no project, status or
 targets) — the file is the project's own word and supersedes the guess
 once it is on `main`.
 
-- `game`/`project` "Final Fantasy Tactics Advance"; `wikidata` Q1072868
+- `game` "Final Fantasy Tactics Advance"; `project` "FFTA Recomp"
+  (matches the repo slug `ffta-recomp`; same name AGENTS.md uses);
+  `wikidata` Q1072868
   (Wikidata search API 2026-10-12: "Final Fantasy Tactics Advance", 2003
   video game); `system` "GBA"; `type` "recomp"; `original` {region USA,
   serial AFXE, sha1 `4ac05441…`} — all pinned in `game.toml` (§ Phase 0).
