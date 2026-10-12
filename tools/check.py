@@ -380,6 +380,16 @@ def check_android_apk():
     return r.returncode == 0, line or f"exit {r.returncode}"
 
 
+def check_release():
+    """Desktop release packager (tools/make_release.py): allowlist stage ->
+    private-material sweep -> deterministic portable zip (issue #3, R-track).
+    Opt-in — it needs a built (and fresh) tree, but never the ROM: the sweep
+    would reject the ROM anyway (--only release)."""
+    r = run([sys.executable, "tools/make_release.py"], timeout=900)
+    line = (r.stdout.strip().splitlines() or [""])[-1]
+    return r.returncode == 0, line or f"exit {r.returncode}"
+
+
 CHECKS = {
     "unit-cpp": check_unit_cpp,
     "unit-py": check_unit_py,
@@ -390,6 +400,7 @@ CHECKS = {
     "desktop-accept": check_desktop_accept,
     "desktop-accept-window": check_desktop_accept_window,
     "android-apk": check_android_apk,
+    "release": check_release,
     "attract": check_attract,
     "hle-audit": check_hle_audit,
     "ws_smoke": check_ws_smoke,
@@ -404,7 +415,9 @@ FAST = ["unit-cpp", "unit-py", "savecheck", "patches", "android-static",
         "attract"]
 # Opt-in suites, left out of the default run (they need local artifacts a
 # desktop-only worktree may not have); --only NAME runs them explicitly.
-OPTIONAL = {"android-apk"}
+# release: the zip packager — needs a built tree (no ROM), and its output
+# is a public artifact contract, so it runs explicit, never by default.
+OPTIONAL = {"android-apk", "release"}
 # Checks that execute the game binary (require it to exist); the others run
 # on a fresh clone without the ROM (CI tier 1: unit-cpp, unit-py, patches).
 NEEDS_EXE = {"attract", "hle-audit", "ws_smoke", "user_load", "route_G",

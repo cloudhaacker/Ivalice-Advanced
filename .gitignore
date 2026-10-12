@@ -183,3 +183,6 @@ selfheal*.json
 hang_trace.csv
 hang_fp_tail.csv
 hang_dump.log
+
+# release packaging output (tools/make_release.py)
+release-stage/

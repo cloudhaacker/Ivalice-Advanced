@@ -18,6 +18,32 @@ no Nintendo BIOS dump is required.
 
 ## Quick start
 
+### Using a release binary (no build)
+
+Grab the latest Linux x64 zip from [releases](../../releases), then:
+
+1. Extract the folder anywhere **writable** — launcher settings, the ROM
+   path cache, and saves are kept beside the executable.
+2. Run it:
+
+   ```sh
+   ./FFTARecomp
+   ```
+
+3. In the launcher, pick your legally obtained *Final Fantasy Tactics
+   Advance* (USA) ROM and select **Play**.
+
+The launch BIOS is bundled — a clean-room, freely redistributable build
+([`bios/`](bios/) in the zip, LGPL-3.0-or-later) — so you never need a
+Nintendo BIOS dump. Your ROM is hash-verified at launch: a mismatch error
+means the file is not the expected USA dump.
+
+System requirements: Linux x86-64 with SDL2, OpenGL, FreeType, and
+Harfbuzz (Debian/Ubuntu: `libsdl2-2.0-0 libopengl0 libfreetype6
+libharfbuzz0b`). Display and widescreen options (`--view-width 448`,
+`--resize-view`, `--scale`, fullscreen) are listed in
+[docs/README.md](docs/README.md).
+
 ### Desktop (Linux)
 
 1. Clone with submodules and place your legally obtained ROM dump at the

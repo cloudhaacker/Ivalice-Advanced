@@ -4979,3 +4979,107 @@ BIOS; gbarecomp PRINCIPLES/DEBUG/docs/TOML_SCHEMA exist). `py_compile`
 green (build.py, build_apk.py, cycle.py, test_tools.py); unit-py 37/37
 green. Docs-only change — no game.toml/src/generated/ touched, so no
 cycle.py gate required.
+
+## 2026-10-11 (late 3) — R-track start: R1 release packager (issue #3)
+
+**Landed** `tools/make_release.py` — the distributable desktop zip, built
+from an ALLOWLIST (never copy-the-tree): stripped binary, `assets/`,
+`mods/`, `game.toml`, the pinned clean-room BIOS + `bios/README.md`,
+`LICENSE`, `LICENSES/`, `THIRD_PARTY_ATTRIBUTION.md`, and a generated
+self-contained zip README (requirements, run, hash-verify, widescreen,
+file layout, legal — no dead links into unshipped repo folders).
+
+**Design decision — the sweep is content-pinned, not name-pinned.**
+`sweep_stage()` (pure function, unit-tested) rejects: ROM bytes under ANY
+name (sha1 == ROM pin), a `.bin` that is not the emibios pin (a retail
+dump renamed to `.bin` fails), forbidden extensions (.gba/.agb/.sav/
+.srm/.apk), symlinks, a de-exec'd binary, and a missing required file.
+`.gitignore`d `release-stage/`.
+
+**Freshness gate — first shape was wrong.** Binary-vs-regen-inputs mtime
+comparison tripped on the *current* tree: the 7c0d2e3 pull rewrote
+`game.toml`/`symbols/*.tsv` mtimes at 19:45 with identical content (git
+checkout smudge — the same mtime-lies class as the `.regen_stamp`
+lesson). Mirrored `build_apk.py`'s proven gate instead: stamp exists →
+inputs vs **stamp** → binary vs **corpus mtimes** (the recompiler
+preserves mtimes for byte-identical output, so corpus mtimes are exact).
+One `tools/cycle.py` run clears a smudged tree; the gate never packages a
+maybe-stale tree.
+
+**Zip determinism + portability.** Fixed 1980-01-01 timestamps, sorted
+entries, forward-slash names, unix `create_system` so `external_attr`
+carries the mode; `verify_zip` reads back (count, portability, exec bit).
+Two independent packaging runs → byte-identical sha1 `5549e2ff…` — a
+release job can hash, users can diff. Boot smoke from a bare /tmp
+extraction: **FULLY_STATIC, dispatch_misses=0, interpreted=0**, exec bit
+intact, runtime sidecars (`rom.cfg`, `recomp_cache/`) created beside the
+exe as documented.
+
+**Tests + wiring.** `ReleasePackTests` (10 tests, `tests/python/
+test_tools.py`): sweep accept/reject on synthetic stages (gba, unpinned
+.bin, disguised ROM hash, retail-BIOS bytes, symlink, exec bit, missing
+README) + zip determinism/portable read-back — CI tier 1, no build tree
+needed. `check.py` suite `release` (opt-in: needs a built+fresh tree,
+never the ROM — its sweep would reject one). unit-py 37 → 46.
+
+**Docs.** Root README § "Using a release binary" (R6 — the binary-first
+path for download-and-play users, ahead of the from-source quick start);
+generated zip README; `tools/README.md` table row; `tests/README.md` CI
+tiers note.
+
+**Result.** Fast gate 6/6; `--only release` PASS; R1 + R6 done (issue #3
+R-track: R3/R4/R2/R5 remain — APK artifact, `release.yml` tag trigger,
+Windows stretch, first tagged release).
+
+## 2026-10-11 (late 4) — R-track: R3 public APK release artifact (issue #3)
+
+**Landed** `tools/make_release.py --apk`: the public (ROM-less) Android APK
+as a release artifact, staged beside the zip.
+
+**Flow**: preflight reuses `build_apk.py` (JDK/SDK/NDK discovery, SDL
+submodule, dump verify — the release runner carries the ROM for the
+bootstrap anyway) but its own gradle call (`build_apk.step_gradle` bakes in
+`-PprivateRom`). **Clean repackage always**: `android/app/build` removed
+before gradle — native objects under `android/app/.cxx` survive (compile
+stays cached) but the packaging restarts from scratch. Then the
+`android_apk_check.py --expect public` gate, then staging as
+`FFTARecomp-<version>-android-arm64-v8a.apk`.
+
+**The live run found both traps:**
+1. `build_apk.newest_apk()` globs the `*-PRIVATE-rom-included` marker only —
+   it can never find a public build; the public APK is always at AGP's
+   `android/app/build/outputs/apk/debug/app-debug.apk` (the engine's rename
+   deliberately applies only to private builds).
+2. The guard's packaging-sanity check rejected the first artifact:
+   65.7 MB APK vs 35.1 MB of entries — **29 MB of incremental-repackaging
+   slack** stranded from prior builds, invisible to infolist (the exact
+   junk class that check exists for). The clean repackage above is the
+   structural fix; the guard stays as belt-and-braces.
+
+**Result**: zip `c41267b4…` (45.7 MB) + public APK `e81303d5…` (35.1 MB,
+guard 8/8 `--expect public`), both `release-stage/` (gitignored).
+`assembleDebug` is debug-signed — the release-key (`gbaKeystore`) decision
+stays flagged open for R5 on issue #3.
+
+## 2026-10-11 (late 5) — R-track: R4 tag-triggered release workflow (issue #3)
+
+**Landed** `.github/workflows/release.yml`: `v*` tag push → bootstrap
+(`build.py`) → full gate → package (`make_release.py --apk`) → attach.
+`workflow_dispatch` runs everything except the attach (rehearsal that
+publishes nothing — dispatch is branch-named, the attach step is
+`startsWith(github.ref, 'refs/tags/')`-gated).
+
+**Posture** (tier-2, per tests/README.md § CI): tag pushes require write
+access (forks can't trigger — no exfiltration surface); the ROM comes from
+the runner's `FFTA_ROM` env var (path outside the workspace, configured on
+the runner, never in the repo) and is copied in after checkout for the
+corpus regen only; every attached file is content-guarded BEFORE the
+release exists (zip: make_release sweep; APK: `--expect public`). Attach
+by exact deterministic filename (`FFTARecomp-<tag>-linux-x64.zip` +
+`-android-arm64-v8a.apk`) — at a tag, `git describe` is exactly the tag,
+and a bare `release-stage/*.zip` glob would also attach stale zips from
+earlier local runs.
+
+**Open items** (R5): the release signing key (`gbaKeystore` — debug-signed
+until decided), notes content beyond `--generate-notes`, and the runner
+label (`self-hosted` assumed — adjust to the actual label if different).

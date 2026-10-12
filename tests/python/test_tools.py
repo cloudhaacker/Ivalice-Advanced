@@ -17,11 +17,17 @@ Covers the pure logic the healing/audit flow depends on:
   - RegenStampContractTests: the .regen_stamp cross-script contract
     (build.py/cycle.py write it after a regen; build_apk.py's freshness
     gate reads it — corpus mtimes cannot date a regen)
+  - ReleasePackTests: tools/make_release.py — the public-artifact sweep
+    (ROM under any name, unpinned .bin, forbidden extensions, symlink,
+    required set, exec bit) + the deterministic portable zip writer;
+    driven on synthetic stages, so these run on CI tier 1 too
 
 Run: .venv/bin/python tests/python/test_tools.py [-v]
 Requires capstone (misspack dependency): use .venv per docs/manual-build.md,
 or `pip install capstone==5.0.7` — CI installs that same pin.
 """
+import hashlib
+import os
 import pathlib
 import re
 import struct
@@ -659,6 +665,154 @@ class RomTruthTests(unittest.TestCase):
                              f"veneer {addr:#010x} svc imm")
             self.assertEqual(self._u16(addr + 2), 0x4770,
                              f"veneer {addr:#010x} bx lr")
+
+
+class ReleasePackTests(unittest.TestCase):
+    """tools/make_release.py — the public-artifact packager (issue #3, R1).
+
+    sweep_stage() is the contract that keeps a public release free of
+    private material: ROM bytes under ANY name, a .bin that is not the
+    pinned clean-room BIOS (a retail dump), forbidden extensions,
+    symlinks, a de-exec'd binary, a missing required file. The zip writer
+    must be deterministic and portable (fixed timestamps, sorted entries,
+    forward-slash names, permissions preserved) so CI can hash releases.
+
+    Everything runs against synthetic stages (the real committed BIOS
+    copied in — repo material, present everywhere): no build tree needed,
+    so these run on CI tier 1. The live `check.py --only release` suite
+    packages the real build on a full tree (tier 2/local).
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        import make_release  # noqa: E402 (tools/ on sys.path)
+        cls.mr = make_release
+
+    def _stage(self, td):
+        """Minimal passing stage: the required set, nothing else."""
+        root = pathlib.Path(td) / "stage"
+        root.mkdir(parents=True)
+
+        def f(rel, data=b"x"):
+            p = root / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_bytes(data)
+            p.chmod(0o755 if rel == "FFTARecomp" else 0o644)
+
+        f("FFTARecomp")
+        f("game.toml")
+        # The real committed BIOS at its pin: the one .bin the sweep allows.
+        f("bios/emibios_gba_bios.bin",
+          (REPO / "bios/emibios_gba_bios.bin").read_bytes())
+        f("bios/README.md")
+        f("README.md")
+        f("LICENSE")
+        f("LICENSES/LGPL-3.0-or-later.txt")
+        f("THIRD_PARTY_ATTRIBUTION.md")
+        f("mods/packages/ffta.enhancement.widescreen/1.0.0/manifest.toml")
+        f("assets/fonts/Pro.ttf")
+        f("assets/img/box.png")
+        return root
+
+    def test_sweep_clean(self):
+        import tempfile
+        with tempfile.TemporaryDirectory(dir="/tmp") as td:
+            root = self._stage(td)
+            self.assertEqual(self.mr.sweep_stage(root), [])
+
+    def test_sweep_rejects_gba(self):
+        import tempfile
+        with tempfile.TemporaryDirectory(dir="/tmp") as td:
+            root = self._stage(td)
+            (root / "final_fantasy.gba").write_bytes(b"ROM")
+            v = self.mr.sweep_stage(root)
+            self.assertTrue(any("forbidden extension" in x for x in v), v)
+
+    def test_sweep_rejects_unpinned_bin(self):
+        import tempfile
+        with tempfile.TemporaryDirectory(dir="/tmp") as td:
+            root = self._stage(td)
+            (root / "bios/other.bin").write_bytes(b"NOPE")
+            v = self.mr.sweep_stage(root)
+            self.assertTrue(
+                any("not the pinned clean-room BIOS" in x for x in v), v)
+
+    def test_sweep_rejects_disguised_rom(self):
+        # The hash rule catches renamed material: patch the ROM pin to the
+        # digest of a planted payload under an innocent name.
+        import hashlib
+        import tempfile
+        with tempfile.TemporaryDirectory(dir="/tmp") as td:
+            root = self._stage(td)
+            payload = b"pretend this is rom bytes"
+            (root / "harmless.txt").write_bytes(payload)
+            old = self.mr.ROM_SHA1
+            self.mr.ROM_SHA1 = hashlib.sha1(payload).hexdigest()
+            try:
+                v = self.mr.sweep_stage(root)
+            finally:
+                self.mr.ROM_SHA1 = old
+            self.assertTrue(any("disguised name" in x for x in v), v)
+
+    def test_sweep_rejects_retail_bios_bytes(self):
+        # Same code path for the retail-dump pin (the launcher-accepted
+        # local alternative — it must never enter a public artifact).
+        import hashlib
+        import tempfile
+        with tempfile.TemporaryDirectory(dir="/tmp") as td:
+            root = self._stage(td)
+            payload = b"pretend these are retail bios bytes"
+            (root / "keep.dat").write_bytes(payload)
+            old = self.mr.RETAIL_BIOS_SHA1
+            self.mr.RETAIL_BIOS_SHA1 = hashlib.sha1(payload).hexdigest()
+            try:
+                v = self.mr.sweep_stage(root)
+            finally:
+                self.mr.RETAIL_BIOS_SHA1 = old
+            self.assertTrue(any("retail BIOS dump" in x for x in v), v)
+
+    def test_sweep_rejects_symlink(self):
+        import tempfile
+        with tempfile.TemporaryDirectory(dir="/tmp") as td:
+            root = self._stage(td)
+            os.symlink("/etc/passwd", root / "escape")
+            v = self.mr.sweep_stage(root)
+            self.assertTrue(any("symlink" in x for x in v), v)
+
+    def test_sweep_requires_binary_exec_bit(self):
+        import tempfile
+        with tempfile.TemporaryDirectory(dir="/tmp") as td:
+            root = self._stage(td)
+            (root / "FFTARecomp").chmod(0o644)
+            v = self.mr.sweep_stage(root)
+            self.assertTrue(any("exec bit" in x for x in v), v)
+
+    def test_sweep_requires_readme(self):
+        import tempfile
+        with tempfile.TemporaryDirectory(dir="/tmp") as td:
+            root = self._stage(td)
+            (root / "README.md").unlink()
+            v = self.mr.sweep_stage(root)
+            self.assertTrue(any("missing required file: README.md" in x
+                                for x in v), v)
+
+    def test_zip_deterministic_portable(self):
+        import hashlib
+        import tempfile
+        with tempfile.TemporaryDirectory(dir="/tmp") as td:
+            root = self._stage(td)
+            z1 = pathlib.Path(td) / "a.zip"
+            z2 = pathlib.Path(td) / "b.zip"
+            n1 = self.mr.write_portable_zip(root, "FFTARecomp-x", z1)
+            n2 = self.mr.write_portable_zip(root, "FFTARecomp-x", z2)
+            self.assertEqual(n1, n2)
+            self.assertEqual(
+                hashlib.sha1(z1.read_bytes()).hexdigest(),
+                hashlib.sha1(z2.read_bytes()).hexdigest(),
+                "same tree, same zip bytes — releases must be hashable")
+            self.assertEqual(self.mr.verify_zip(z1, n1), [],
+                             "read-back: portable names, count, exec bit")
+
 
 
 if __name__ == "__main__":

@@ -1,0 +1,90 @@
+# Release — tag-triggered, tier 2 (the private-material-bearing machine).
+#
+# Posture (tests/README.md § Continuous integration):
+#   - A v* tag push requires write access to this repo — fork PRs can never
+#     trigger this workflow, so there is no fork-exfiltration surface.
+#   - The runner is SELF-HOSTED and carries the private material
+#     pre-placed OUTSIDE the workspace: FFTA_ROM (env var set in the
+#     runner's own env config, never in this repo) points at the pinned
+#     USA dump. It is copied in after checkout for the corpus regen; every
+#     artifact this job produces is content-guarded ROM-free BEFORE the
+#     release is created (the zip by the make_release sweep — ROM sha1
+#     under any name; the APK by android_apk_check --expect public).
+#   - workflow_dispatch runs the whole pipeline EXCEPT the attach step:
+#     a full-dress rehearsal that publishes nothing.
+#
+# The runner needs what a tier-2 machine already has: python3 + the
+# .venv bootstrap (build.py creates it), the Android SDK/NDK/JDK (the
+# --apk preflight discovers them the way build_apk.py does), the pinned
+# fixtures for the full gate, and the gh CLI (GH_TOKEN comes from the job).
+name: Release (tag)
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: self-hosted
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Two passes mirror ci.yml and the local recipe: the first init can
+      # leave nested worktrees empty (arm-recomp-core), --checkout fixes.
+      - name: Pinned submodules
+        run: |
+          git submodule update --init --recursive
+          git submodule update --checkout --recursive
+
+      - name: Place the private dump (runner-local, never in git or artifacts)
+        run: |
+          test -n "$FFTA_ROM" || { echo \
+            "FFTA_ROM is not set — configure it in the runner's env" \
+            "(path outside the workspace; see this file's header)"; exit 1; }
+          cp "$FFTA_ROM" game.gba
+
+      # Patches onto the pinned submodules -> venv -> corpus regen ->
+      # build -> strict 2400-frame smoke. Idempotent; see build.py.
+      - name: Bootstrap (patches → corpus → build → smoke)
+        run: python3 build.py
+
+      # The full gate: host units, patches, android-static, attract,
+      # widescreen smoke, strict route replays over the local fixtures.
+      - name: Full gate
+        run: .venv/bin/python tools/check.py --jobs 8
+
+      # Both artifacts in one pass: the deterministic zip (allowlist stage
+      # + private-material sweep) and the guarded public APK (clean
+      # repackage + android_apk_check --expect public). The version is
+      # pinned to the tag: build.py applies framework patches to the
+      # submodules, so `git describe --dirty` inside the job yields
+      # `v1.5-dirty` — the release IS the tag, unconditionally.
+      # (workflow_dispatch: GITHUB_REF_NAME is the branch name — a
+      # rehearsal artifact name, fine.)
+      - name: Package (zip + public APK, guarded)
+        run: >
+          .venv/bin/python tools/make_release.py --apk
+          --version "$GITHUB_REF_NAME"
+
+      # Tag events only (dispatch is branch-named). Idempotent: if the
+      # release already exists (cut manually before a runner picked this
+      # up), upload --clobber refreshes the assets; otherwise create it.
+      - name: Attach artifacts to the release
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          set -e
+          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" --generate-notes
+          fi
+          gh release upload "$GITHUB_REF_NAME" \
+            "release-stage/FFTARecomp-${GITHUB_REF_NAME}-linux-x64.zip" \
+            "release-stage/FFTARecomp-${GITHUB_REF_NAME}-android-arm64-v8a.apk" \
+            --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
