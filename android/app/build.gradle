@@ -28,6 +28,13 @@ ext.gbaGame = [
     // matches game_android.toml [bios].sha1 (enforced: android-static).
     biosSha1      : "0c0d404d16c6b55b3071aba714f82077da132f14",
     biosRequired  : false,
+    // Issue #20: optional battery-save import on the setup screen (desktop
+    // parity). Basename matches game_android.toml [save].path (and game.toml
+    // [save].path); size pins the 512-Kbit flash image (65536). The setup
+    // card validates this size and mirrors to external saves/ (enforced:
+    // android-static).
+    saveFile      : "ffta_us.sav",
+    saveSize      : 65536,
     orientation   : "landscape",
     payloadVersion: "4",
     setupNote     : "Landscape tactics: use the on-screen pad and buttons; " +

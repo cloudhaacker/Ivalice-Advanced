@@ -5629,3 +5629,79 @@ once it is on `main`.
 - Metadata-only: no `game.toml`/`src/`/`generated/` change, so workflow A
   is not invoked; the `tools/make_release.py` allowlist is untouched (the
   file is repo identity, not a release artifact).
+
+---
+
+## 2026-10-12 — Issue #20: .sav picker on Android (desktop parity)
+
+The desktop launcher has a battery-save row (Import SRAM save, `*.srm`/`*.sav`);
+Android's setup screen offered only ROM + BIOS, so a player with a desktop /
+emulator save had to `adb push` to the external saves/ dir by hand. The setup
+screen now offers an optional third card, "Save data (optional)", through the
+same SAF picker.
+
+Engine (shared shell, carried as `tools/patches/android-save-picker.patch`;
+`gbarecomp-local.patch` re-exported, 431-file replay byte-match):
+
+- `platform/android/gbarecomp-app.gradle`: optional `saveFile`/`saveSize`
+  game keys → manifest placeholders `gbaSaveFile`/`gbaSaveSize` (empty = no
+  card; pinned size e.g. 65536, else any non-empty ≤128 KiB).
+- `platform/android/AndroidManifest.xml`: `gbarecomp.save_file`/`save_size`
+  meta-data.
+- `platform/android/java/org/gbarecomp/GbaGameConfig.java`: `saveFile`/`saveSize`
+  fields (safe parse, defaults ""/0).
+- `platform/android/java/org/gbarecomp/GbaSetupActivity.java`: `PICK_SAVE`,
+  `hasSaveImport()` gate, third asset card, `refreshStatus()` checks
+  app-private `saves/` OR external `saves/` for validity, `setBusy()` covers
+  the new button, and `installVerifiedSave()` size-validates (exact when
+  pinned) then dual-writes to app-private + external `saves/`. Dual-write is
+  the point: the runtime (issue #6) reads `--save-path` in external storage,
+  so an internal-only write would strand every re-import after the one-time
+  outward migration. A failed external mirror is non-fatal (internal still
+  migrates on next launch). `ready()` never consults the save — PLAY stays
+  one tap for a fresh start.
+
+Game side:
+
+- `android/app/build.gradle`: `saveFile: "ffta_us.sav"`, `saveSize: 65536`
+  (basenames match `game.toml`/`game_android.toml` `[save]`; enforced).
+- `tools/android_static_check.py`: new `check_save_picker_wiring` (pins across
+  build.gradle + both TOMLs, engine tokens in tree-or-recorded-patch,
+  `ready()` must not gate on the save, dual-write `copyFile` present).
+- `android/README.md` § Saves & states: setup-import paragraph; `tools/patches/
+  README.md`: new patch row.
+
+Gates: `android-static` 23/23 PASS (incl. the new check), `patches` PASS
+(per-feature forward-ok to the pin + consolidated 431-file replay match).
+No `game.toml`/`src/`/`generated/` change, so workflow A is not invoked;
+device verification is the standard `validate_android.sh` + a manual
+CHOOSE SAVE → REPLACE SAVE → PLAY pass on next device contact.
+
+---
+
+## 2026-10-12 (late 10) — Issue #20 device-verified: .sav picker works
+
+User-verified on the M2102K1AC (Android 14): after `pm clear`, the public
+debug APK's setup screen shows the third card, "Save data (optional)";
+CHOOSE SAVE on a 64 KiB save flips it to `● Verified and ready` / REPLACE
+SAVE, and PLAY boots into the save ("worked perfectly"). PLAY stays ungated
+without a save (fresh start), as designed.
+
+Test path notes (for the next device contact):
+
+- The **private** ROM-embedded APK can never show the card:
+  `hasBundledPrivateAssets()` short-circuits setup straight into the game.
+  Testing used the **public** `app-debug.apk` (`assembleDebug` without
+  `-PprivateRom`; `android-apk --expect public` OK) + `pm clear`, with
+  `game.gba` and a 64 KiB `game.sav` pushed to Download for the SAF picks.
+  The merged manifest confirms `save_file="ffta_us.sav"` / `save_size="65536"`.
+- `build_apk.py`'s device gate flaked on the first post-install run (launch
+  race: pidof empty, game activity not resumed) and then passed **5/5 GATE
+  PASSED** on re-run with no changes — same class as the known
+  install-settle race, not the save code (a manual AUTOSTART launch in
+  between also passed cleanly).
+- Preflight note: `build_apk.py` refused the first build (`generated/ corpus
+  is stale` — `android/app/build.gradle` is a freshness input newer than the
+  stamp). The corpus inputs (`game.toml`, symbols) were untouched, so the
+  recompiler was re-run directly (byte-identical output, no tracked diff)
+  and the stamp touched, rather than faking freshness.

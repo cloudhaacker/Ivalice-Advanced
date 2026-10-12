@@ -309,6 +309,20 @@ always owns its own external directory. **Import rule:** copy files in while
 the app is fully stopped (`am force-stop` first); a foreign `.sav` must
 still be the 65536-byte flash image or the boot warning fires.
 
+**Setup-screen import (issue #20, desktop parity):** the setup screen offers
+an optional third card, "Save data (optional)" — `CHOOSE SAVE` / `REPLACE
+SAVE` through the same SAF picker as ROM/BIOS. The pick is size-validated
+(65536 bytes for this game's 512-Kbit flash) and mirrored to both the
+app-private `saves/` fallback and the user-visible external `saves/` dir the
+runtime actually reads, so a re-import after the first launch is never
+stranded by the one-time migration. Status shows `● Verified and ready`
+once a valid save exists in either location, `○ Not provided` otherwise —
+and PLAY is never gated on it (fresh start without a save stays one tap).
+The card only appears when the build declares `saveFile`/`saveSize`
+(`android/app/build.gradle`; engine placeholders `gbaSaveFile`/`gbaSaveSize`
+→ manifest `gbarecomp.save_file`/`save_size` → `GbaGameConfig`; local patch
+`tools/patches/android-save-picker.patch`).
+
 Example — loading a desktop/emulator save on the phone (the battery save
 is always named `ffta_us.sav` regardless of where the original came from):
 

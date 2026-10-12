@@ -350,6 +350,66 @@ def check_save_config():
          % (game["save"]["size"], android["save"]["size"]))
 
 
+def check_save_picker_wiring():
+    # Issue #20: optional .sav import on the setup screen (desktop parity).
+    # The setup card is game-agnostic (saveFile/saveSize manifest pins); the
+    # FFTA pins must match both TOML save declarations, the engine must carry
+    # the card + validation + dual-write, and the import must never gate PLAY.
+    game = load_toml("game.toml")
+    android = load_toml("android/game_android.toml")
+    gradle = read_text("android/app/build.gradle")
+    save_file = one(r'saveFile\s*:\s*"([^"]+)"', gradle, "build.gradle saveFile")
+    save_size = int(one(r'saveSize\s*:\s*(\d+)', gradle, "build.gradle saveSize"))
+    need(save_file == Path(android["save"]["path"]).name,
+         "build.gradle saveFile %r != game_android.toml [save].path basename %r"
+         % (save_file, Path(android["save"]["path"]).name))
+    need(save_file == Path(game["save"]["path"]).name,
+         "build.gradle saveFile %r != game.toml [save].path basename %r"
+         % (save_file, Path(game["save"]["path"]).name))
+    need(save_size == android["save"]["size"] == game["save"]["size"],
+         "saveSize mismatch: build.gradle=%d game_android.toml=%d game.toml=%d"
+         % (save_size, android["save"]["size"], game["save"]["size"]))
+    # Engine template + manifest plumbing (working tree or recorded patch —
+    # fresh clones check out pristine submodules; see check_save_external_wiring).
+    template = read_text("gbarecomp/platform/android/gbarecomp-app.gradle")
+    manifest = read_text("gbarecomp/platform/android/AndroidManifest.xml")
+    config_java = read_text(
+        "gbarecomp/platform/android/java/org/gbarecomp/GbaGameConfig.java")
+    setup_java = read_text(
+        "gbarecomp/platform/android/java/org/gbarecomp/GbaSetupActivity.java")
+    recorded = ""
+    for rel in ("tools/patches/gbarecomp-local.patch",
+                "tools/patches/android-save-picker.patch"):
+        path = REPO / rel
+        if path.is_file():
+            recorded += path.read_text(encoding="utf-8") + "\n"
+    combined = template + manifest + config_java + setup_java + recorded
+    for token, what in (
+            ("gbaSaveFile", "engine placeholder gbaSaveFile"),
+            ("gbaSaveSize", "engine placeholder gbaSaveSize"),
+            ("gbarecomp.save_file", "manifest meta-data save_file"),
+            ("gbarecomp.save_size", "manifest meta-data save_size"),
+            ("saveFile", "GbaGameConfig.saveFile"),
+            ("saveSize", "GbaGameConfig.saveSize"),
+            ("PICK_SAVE", "setup PICK_SAVE request"),
+            ("installVerifiedSave", "setup save installer"),
+            ("hasSaveImport", "setup save-card gate"),
+            ("externalSaveFile", "setup external mirror"),
+            ("Save data (optional)", "setup save card")):
+        need(token in combined,
+             "save-picker token %r missing (%s)" % (token, what))
+    # The import is optional: ready() must not consult the save state.
+    m = re.search(r"private boolean ready\(\) \{([^}]*)\}", setup_java)
+    need(m is not None, "setup ready() unreadable")
+    need("saveReady" not in m.group(1) and "save" not in m.group(1).lower(),
+         "setup ready() must not gate PLAY on the optional save (issue #20)")
+    # Dual-write: the installer must mirror to external so a re-import after
+    # the issue-#6 migration is not stranded in app-private storage.
+    need("copyFile(destination, external)" in setup_java
+         or "copyFile(destination, external)" in recorded,
+         "setup save installer must mirror to the external saves/ dir")
+
+
 def check_save_external_wiring():
     # Issue #6: battery saves + save states must land in the user-visible
     # external app directory. The TOML keeps the app-private fallback (used
@@ -742,6 +802,8 @@ CHECKS = [
     ("identity: engine accepts the clean-room BIOS (launcher pin-set + "
      "public-guard exemption)", check_emibios_engine_acceptance),
     ("identity: save type/size mirror the desktop config", check_save_config),
+    ("identity: optional .sav import on setup (issue #20)",
+     check_save_picker_wiring),
     ("identity: saves/states land in the user-visible app dir (issue #6)",
      check_save_external_wiring),
     ("identity: logs/frag/coverage land in the user-visible app dir",

@@ -1,0 +1,315 @@
+diff --git a/platform/android/gbarecomp-app.gradle b/platform/android/gbarecomp-app.gradle
+index 2410a71..d04e818 100644
+--- a/platform/android/gbarecomp-app.gradle
++++ b/platform/android/gbarecomp-app.gradle
+@@ -14,7 +14,11 @@
+ //   romLabel, biosRequired (false), orientation ("landscape"|"portrait"|"any"),
+ //   payloadVersion ("1"), setupNote, gyro (false), payloadDirs ([[from:File, into:String]]),
+ //   cmakeArguments ([]), recompUiRoot (File), releaseAbis (["arm64-v8a"]),
+-//   debugAbis (["arm64-v8a","x86_64"])
++//   debugAbis (["arm64-v8a","x86_64"]),
++//   saveFile ("", e.g. "game.sav"), saveSize (0 = any non-empty size accepted;
++//     games with a fixed battery size pin it, e.g. 65536 for 512-Kbit flash).
++//   When saveFile is empty the setup screen shows no save card; when set it
++//   shows an optional "Save data" import (never blocks PLAY).
+ //
+ // Private personal builds may embed verified assets (never distribute them):
+ //   -PprivateRom=<path> [-PprivateBios=<path>]
+@@ -106,6 +110,8 @@ android {
+             gbaRomFile: g.romFile,
+             gbaBiosRequired: "${g.biosRequired ?: false}",
+             gbaBiosSha1: g.biosSha1 ?: "300c20df6731a33952ded8c436f7f186d25d3492",
++            gbaSaveFile: g.saveFile ?: "",
++            gbaSaveSize: "${g.saveSize ?: 0}",
+             gbaOrientation: orientation,
+             gbaActivityOrientation: activityOrientation,
+             gbaPayloadVersion: "${g.payloadVersion ?: '1'}",
+diff --git a/platform/android/AndroidManifest.xml b/platform/android/AndroidManifest.xml
+index e80bcf5..9655565 100644
+--- a/platform/android/AndroidManifest.xml
++++ b/platform/android/AndroidManifest.xml
+@@ -27,6 +27,8 @@
+         <meta-data android:name="gbarecomp.rom_file" android:value="${gbaRomFile}" />
+         <meta-data android:name="gbarecomp.bios_required" android:value="${gbaBiosRequired}" />
+         <meta-data android:name="gbarecomp.bios_sha1" android:value="${gbaBiosSha1}" />
++        <meta-data android:name="gbarecomp.save_file" android:value="${gbaSaveFile}" />
++        <meta-data android:name="gbarecomp.save_size" android:value="${gbaSaveSize}" />
+         <meta-data android:name="gbarecomp.orientation" android:value="${gbaOrientation}" />
+         <meta-data android:name="gbarecomp.payload_version" android:value="${gbaPayloadVersion}" />
+         <meta-data android:name="gbarecomp.setup_note" android:value="${gbaSetupNote}" />
+diff --git a/platform/android/java/org/gbarecomp/GbaGameConfig.java b/platform/android/java/org/gbarecomp/GbaGameConfig.java
+index 9208043..e180cca 100644
+--- a/platform/android/java/org/gbarecomp/GbaGameConfig.java
++++ b/platform/android/java/org/gbarecomp/GbaGameConfig.java
+@@ -21,6 +21,8 @@ public final class GbaGameConfig {
+     public final String romFile;
+     public final boolean biosRequired;
+     public final String biosSha1;
++    public final String saveFile;    // "" = no save import card (game without battery saves)
++    public final long saveSize;      // 0 = accept any non-empty save; else exact byte size
+     public final String orientation;   // landscape | portrait | any
+     public final String payloadVersion;
+     public final String setupNote;
+@@ -36,6 +38,14 @@ public final class GbaGameConfig {
+         biosRequired = Boolean.parseBoolean(string(m, "gbarecomp.bios_required", "false"));
+         biosSha1 = string(m, "gbarecomp.bios_sha1",
+             "300c20df6731a33952ded8c436f7f186d25d3492").toLowerCase(Locale.US);
++        saveFile = string(m, "gbarecomp.save_file", "");
++        long parsedSaveSize = 0;
++        try {
++            parsedSaveSize = Long.parseLong(string(m, "gbarecomp.save_size", "0"));
++        } catch (NumberFormatException ignored) {
++            parsedSaveSize = 0;
++        }
++        saveSize = parsedSaveSize;
+         orientation = string(m, "gbarecomp.orientation", "landscape");
+         payloadVersion = string(m, "gbarecomp.payload_version", "1");
+         setupNote = string(m, "gbarecomp.setup_note", "");
+diff --git a/platform/android/java/org/gbarecomp/GbaSetupActivity.java b/platform/android/java/org/gbarecomp/GbaSetupActivity.java
+index 6309d91..6f8dd1f 100644
+--- a/platform/android/java/org/gbarecomp/GbaSetupActivity.java
++++ b/platform/android/java/org/gbarecomp/GbaSetupActivity.java
+@@ -39,13 +39,20 @@ import java.util.concurrent.Executors;
+  * their own cartridge dump (and, optionally or when required, a GBA BIOS)
+  * through the Storage Access Framework. Files are size- and SHA-1-verified,
+  * then copied into app-private storage. Nothing copyrighted ships in the APK.
++ * Games declaring a saveFile additionally offer an optional battery-save
++ * (.sav) import, size-validated and mirrored to the user-visible external
++ * saves/ dir; it never blocks PLAY.
+  */
+ public class GbaSetupActivity extends Activity {
+     private static final int PICK_BIOS = 1001;
+     private static final int PICK_ROM = 1002;
++    private static final int PICK_SAVE = 1003;
+     private static final String SETUP_PREFERENCES = "setup";
+     private static final String SKIP_LAUNCHER_ON_BOOT = "skip_launcher_on_boot";
+     private static final long BIOS_SIZE = 16 * 1024;
++    // Upper bound for an unpinned save import (128 KiB covers the largest
++    // GBA battery type, Flash 1M; pinned games check an exact size instead).
++    private static final long MAX_UNPINNED_SAVE_SIZE = 128 * 1024;
+     /** Validation/launcher-shortcut extra: start the game when ready without
+      *  changing the player's skip-this-screen preference. */
+     public static final String EXTRA_AUTOSTART = "org.gbarecomp.extra.AUTOSTART";
+@@ -54,13 +61,16 @@ public class GbaSetupActivity extends Activity {
+     private GbaGameConfig config;
+     private TextView biosStatus;
+     private TextView romStatus;
++    private TextView saveStatus;
+     private TextView infoStatus;
+     private Button playButton;
+     private Button biosButton;
+     private Button romButton;
++    private Button saveButton;
+     private CheckBox skipLauncherCheck;
+     private boolean biosReady;
+     private boolean romReady;
++    private boolean saveReady;
+ 
+     /** The Activity that runs the game; games may override. */
+     protected Class<?> gameActivityClass() {
+@@ -120,9 +130,30 @@ public class GbaSetupActivity extends Activity {
+     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+         super.onActivityResult(requestCode, resultCode, data);
+         if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
+-        if (requestCode != PICK_BIOS && requestCode != PICK_ROM) return;
+-        final boolean bios = requestCode == PICK_BIOS;
++        if (requestCode != PICK_BIOS && requestCode != PICK_ROM
++                && requestCode != PICK_SAVE) return;
+         final Uri uri = data.getData();
++        if (requestCode == PICK_SAVE) {
++            setBusy(true, "Checking save…");
++            worker.execute(() -> {
++                try {
++                    installVerifiedSave(uri);
++                    runOnUiThread(() -> {
++                        setBusy(false, null);
++                        refreshStatus();
++                    });
++                } catch (Exception error) {
++                    runOnUiThread(() -> {
++                        setBusy(false, null);
++                        refreshStatus();
++                        showError("Save not accepted",
++                            error.getMessage());
++                    });
++                }
++            });
++            return;
++        }
++        final boolean bios = requestCode == PICK_BIOS;
+         setBusy(true, bios ? "Checking BIOS…" : "Checking ROM…");
+         worker.execute(() -> {
+             try {
+@@ -215,6 +246,22 @@ public class GbaSetupActivity extends Activity {
+         assets.addView(biosCard, vertical ? margins(-1, -2, 0, dp(6), 0, dp(6))
+                                           : weightedMargins(1, dp(8), 0, dp(8), 0));
+ 
++        if (hasSaveImport()) {
++            LinearLayout saveCard = assetCard("3", "Save data (optional)",
++                "Import your .sav to continue where you left off. " +
++                "Optional — without it you start fresh.");
++            saveStatus = statusText();
++            saveButton = actionButton("CHOOSE SAVE");
++            saveButton.setOnClickListener(view -> pickFile(PICK_SAVE));
++            saveCard.addView(saveStatus, margins(-1, -2, 0, dp(4), 0, dp(4)));
++            saveCard.addView(saveButton, margins(-1, dp(48), 0, 0, 0, 0));
++            assets.addView(saveCard, vertical ? margins(-1, -2, 0, dp(6), 0, dp(6))
++                                              : weightedMargins(1, dp(8), 0, dp(8), 0));
++        } else {
++            saveStatus = null;
++            saveButton = null;
++        }
++
+         infoStatus = text("", 13, Color.rgb(177, 187, 216));
+         infoStatus.setGravity(Gravity.CENTER);
+         root.addView(infoStatus, margins(-1, -2, 0, 0, 0, dp(6)));
+@@ -298,11 +345,50 @@ public class GbaSetupActivity extends Activity {
+     private File biosFile() { return new File(getFilesDir(), "bios/gba_bios.bin"); }
+     private File romFile() { return new File(getFilesDir(), "roms/" + config.romFile); }
+ 
++    /** True when this game declares a battery save import (saveFile non-empty). */
++    private boolean hasSaveImport() {
++        return config.saveFile != null && !config.saveFile.isEmpty();
++    }
++
++    /** App-private save location (the setup import target and TOML fallback). */
++    private File saveFile() {
++        return new File(getFilesDir(), "saves/" + config.saveFile);
++    }
++
++    /** User-visible external save location, or null when unavailable. The
++     *  game runtime (src/main.cpp, issue #6) reads --save-path here, so the
++     *  setup import mirrors to both: internal alone would strand a re-import
++     *  once the one-time migration has already moved the first save outward. */
++    private File externalSaveFile() {
++        try {
++            File root = getExternalFilesDir(null);
++            if (root == null) return null;
++            return new File(root, "saves/" + config.saveFile);
++        } catch (Exception ignored) {
++            return null;
++        }
++    }
++
++    private boolean isSaveFileValid(File file) {
++        if (file == null || !file.isFile()) return false;
++        long length = file.length();
++        if (config.saveSize > 0) return length == config.saveSize;
++        return length > 0 && length <= MAX_UNPINNED_SAVE_SIZE;
++    }
++
+     private void refreshStatus() {
+         biosReady = biosFile().isFile() && biosFile().length() == BIOS_SIZE;
+         romReady = romFile().isFile() && romFile().length() == config.romSize;
+         setAssetStatus(romStatus, romButton, romReady, "ROM", true);
+         setAssetStatus(biosStatus, biosButton, biosReady, "BIOS", config.biosRequired);
++        if (hasSaveImport()) {
++            saveReady = isSaveFileValid(saveFile())
++                || isSaveFileValid(externalSaveFile());
++            if (saveStatus != null && saveButton != null)
++                setAssetStatus(saveStatus, saveButton, saveReady, "SAVE", false);
++        } else {
++            saveReady = false;
++        }
+         playButton.setEnabled(ready());
+         playButton.setAlpha(playButton.isEnabled() ? 1.0f : 0.35f);
+ 
+@@ -333,8 +419,8 @@ public class GbaSetupActivity extends Activity {
+     private void pickFile(int requestCode) {
+         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+         intent.addCategory(Intent.CATEGORY_OPENABLE);
+-        // DocumentsUI often gives .bin/.gba vendor-specific MIME types; filter
+-        // nothing and let the strict size + SHA-1 check decide.
++        // DocumentsUI often gives .bin/.gba/.sav vendor-specific MIME types;
++        // filter nothing and let the size (+ SHA-1 for ROM/BIOS) check decide.
+         intent.setType("*/*");
+         startActivityForResult(intent, requestCode);
+     }
+@@ -415,6 +501,79 @@ public class GbaSetupActivity extends Activity {
+         }
+     }
+ 
++    // Issue #20: optional battery-save import. Player data carries no SHA pin
++    // (every playthrough differs), so only the size is validated: an exact
++    // match when the game declares saveSize, otherwise any non-empty file up
++    // to MAX_UNPINNED_SAVE_SIZE. The import mirrors to the user-visible
++    // external saves/ dir when available — the runtime reads --save-path
++    // there (issue #6), so an internal-only write would strand re-imports
++    // after the one-time migration. A failed external mirror is non-fatal:
++    // the internal copy still migrates outward on the next launch.
++    private void installVerifiedSave(Uri uri) throws IOException {
++        if (!hasSaveImport()) throw new IOException("This game has no save import.");
++        String displayName = displayName(uri);
++        long expectedSize = config.saveSize;
++        long limit = expectedSize > 0 ? expectedSize : MAX_UNPINNED_SAVE_SIZE;
++        File destination = saveFile();
++        File directory = destination.getParentFile();
++        if (directory != null && !directory.isDirectory() && !directory.mkdirs()) {
++            throw new IOException("Could not create the private game directory.");
++        }
++        File temporary = File.createTempFile("import-", ".tmp", directory);
++        long total = 0;
++        try (InputStream input = getContentResolver().openInputStream(uri);
++             FileOutputStream output = new FileOutputStream(temporary)) {
++            if (input == null) throw new IOException("Android could not open " + displayName + ".");
++            byte[] buffer = new byte[1024 * 1024];
++            int read;
++            while ((read = input.read(buffer)) >= 0) {
++                if (read == 0) continue;
++                total += read;
++                if (total > limit) {
++                    temporary.delete();
++                    throw new IOException(String.format(Locale.US,
++                        "%s is larger than expected.\n\nSize: over %,d bytes%s",
++                        displayName, limit,
++                        expectedSize > 0 ? String.format(Locale.US,
++                            " (expected %,d)", expectedSize) : ""));
++                }
++                output.write(buffer, 0, read);
++            }
++            output.getFD().sync();
++        } catch (IOException error) {
++            temporary.delete();
++            throw error;
++        }
++        boolean accepted = expectedSize > 0 ? total == expectedSize
++            : total > 0 && total <= MAX_UNPINNED_SAVE_SIZE;
++        if (!accepted) {
++            temporary.delete();
++            throw new IOException(String.format(Locale.US,
++                "%s is not a valid save for %s.\n\nSize: %,d bytes%s",
++                displayName, config.title, total,
++                expectedSize > 0 ? String.format(Locale.US,
++                    " (expected %,d)", expectedSize) : ""));
++        }
++        if (destination.exists() && !destination.delete()) {
++            temporary.delete();
++            throw new IOException("Could not replace the previously imported file.");
++        }
++        if (!temporary.renameTo(destination)) {
++            copyFile(temporary, destination);
++            temporary.delete();
++        }
++        File external = externalSaveFile();
++        if (external != null) {
++            try {
++                File parent = external.getParentFile();
++                if (parent == null || parent.isDirectory() || parent.mkdirs())
++                    copyFile(destination, external);
++            } catch (IOException ignored) {
++                // Internal copy stands; the runtime migration moves it outward.
++            }
++        }
++    }
++
+     private static void copyFile(File source, File destination) throws IOException {
+         try (FileInputStream input = new FileInputStream(source);
+              FileOutputStream output = new FileOutputStream(destination)) {
+@@ -442,6 +601,7 @@ public class GbaSetupActivity extends Activity {
+     private void setBusy(boolean busy, String label) {
+         biosButton.setEnabled(!busy);
+         romButton.setEnabled(!busy);
++        if (saveButton != null) saveButton.setEnabled(!busy);
+         playButton.setEnabled(!busy && ready());
+         if (busy && label != null) {
+             infoStatus.setText(label);
