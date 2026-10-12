@@ -103,6 +103,8 @@ cmake --build build --target FFTARecomp --parallel 8
 | CI subset (no dumps needed) | `--only unit-cpp,unit-py,patches,android-static` — `.github/workflows/ci.yml` |
 | Android static checks (device-free) | `tools/android_static_check.py` — suite `android-static` in `tools/check.py` |
 | Android APK content guard | `tools/android_apk_check.py [--apk …] [--expect public/private]` — opt-in `check.py --only android-apk` |
+| Release packager (issue #3 R-track) | `.venv/bin/python tools/make_release.py [--apk \| --windows] [--version V]` — allowlist stage → private-material sweep → deterministic portable zip (Linux zip + public APK + static Windows exe) |
+| MinGW cross prefix (R2) | `.venv/bin/python tools/win_cross_deps.py build` — pinned static zlib/freetype/harfbuzz/SDL2 into `cross-prefix/` (idempotent `.done` markers; `status`, `clean`, `purge`) |
 | Widescreen smoke | `.venv/bin/python tools/ws_check.py` (fixtures `saves/ws_fixtures/`) |
 | Playtest (windowed, instrumented) | `tools/play.sh [--scale N \| --resize-view \| --tcp-observe PORT]` |
 | Attract golden gate | `.venv/bin/python tools/attract_check.py` (`--repin` only for deliberate changes) |
@@ -125,18 +127,25 @@ cmake --build build --target FFTARecomp --parallel 8
 | `mods/` `inputs/` `symbols/` `reference/` | Widescreen catalog; input traces; symbol seeds; study notes |
 | `gbarecomp/`, `recomp-ui/` | Pinned submodules — do not update casually (pins + local patches: `reference/dev-gotchas.md`) |
 
-## Status (2026-10-09)
+## Status (2026-10-11)
 
 All phases complete; **every executed path strict-FULLY_STATIC**; corpus
-**55,102 emitted units** (walker 97.8 % / pool 99.3 % proxies — a route is
-done when its replay is FULLY_STATIC, not when a proxy moves); attract hash
-stable since pinning; widescreen W1–W3 complete; save/summon hangs fixed; suspend-flow
-phantom closed (IRQ abandon-close + split-loop gap roll-in — issue #30 fixes);
+**63,134 emitted units** (device-resume healing batch, BRINGUP late);
+attract hash stable since pinning; widescreen W1–W3 complete; save/summon
+hangs fixed; suspend-flow phantom closed (IRQ abandon-close + split-loop
+gap roll-in — issue #30 fixes);
 **Android port** landed and device-verified 2026-10-08, current engine
 re-verified on device 2026-10-09 (boot gate, press acceptance, suspend/kill/
-relaunch lifecycle — guide `android/README.md`). Remaining: offline-push
-re-trial (gated on an interior-split policy), f6000+ contact sheet, upstream
-note on the bridge stop-contract, Android release prep. History, evidence,
+relaunch lifecycle — guide `android/README.md`); **emibios migration**
+(issue #17) complete — launch BIOS is committed clean-room repo material;
+**release track** (issue #3) complete through R2 — Linux zip, public APK,
+and **static MinGW Windows exe**, all guarded, deterministic, and live on
+v1.5 (packager + cross-prefix machinery: `tools/make_release.py`,
+`tools/win_cross_deps.py`, `tools/mingw-x64.cmake`). Remaining:
+offline-push re-trial (gated on an interior-split policy), f6000+ contact
+sheet, upstream note on the bridge stop-contract, APK release-signing key
+(`gbaKeystore` vs debug — still debug-signed), runner registration
+(`release.yml` tag job still queues). History, evidence,
 crash playbooks: `BRINGUP.md`.
 
 ## Reference index (load what the task needs)

@@ -246,6 +246,28 @@ command so later changes cannot regress silently:
   stray, or oversized entries must fail (incremental repackaging can leave a
   junk blob — observed once as 67 MB vs the normal 37 MB). It runs on the
   host after a build; keep it opt-in when CI cannot produce the artifact.
+- **Prove artifact determinism by rebuilding, never by assuming it.** Fixed
+  timestamps + sorted entries + explicit modes make zips byte-identical;
+  native binaries need their own audit. Two real failures, both caught by a
+  wipe-rebuild-compare, never by inspection: (1) GNU ld stamps the PE
+  `TimeDateStamp` with the link time (one 4-byte field, 2-byte deflate
+  delta) — fix with the epoch flag at configure time; (2) **post-link
+  `strip` is never deterministic** — binutils rewrites the PE timestamp
+  with the *current* time on every invocation, so two strips minutes apart
+  differ while two strips back-to-back agree. The structural fix is
+  link-time stripping (`-s` in the link flags, verified byte-for-byte), and
+  the structural lesson is the probe rule: **a same-second double cannot
+  falsify time-based nondeterminism** — always re-run separated in time
+  (or after a full wipe) before claiming reproducibility.
+- **Guard a static link by its import table, not its build flags.** Link
+  flags can silently fall back to dynamic (an import lib that merely
+  *exists* in a search path wins over the static archive); the executable
+  tells the truth. Assert the PE/ELF dynamic-dependency set contains only
+  OS components (fail-list the runtime redistributables: your SDL/stdc++/
+  runtime DLLs, `FREETYPE`/`HARFBUZZ`/`ZLIB` DLLs) right after linking —
+  the flag layer and the guard layer then catch different failure classes
+  (prefix poisoning vs silent fallback), and the same test runs on CI
+  against a synthetic import listing.
 - **Entry-list audits miss slack: bound the container, not just the
   inventory.** The same incremental-repackaging class has a second form
   observed 2026-10-09: ~30 MB of *stale bytes in the slack between the last

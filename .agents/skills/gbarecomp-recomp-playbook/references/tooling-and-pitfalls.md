@@ -86,6 +86,28 @@ Run this after every play session; it is the whole loop in order.
   recompiler is a desktop tool), so the preflight must check corpus
   presence *and freshness vs the config* before the expensive Gradle
   build, or the APK embeds a stale corpus silently.
+- **Corpus mtimes cannot date a regeneration.** Recompiler toolchains that
+  preserve mtimes for byte-identical output (to avoid rebuild cascades)
+  make `generated/` mtimes move only on real changes — so never compare
+  build inputs against the corpus; compare them against a **regen stamp**
+  the regen step writes (`generated/.regen_stamp`), and the binary against
+  the corpus. A related trap one level up: git checkouts **smudge mtimes**
+  on unchanged files (branch switches/pulls rewrite them), so a mtimes-vs-
+  stamp gate fires on a perfectly fresh tree after a pull — deliberately
+  safe (one change-cycle run clears it), but document it as expected or the
+  next person "fixes" a correct gate. Encode both as unit tests: stamp
+  token agreement across the scripts that write/read it, and the input set
+  never regressing to emitted-file mtimes.
+- **Cross-dependency prefixes are static-only by construction, not by
+  flag.** Libraries whose build systems ignore `BUILD_SHARED_LIBS` (zlib
+  being the specimen: it builds `libz.dll` regardless) leave import libs
+  in the prefix, and the next consumer silently links dynamic — re-adding
+  the very DLL the static build exists to eliminate. Two structural rules:
+  build a prune pass over the prefix after every install (delete `*.dll`
+  + `*.dll.a`), and pin each third-party source as a **tarball sha256**,
+  not a tag name (a retag changes bytes and must fail loudly). Record the
+  prefix rule next to the objdump import-table guard — the prune and the
+  guard catch different classes (poisoned search path vs silent fallback).
 
 ## Decision log and docs discipline
 

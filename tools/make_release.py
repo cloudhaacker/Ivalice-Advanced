@@ -78,6 +78,10 @@ REQUIRED_FILES = [
     "README.md",
     "LICENSE",
     "LICENSES/LGPL-3.0-or-later.txt",
+    "LICENSES/ZLIB.txt",
+    "LICENSES/FTL.txt",
+    "LICENSES/MIT-harfbuzz.txt",
+    "LICENSES/ZLIB-SDL2.txt",
     "THIRD_PARTY_ATTRIBUTION.md",
     "mods/packages/ffta.enhancement.widescreen/1.0.0/manifest.toml",
 ]
@@ -90,6 +94,14 @@ REQUIRED_DIRS = [
 def exe_name(platform):
     """The staged executable's name: bare on POSIX, suffixed on Windows."""
     return "FFTARecomp.exe" if platform == "windows" else "FFTARecomp"
+
+
+def licenses_required():
+    """Every license document required in every staged artifact (module
+    helper so the sweep AND the unit test read the same contract)."""
+    return ["LICENSE", "LICENSES/LGPL-3.0-or-later.txt",
+            "LICENSES/ZLIB.txt", "LICENSES/FTL.txt",
+            "LICENSES/MIT-harfbuzz.txt", "LICENSES/ZLIB-SDL2.txt"]
 
 
 def required_files(platform):

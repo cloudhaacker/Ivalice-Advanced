@@ -8,10 +8,14 @@ and the contribution rules.
 
 ## Status
 
-All bring-up phases are complete. The game boots and runs on Linux and
-Android — menus, battles, event scripts, cartridge saves — with every
-executed path replaying strict-FULLY_STATIC (zero interpreter fallback)
-and the attract-mode regression hash stable since pinning. Android is
+All bring-up phases are complete. The game boots and runs on Linux,
+Windows and Android — menus, battles, event scripts, cartridge saves — with
+every executed path replaying strict-FULLY_STATIC (zero interpreter
+fallback) and the attract-mode regression hash stable since pinning. The
+Windows build is a static MinGW cross-compile from the same tree
+(`tools/make_release.py --windows` — zero DLL dependencies, import-table
+guarded, wine-smoked, byte-reproducible; see tests/README.md § the release
+packager). Android is
 device-verified on a Xiaomi Poco X3 Pro (Android 14): boot,
 press-acceptance, and the suspend/kill/relaunch lifecycle gates passed
 2026-10-09. Builds are experimental, so back up important saves and report

@@ -20,35 +20,30 @@ no Nintendo BIOS dump is required.
 
 ### Using a release binary (no build)
 
-Grab the latest Linux x64 zip from [releases](../../releases), then:
+Grab the latest release zip from [releases](../../releases) — Linux x64
+(`FFTARecomp-*-linux-x64.zip`) or Windows x64
+(`FFTARecomp-*-windows-x64.zip`, statically linked, no DLLs) — then:
 
 1. Extract the folder anywhere **writable** — launcher settings, the ROM
    path cache, and saves are kept beside the executable.
-2. Run it:
-
-   ```sh
-   ./FFTARecomp
-   ```
+2. Run it — `./FFTARecomp` on Linux, `FFTARecomp.exe` on Windows (no
+   DLLs to install; everything is statically linked).
 
 3. In the launcher, pick your legally obtained *Final Fantasy Tactics
    Advance* (USA) ROM and select **Play**.
 
-The launch BIOS is bundled — a clean-room, freely redistributable build
+The launch BIOS is bundled — a clean-room, freely redistributable
+**emibios** build
 ([`bios/`](bios/) in the zip, LGPL-3.0-or-later) — so you never need a
 Nintendo BIOS dump. Your ROM is hash-verified at launch: a mismatch error
 means the file is not the expected USA dump.
 
-System requirements: Linux x86-64 with SDL2, OpenGL, FreeType, and
+System requirements — Linux x86-64 with SDL2, OpenGL, FreeType, and
 Harfbuzz (Debian/Ubuntu: `libsdl2-2.0-0 libopengl0 libfreetype6
-libharfbuzz0b`). Display and widescreen options (`--view-width 448`,
+libharfbuzz0b`); Windows 10+ x86-64 with nothing extra (static exe).
+Display and widescreen options (`--view-width 448`,
 `--resize-view`, `--scale`, fullscreen) are listed in
 [docs/README.md](docs/README.md).
-
-The **Windows release** is the same public package differently hosted: the
-Windows zip from [releases](../../releases) keeps `FFTARecomp.exe`,
-`game.toml`, `bios/`, `assets/`, and `mods/` beside each other — extract to
-a writable folder, run `FFTARecomp.exe`, pick your ROM in the launcher.
-Everything is statically linked; there are no DLLs to install.
 
 ### Desktop (Linux)
 

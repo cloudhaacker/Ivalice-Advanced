@@ -242,6 +242,19 @@ access, which is enough:
   `bios_recompiled.cpp`.
 - Linux stack: the host main thread needs RLIMIT_STACK raised
   (`src/main.cpp` `raise_stack_limit`; hard limit must be unlimited).
+- Windows cross build (`tools/make_release.py --windows`): the exception
+  is prefix poisoning, not flags. If the exe links a third-party DLL
+  (objdump guard names it — `SDL2/libstdc++/libgcc/winpthread/freetype/
+  harfbuzz/zlib`), the cross prefix leaked a dynamic artifact: rebuild it
+  (`tools/win_cross_deps.py build` prunes `*.dll`/`*.dll.a` after every
+  install by design), then the exe. If the game configure "loses" SDL2,
+  `GBARECOMP_MINGW_PREFIX_UNIX` must point at the prefix and
+  `CMAKE_PREFIX_PATH` at the toolchain's `FFTACROSS_PREFIX` — the engine
+  falls back to `C:/msys64/…` paths that don't exist on a Linux cross
+  box. Determinism rule (R2, byte-proven): never post-link strip a PE
+  (`strip` rewrites TimeDateStamp per run — link-time `-s` only), and
+  always verify byte-equality across a **wipe**-rebuild, not an in-tree
+  rebuild.
 
 ## RAM-resident code and saves
 

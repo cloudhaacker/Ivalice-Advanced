@@ -20,7 +20,10 @@ git submodule update --init --recursive
 verifies the ROM hash (SHA-1 in the root README § Building from source) and
 fails loudly if it is
 wrong or missing. No BIOS dump is needed: the launch BIOS is the bundled
-clean-room emibios at `bios/emibios_gba_bios.bin` (issue #17).
+clean-room emibios at `bios/emibios_gba_bios.bin` (issue #17). The Windows
+release build needs the **same** ROM for its corpus translation (the ROM
+is never embedded — the packaged sweep proves it); it cross-compiles from
+this tree, it does not rerun these steps on a second machine.
 
 **3. Python venv for the tooling** (disassembler, audit harness):
 ```sh
@@ -116,6 +119,13 @@ use `tools/play.sh` (guide: [`tests/README.md`](../tests/README.md)).
   `bios/README.md`).
 - CMake cannot find SDL2 → install the dev package (see root README
   § Building from source).
+- MinGW cross (static Windows build, R2): the toolchain is
+  `mingw-w64-toolchain` from pacman (`x86_64-w64-mingw32-gcc` — check with
+  `command -v`); the dependency prefix is built from pinned sources, not
+  packages (`tools/win_cross_deps.py build` — Arch ships no mingw binary
+  library packages, MSYS2 is Windows-only). A dynamic `libz.dll`/`SDL2.dll`
+  import in the exe means the prefix leaked a DLL and the objdump guard
+  will say so — rebuild the prefix after pruning, then the exe.
 - `import capstone` fails in tools → step 3's venv (use
   `.venv/bin/python tools/...`).
 - A submodule directory is empty after cloning → step 1's retry line.

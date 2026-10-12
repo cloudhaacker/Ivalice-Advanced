@@ -708,7 +708,12 @@ class ReleasePackTests(unittest.TestCase):
         f("bios/README.md")
         f("README.md")
         f("LICENSE")
-        f("LICENSES/LGPL-3.0-or-later.txt")
+        # EVERY staged license document (licenses_required() in
+        # tools/make_release.py) — the set grew with the Windows release,
+        # so build it from the contract, never by hand-counting paths.
+        for lic in self.mr.licenses_required():
+            if lic != "LICENSE":
+                f(lic)
         f("THIRD_PARTY_ATTRIBUTION.md")
         f("mods/packages/ffta.enhancement.widescreen/1.0.0/manifest.toml")
         f("assets/fonts/Pro.ttf")
@@ -838,6 +843,40 @@ vma:            Hint    Time      Forward  DLL       First
             v = self.mr.sweep_stage(root)
             self.assertTrue(any("missing required file: README.md" in x
                                 for x in v), v)
+
+    def test_sweep_requires_license_bundle(self):
+        # The Windows release redistributes statically-linked code, so its
+        # license documents ship (the set grew to 4 cross-library LICENSES
+        # + LGPL + root LICENSE). Missing exactly one → named failure.
+        import tempfile
+        with tempfile.TemporaryDirectory(dir="/tmp") as td:
+            root = self._stage(td)
+            (root / "LICENSES/FTL.txt").unlink()
+            v = self.mr.sweep_stage(root)
+            self.assertTrue(
+                any("missing required file: LICENSES/FTL.txt" in x
+                    for x in v), v)
+            # ...and the synthetic helper itself builds the bundle from the
+            # module contract, so the next license addition fails loudly
+            # instead of drifting:
+            got = sorted(str(REPO / p) for p in self.mr.licenses_required())
+            staged = sorted(str(root / p) for p in self.mr.licenses_required())
+            self.assertEqual(len(got), len(staged))
+
+    def test_license_bundle_covers_licenses_dir(self):
+        # The sweep contract must cover every document in LICENSES/ (minus
+        # the root LICENSE, which lives beside it): a fifth license text
+        # dropped into the dir with no sweep entry fails HERE, not silent
+        # in a shipped zip.
+        on_disk = {p.relative_to(REPO).as_posix()
+                   for p in (REPO / "LICENSES").glob("*.txt")}
+        covered = {p for p in self.mr.licenses_required()
+                   if p.startswith("LICENSES/")}
+        self.assertEqual(
+            covered, on_disk,
+            "LICENSES/ holds documents the sweep does not require — add "
+            "them to required_files() in tools/make_release.py (and to "
+            "THIRD_PARTY_ATTRIBUTION.md)")
 
     def test_zip_deterministic_portable(self):
         import hashlib
