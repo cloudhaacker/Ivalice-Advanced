@@ -9,12 +9,21 @@ Covers the pure logic the healing/audit flow depends on:
   - RomTruthTests: ROM-pinned facts behind the symbol tables (LOCAL-ONLY,
     skips without game.gba) — dispatch tables, pointer cells, party base,
     SWI veneers
+  - EmibiosBytePinTests: the COMMITTED launch BIOS (clean-room emibios,
+    issue #17) byte-pinned at its contract points — exception vectors, the
+    IRQ trampoline + 0x138 epilogue, the SWI dispatcher + its halfword
+    table, the .vc_irqh handler — plus the recompile TOML's seed
+    inventory. Runs EVERYWHERE (repo material, not a dump): CI included.
+  - RegenStampContractTests: the .regen_stamp cross-script contract
+    (build.py/cycle.py write it after a regen; build_apk.py's freshness
+    gate reads it — corpus mtimes cannot date a regen)
 
 Run: .venv/bin/python tests/python/test_tools.py [-v]
 Requires capstone (misspack dependency): use .venv per README setup, or
 `pip install capstone==5.0.7` — CI installs that same pin.
 """
 import pathlib
+import re
 import struct
 import subprocess
 import sys
@@ -308,10 +317,15 @@ class BiosBytePinTests(unittest.TestCase):
     code cites. These exact words are pinned by armv4t runtime comments/logic
     (vector targets, the IRQ wrapper epilogue, the SWI dispatcher's
     System-mode service switch and epilogue — BRINGUP 2026-10-09); a
-    replaced or patched BIOS silently invalidates them. The dump is
-    ROM/BIOS-derived and never in git (gbarecomp/.gitignore bios/*.bin; the
-    user supplies it locally) — the test is LOCAL-ONLY and skips on any
-    checkout without it (CI included)."""
+    replaced or patched BIOS silently invalidates them.
+
+    NOTE (issue #17 swap): this is the RETAIL dump — local-only REFERENCE
+    material (the launcher-accepted alternative + the oracle's default),
+    no longer the launch BIOS. The launch BIOS is the committed clean-room
+    emibios, pinned EVERYWHERE by EmibiosBytePinTests above. The dump is
+    ROM/BIOS-derived and never in git (gbarecomp/.gitignore bios/*.bin)
+    — these tests stay LOCAL-ONLY and skip on any checkout without it
+    (CI included)."""
 
     BIOS = REPO / "gbarecomp" / "bios" / "gba_bios.bin"
 
@@ -359,6 +373,188 @@ class BiosBytePinTests(unittest.TestCase):
         self.assertEqual(self._u32(0x174), 0xE3A0C0D3, "mov ip,#0xd3")
         self.assertEqual(self._u32(0x184), 0xE8BD5800, "SWI pop")
         self.assertEqual(self._u32(0x188), 0xE1B0F00E, "SWI movs pc,lr")
+
+
+class EmibiosBytePinTests(unittest.TestCase):
+    """bios/emibios_gba_bios.bin — the LAUNCH BIOS since the issue #17
+    swap — byte-pinned at the contract points the engine cites.
+
+    Unlike BiosBytePinTests above (the retail dump: local-only, skips on
+    CI), emibios is COMMITTED clean-room repo material (LGPL-3.0-or-later,
+    bios/README.md), so these pins run EVERYWHERE — a fresh clone carries
+    the file and a replaced/rebuilt-different emibios must fail loudly,
+    not skip: it would silently invalidate the game.toml [bios] pin, the
+    build.gradle biosSha1 manifest pin, the launcher pin-set acceptance,
+    the corpus seeds' addresses/names, and the BIOS-address prose in
+    reference/dev-gotchas.md. emibios deliberately mirrors retail's
+    layout (its dispatcher.s documents the contract), so most pins share
+    retail's addresses — but 0x1C differs (a real reserved handler at
+    0x1FC, not retail's shared entry) and the SWI number is read from
+    bits 23..16 (lr-2) instead of retail's low byte.
+
+    Missing file = broken checkout (repo material): FAIL, never skip.
+    """
+
+    BIOS = REPO / "bios" / "emibios_gba_bios.bin"
+    TOML = REPO / "bios" / "emibios_gba_bios.toml"
+    SHA1 = "0c0d404d16c6b55b3071aba714f82077da132f14"
+    # emibios main @c4d5d71 (LGPL-3.0-or-later; the only build these pins
+    # have been derived against — a bump re-derives every one of them).
+
+    @classmethod
+    def setUpClass(cls):
+        # Committed repo material: absence is a broken checkout, not the
+        # local-only skip the retail dump takes.
+        import hashlib
+        if not cls.BIOS.is_file():
+            raise AssertionError(
+                "bios/emibios_gba_bios.bin missing — the committed "
+                "clean-room BIOS (issue #17) is repo material; a "
+                "checkout without it is broken, restore it")
+        cls.data = cls.BIOS.read_bytes()
+
+    def _u32(self, off):
+        return struct.unpack_from("<I", self.data, off)[0]
+
+    def _u16(self, off):
+        return struct.unpack_from("<H", self.data, off)[0]
+
+    def test_sha1_pin(self):
+        import hashlib
+        self.assertEqual(
+            hashlib.sha1(self.data).hexdigest(), self.SHA1,
+            "emibios replaced/rebuilt — every pin below and every config "
+            "pin (game.toml [bios], build.gradle biosSha1, "
+            "android_static EMIBIOS_SHA1) is now suspect")
+
+    def test_size(self):
+        self.assertEqual(len(self.data), 16384,
+                         "not a 16 KiB BIOS image anymore")
+
+    def test_vectors(self):
+        # Exception vectors: B (0xEA...) targets computed from each slot.
+        # 0x00/0x08/0x18 mirror retail deliberately; 0x1C is emibios's own
+        # reserved handler (retail: shared Undefined/Abort/FIQ entry).
+        cases = {0x00: 0x68, 0x08: 0x140, 0x18: 0x128, 0x1C: 0x1FC}
+        for slot, target in cases.items():
+            w = self._u32(slot)
+            self.assertEqual(w >> 24, 0xEA,
+                             f"vector at {slot:#05x} not a B")
+            self.assertEqual(slot + 8 + ((w & 0xFFFFFF) << 2), target,
+                             f"vector at {slot:#05x} target")
+
+    def test_irq_trampoline(self):
+        # IRQ wrapper 0x128..: push {r0-r3,ip,lr}; mov r0,#0x4000000;
+        # add lr,pc,#0 (installs 0x138 as the handlers' runtime return
+        # target — the `after_interrupt` seed); ldr pc,[r0,#-4] (jumps
+        # the [0x03FFFFFC] mirror of [0x03007FFC]); pop; subs pc,lr,#4.
+        words = {0x128: 0xE92D500F, 0x12C: 0xE3A00301,
+                 0x130: 0xE28FE000, 0x134: 0xE510F004,
+                 0x138: 0xE8BD500F, 0x13C: 0xE25EF004}
+        for off, want in words.items():
+            self.assertEqual(self._u32(off), want,
+                             f"IRQ trampoline word at {off:#05x}")
+
+    def test_swi_dispatcher(self):
+        # SWI dispatcher 0x140..: push {fp,ip,lr}; ldrb ip,[lr,#-2]
+        # (the number, bits 23..16 at lr-2 — the commercial `swi #(n<<16)`
+        # encoding FFTA uses); table lookup via add/ldrh (base 0x194);
+        # msr cpsr_fc (System-mode service switch, caller's IRQ/FIQ mask
+        # carried); mov ip,#0xd3 (restore SVC); pop; movs pc,lr.
+        words = {0x140: 0xE92D5800, 0x144: 0xE55EC002,
+                 0x148: 0xE08FB08C, 0x14C: 0xE1DBC4B4,
+                 0x160: 0xE129F00B, 0x174: 0xE3A0C0D3,
+                 0x184: 0xE8BD5800, 0x188: 0xE1B0F00E}
+        for off, want in words.items():
+            self.assertEqual(self._u32(off), want,
+                             f"SWI dispatcher word at {off:#05x}")
+
+    def test_swi_table(self):
+        # The halfword handler table at 0x194 (0x140+0x54), entries
+        # 0x00..0x2A (43), mixed-mode (bit0 set = Thumb handler). Pinned
+        # as a 44-halfword blob: 43 entries plus the boundary word, so a
+        # table-size/extent change also fails here; the bounds check
+        # covers the real entries only.
+        import hashlib
+        blob = bytes(struct.pack("<44H",
+                                 *[self._u16(0x194 + 2 * i)
+                                   for i in range(44)]))
+        self.assertEqual(
+            hashlib.sha1(blob).hexdigest(),
+            "e1a8dd82c2b3a8062663990bc892da074cb46abf",
+            "SWI handler table changed — re-derive the table pins (and "
+            "the game.toml [[jump_table]] analog if one is seeded)")
+        for i in range(43):
+            t = self._u16(0x194 + 2 * i)
+            self.assertLess(t, 0x4000,
+                            f"SWI 0x{i:02X} target {t:#06x} out of image")
+
+    def test_vc_irqh(self):
+        # .vc_irqh at 0x3E74: emibios's own interim VBlank IRQ handler,
+        # installed into [0x03007FFC] at runtime by boot_final_burn — the
+        # statically-undiscoverable seed from the 2026-10-11 device-resume
+        # harvest (game.toml extra_func of the same name).
+        words = {0x3E74: 0xE3A03004, 0x3E78: 0xE1C130B2,
+                 0x3E7C: 0xE3A03000, 0x3E80: 0xE1C130B8,
+                 0x3E84: 0xE12FFF1E}
+        for off, want in words.items():
+            self.assertEqual(self._u32(off), want,
+                             f".vc_irqh body word at {off:#06x}")
+
+    def test_toml_seed_inventory(self):
+        # The recompile TOML must keep the essential dispatch seeds — the
+        # runtime-critical vectors, the trampoline epilogue, and the two
+        # statically-undiscoverable fragments. Accidental deletion of any
+        # one breaks strict-static on the next regen; this fails first,
+        # with the name attached.
+        text = self.TOML.read_text(encoding="utf-8")
+        entries = {}
+        for block in text.split("[[extra_func]]")[1:]:
+            ma = re.search(r'addr\s*=\s*(0x[0-9A-Fa-f]+)', block)
+            mn = re.search(r'name\s*=\s*"([^"]+)"', block)
+            if ma and mn:
+                entries[int(ma.group(1), 16)] = mn.group(1)
+        for addr, name in ((0x00000000, "bios_reset_vector"),
+                           (0x00000008, "bios_swi_vector"),
+                           (0x00000018, "bios_irq_vector"),
+                           (0x00000068, "exception_reset"),
+                           (0x00000128, "exception_irq"),
+                           (0x00000138, "after_interrupt"),
+                           (0x00003E74, "vc_irqh")):
+            self.assertEqual(
+                entries.get(addr), name,
+                f"bios/emibios_gba_bios.toml seed {name} @ {addr:#010x} "
+                "missing or renamed — strict-static breaks on regen")
+
+
+class RegenStampContractTests(unittest.TestCase):
+    """The .regen_stamp contract spans three scripts (2026-10-11): build.py
+    and tools/cycle.py stamp generated/ after a regen; build_apk.py's
+    freshness gate reads it. Corpus mtimes cannot date a regen — the
+    recompiler (commit_generated_file) preserves them for byte-identical
+    output, so the pre-fix gate said 'stale' forever after a
+    content-neutral game.toml touch. A rename in any one script breaks the
+    other two silently; pin the token everywhere it appears, and keep the
+    gate from ever comparing an emitted corpus file's own mtime again.
+    """
+
+    def test_stamp_writers_and_reader_agree(self):
+        for script in ("build.py", "tools/cycle.py", "build_apk.py"):
+            text = (REPO / script).read_text(encoding="utf-8")
+            self.assertIn('".regen_stamp"', text,
+                          "%s must use the .regen_stamp token — the "
+                          "regen-date contract shared with build.py, "
+                          "cycle.py and build_apk.py" % script)
+
+    def test_freshness_inputs_are_regen_inputs_only(self):
+        text = (REPO / "build_apk.py").read_text(encoding="utf-8")
+        m = re.search(r"FRESHNESS_INPUTS = \((.*?)\)", text, re.S)
+        self.assertTrue(m, "FRESHNESS_INPUTS missing from build_apk.py")
+        self.assertNotIn("generated", m.group(1),
+                         "FRESHNESS_INPUTS must not compare emitted corpus "
+                         "mtimes (the recompiler preserves them for "
+                         "byte-identical output — the 2026-10-11 lesson); "
+                         "the .regen_stamp is the regen date")
 
 
 class RomTruthTests(unittest.TestCase):

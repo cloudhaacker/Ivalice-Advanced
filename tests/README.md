@@ -39,9 +39,26 @@ the repo-local `.venv/`.
     `*.patch` files.
   - **`gba_bios.bin` byte-pin** — sha1 + the exact words at every contract
     point the engine cites (vectors, IRQ wrapper epilogue, SWI dispatcher
-    service-switch + epilogue). **Local-only:** the dump is BIOS-derived and
-    never in git (`gbarecomp/.gitignore bios/*.bin`); the test skips on any
-    checkout without it (CI included).
+    service-switch + epilogue). **Local-only:** the retail dump is
+    BIOS-derived and never in git (`gbarecomp/.gitignore bios/*.bin`);
+    the test skips on any checkout without it (CI included). Since the
+    issue #17 swap this is REFERENCE material (the launcher-accepted
+    alternative + the oracle's default), not the launch BIOS.
+  - **`emibios_gba_bios.bin` byte-pin** (`EmibiosBytePinTests`) — the
+    same contract-point discipline for the COMMITTED launch BIOS
+    (clean-room emibios, `bios/`, LGPL): sha1/size, exception vectors,
+    the IRQ trampoline + its `0x138` epilogue, the SWI dispatcher + its
+    `0x194` halfword table (blob-hashed), the `.vc_irqh` handler body —
+    plus the recompile TOML's essential seed inventory (accidental
+    deletion fails with the name attached). **Runs EVERYWHERE** — repo
+    material, no skip: the unlocked path of committing the BIOS. A
+    missing bin is a broken checkout and fails loudly.
+  - **`.regen_stamp` contract** (`RegenStampContractTests`) — the
+    regen-date token must agree across `build.py` / `tools/cycle.py`
+    (writers) and `build_apk.py` (the freshness gate reader), and the
+    gate must never regress to comparing emitted corpus mtimes (the
+    recompiler preserves them for byte-identical output — the
+    2026-10-11 "corpus is stale forever" lesson).
 - `tools/check.py` runs both, plus the patches check (every per-feature
   patch must also **forward-apply on the pristine pin** — the CI condition;
   dev-based exports go INVALID there), the attract gate,

@@ -4871,3 +4871,45 @@ units in the same handler region behind other tables — triage next
 session (misspack/oracle protocol, PRINCIPLES first). 0x08133618's
 journal gap (bridge-log line but no frag entry) noted for the
 selfheal-journal reviewer.
+
+## 2026-10-11 (late 2) — unlocked test paths: the committed BIOS is now CI-pinned
+
+**Prompt.** "We have BIOS in source control now — surely some test paths
+are unlocked?" Yes — and they had not been taken. The android-static suite
+had gained the integrity/acceptance/pin checks in the E2 milestones, but
+`tests/python/test_tools.py` still only had the LOCAL-ONLY
+`BiosBytePinTests` (skips on CI — the retail dump is gitignored). The
+emibios bin being committed repo material means its contract points can
+be byte-pinned in a test that runs EVERYWHERE.
+
+**Added** (both CI tier 1, red-verified each):
+
+- `EmibiosBytePinTests` (8 tests): sha1/size pins; exception vectors
+  (0x00→0x68, 0x08→0x140, 0x18→0x128 — mirroring retail — and 0x1C→0x1FC,
+  emibios's own reserved handler); the IRQ trampoline words incl. the
+  0x130 `add lr,pc,#0` (installs 0x138 as the runtime return target) and
+  0x134 `ldr pc,[r0,#-4]` ([0x03FFFFFC] mirror); the SWI dispatcher words
+  (0x140 push, 0x144 `ldrb ip,[lr,#-2]` — the `swi #(n<<16)` bits-23..16
+  read FFTA uses, 0x160 System-mode switch, 0x174/0x188 epilogue); the
+  0x194 halfword table as a 44-halfword blob hash (43 entries + the
+  boundary word — a size/extent change fails; bounds-check covers the 43
+  real entries, an off-by-one the red-run itself caught); the `.vc_irqh`
+  body at 0x3E74; and the TOML seed inventory (addr+name pairs — deletion
+  fails with the name attached). Missing bin = broken checkout: FAIL,
+  never skip.
+- `RegenStampContractTests` (2 tests): the `.regen_stamp` token agrees
+  across the three scripts (build.py + cycle.py writers, build_apk.py
+  reader), and `FRESHNESS_INPUTS` never regresses to emitted-corpus
+  mtimes (the 2026-10-11 mtime lesson).
+
+`BiosBytePinTests` docstring updated for its changed role: local-only
+RETAIL REFERENCE (the launcher-accepted alternative + the oracle's
+default), no longer the launch BIOS.
+
+**Explicit non-unlock:** a BIOS-corpus coverage test cannot run on CI —
+tier 1 checks out pristine submodules (patches validated, not applied)
+and does not build `gba_recompile`; the corpus files are gitignored. The
+TOML seed inventory + bin byte-pins ARE the CI-able form of corpus
+coverage.
+
+**Result.** unit-py 27→37 tests, fast gate 6/6, attract golden unchanged.
