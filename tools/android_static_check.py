@@ -18,6 +18,7 @@ build, and self-tests the device gate script against a fake `adb`:
 Usage: tools/android_static_check.py        (stdlib only; runs from any cwd)
 Exit codes: 0 = all checks pass, 1 = at least one failure.
 """
+import hashlib
 import os
 import re
 import subprocess
@@ -99,6 +100,10 @@ def _mini_load(path):
                              % (path, lineno, raw.strip()))
         current[key.strip()] = _parse_scalar(value)
     return root
+
+
+def sha1_bytes(data):
+    return hashlib.sha1(data).hexdigest()
 
 
 def load_toml(rel):
@@ -241,6 +246,34 @@ def check_payload_version():
          "payloadVersion %r is stale: bump it whenever staged payload "
          "content changes (game_android.toml or anything under payload/), "
          "or reinstalls keep running the old payload" % ver)
+
+
+def check_emibios_integrity():
+    # The committed clean-room BIOS (LGPL-3.0-or-later, freely
+    # redistributable — NOT private material; see bios/emibios_gba_bios.toml
+    # header) is the launch-pinned [bios] target after the E2 swap. Guard it
+    # like any pinned fixture: exact size + SHA-1 against the TOML identity,
+    # so corruption or an accidental replacement fails tier-1 loudly instead
+    # of producing a subtly wrong BIOS corpus at build time.
+    bin_path = REPO / "bios/emibios_gba_bios.bin"
+    toml_path = REPO / "bios/emibios_gba_bios.toml"
+    need(bin_path.is_file(),
+         "bios/emibios_gba_bios.bin missing — the committed clean-room BIOS "
+         "is repo material (LGPL), not a dump; restore it from the branch")
+    need(toml_path.is_file(),
+         "bios/emibios_gba_bios.toml missing (the recompile config)")
+    data = bin_path.read_bytes()
+    need(len(data) == 16384,
+         "emibios bin is %d bytes, expected 16384 (16 KiB BIOS image)"
+         % len(data))
+    need(sha1_bytes(data) == EMIBIOS_SHA1,
+         "emibios bin sha1 %r != pin %r — corrupted or replaced?"
+         % (sha1_bytes(data), EMIBIOS_SHA1))
+    text = toml_path.read_text(encoding="utf-8")
+    m = re.search(r'sha1\s*=\s*"([0-9a-f]{40})"', text)
+    need(m and m.group(1) == EMIBIOS_SHA1,
+         "bios/emibios_gba_bios.toml [identity].sha1 does not match the "
+         "committed bin pin %s" % EMIBIOS_SHA1)
 
 
 def check_save_config():
@@ -633,6 +666,11 @@ def check_gate_usage():
 # Entry point
 # ---------------------------------------------------------------------------
 
+# The committed clean-room BIOS pin (emibios main @c4d5d71,
+# https://github.com/coolbho3k/emibios — LGPL-3.0-or-later).
+EMIBIOS_SHA1 = "0c0d404d16c6b55b3071aba714f82077da132f14"
+
+
 CHECKS = [
     ("identity: applicationId and gate package/activity constants",
      check_package_constants),
@@ -641,6 +679,8 @@ CHECKS = [
      "game_android.toml)", check_rom_pins),
     ("identity: BIOS sha1 consistent (game.toml, game_android.toml, engine "
      "default)", check_bios_pins),
+    ("identity: committed emibios bin matches its TOML pin (16 KiB)",
+     check_emibios_integrity),
     ("identity: save type/size mirror the desktop config", check_save_config),
     ("identity: saves/states land in the user-visible app dir (issue #6)",
      check_save_external_wiring),
