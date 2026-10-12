@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """One-command regression gate for the FFTA recomp worktree.
 
-Runs: host unit tests (C++ + Python) -> patch validity -> device-free
-Android checks -> attract golden gate -> widescreen smoke (margin census /
-center-crop / stale guard, needs the local game.state1/state2 fixtures) ->
-strict route replays (user save-load repro, session G, session K, battle
-movement route B) against
+Runs: host unit tests (C++ + Python) -> recomp-ui runtime-UI tests (the
+patched settings overlay) -> patch validity -> device-free Android checks ->
+attract golden gate -> widescreen smoke (margin census / center-crop / stale
+guard, needs the local game.state1/state2 fixtures) -> strict route replays
+(user save-load repro, session G, session K, battle movement route B) against
 the frozen fixtures in saves/regress/.
 
 The checks are independent processes, so they run concurrently by default
@@ -21,13 +21,13 @@ silently redefining the baseline.
 
 Usage:
   .venv/bin/python tools/check.py            # everything (~1.5-2 min)
-  .venv/bin/python tools/check.py --fast     # unit tests + android checks + attract
+  .venv/bin/python tools/check.py --fast     # unit tests + ui tests + android checks + attract
   .venv/bin/python tools/check.py --jobs 1   # serial
   .venv/bin/python tools/check.py --only NAME[,NAME...]
 
 CI tier 1 runs the no-private-material subset (no ROM/savestates needed;
 the launch BIOS is committed clean-room repo material since the emibios
-swap): `--only unit-cpp,unit-py,patches,android-static` — see
+swap): `--only unit-cpp,unit-py,ui-tests,patches,android-static` — see
 tests/README.md § Continuous integration.
 
 Opt-in suite (not in the default run): `android-apk` — the content guard for
@@ -162,6 +162,15 @@ def check_ws_smoke():
     return r.returncode == 0, line or f"exit {r.returncode}"
 
 
+def check_ui_tests():
+    """recomp-ui's runtime-UI tests (tools/ui_check.py): the settings overlay
+    is a patched submodule, so its model + ImGui presentation tests must run,
+    not just the diff be validated by the patches check."""
+    r = run([sys.executable, "tools/ui_check.py"], timeout=900)
+    line = (r.stdout.strip().splitlines() or [""])[-1]
+    return r.returncode == 0 and "ui_check: OK" in line, line
+
+
 def check_savecheck():
     r = run([sys.executable, "tools/savecheck.py", str(FIXTURE_SAVE)], timeout=120)
     line = (r.stdout.strip().splitlines() or [""])[-1]
@@ -172,8 +181,8 @@ def check_patches():
     """tools/patches/*.patch must be real diffs matching the pinned submodules:
     apply-able forward to a pristine tree, or reversible from the patched dev
     tree. Catches mangled/empty exports (2026-10-08 regression). Patches named
-    arm-recomp-core-* target the nested external/arm-recomp-core repo; all
-    others target gbarecomp itself."""
+    arm-recomp-core-* target the nested external/arm-recomp-core repo and
+    recomp-ui-* the recomp-ui submodule; all others target gbarecomp itself."""
     details = []
     ok = True
     names = sorted(p.name for p in (REPO / "tools" / "patches").glob("*.patch"))
@@ -185,8 +194,12 @@ def check_patches():
             ok = False
             details.append(f"{name}: missing")
             continue
-        root = ("gbarecomp/external/arm-recomp-core"
-                if name.startswith("arm-recomp-core") else "gbarecomp")
+        if name.startswith("arm-recomp-core"):
+            root = "gbarecomp/external/arm-recomp-core"
+        elif name.startswith("recomp-ui"):
+            root = "recomp-ui"
+        else:
+            root = "gbarecomp"
         fwd = run(["git", "-C", root, "apply", "--check", str(p)])
         if fwd.returncode == 0:
             details.append(f"{name}: forward-ok")
@@ -233,7 +246,8 @@ def check_patches():
     for root, cons_name, label in (
             ("gbarecomp", "gbarecomp-local.patch", "gbarecomp-local"),
             ("gbarecomp/external/arm-recomp-core",
-             "arm-recomp-core-local.patch", "arm-recomp-core-local")):
+             "arm-recomp-core-local.patch", "arm-recomp-core-local"),
+            ("recomp-ui", "recomp-ui-local.patch", "recomp-ui-local")):
         cons = REPO / "tools" / "patches" / cons_name
         if not cons.exists():
             continue
@@ -393,6 +407,7 @@ def check_release():
 CHECKS = {
     "unit-cpp": check_unit_cpp,
     "unit-py": check_unit_py,
+    "ui-tests": check_ui_tests,
     "savecheck": check_savecheck,
     "patches": check_patches,
     "android-static": check_android_static,
@@ -411,15 +426,16 @@ CHECKS = {
                                           REG / "battle_move_start.state",
                                           REG / "battle_move.sav", 5600),
 }
-FAST = ["unit-cpp", "unit-py", "savecheck", "patches", "android-static",
-        "attract"]
+FAST = ["unit-cpp", "unit-py", "ui-tests", "savecheck", "patches",
+        "android-static", "attract"]
 # Opt-in suites, left out of the default run (they need local artifacts a
 # desktop-only worktree may not have); --only NAME runs them explicitly.
 # release: the zip packager — needs a built tree (no ROM), and its output
 # is a public artifact contract, so it runs explicit, never by default.
 OPTIONAL = {"android-apk", "release"}
 # Checks that execute the game binary (require it to exist); the others run
-# on a fresh clone without the ROM (CI tier 1: unit-cpp, unit-py, patches).
+# on a fresh clone without the ROM (CI tier 1: unit-cpp, unit-py, ui-tests,
+# patches).
 NEEDS_EXE = {"attract", "hle-audit", "ws_smoke", "user_load", "route_G",
              "route_K", "route_B"}
 

@@ -62,7 +62,12 @@ start, features, controls, building); running and display options live in
     2026-10-11 "corpus is stale forever" lesson).
 - `tools/check.py` runs both, plus the patches check (every per-feature
   patch must also **forward-apply on the pristine pin** — the CI condition;
-  dev-based exports go INVALID there), the attract gate,
+  dev-based exports go INVALID there), the recomp-ui runtime-UI tests
+  (`tools/ui_check.py`, suite `ui-tests` — the in-game settings overlay is a
+  patched submodule, so its model + ImGui presentation tests run too; builds
+  with just a C/C++ compiler, no ROM. On a pristine checkout — CI — it
+  builds upstream's tests unchanged, so the patched behavior is covered
+  locally, not there), the attract gate,
   widescreen smoke and strict route replays (below).
 
 ---

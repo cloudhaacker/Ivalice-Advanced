@@ -23,6 +23,7 @@ entry, not the play entry. For when-to-run-what (workflows, gates, CI), see
 | `attract_check.py` | Attract golden gate (`--repin` only for deliberate changes) |
 | `ws_check.py` | Widescreen smoke test (fixtures `saves/ws_fixtures/`) |
 | `savecheck.py` | Save-image validation |
+| `ui_check.py` | recomp-ui runtime-UI tests: the settings-overlay model + ImGui presentation (layout, list scroll-follow and touch drag-scroll). Builds with just a C/C++ compiler — `check.py --only ui-tests` |
 | `desktop_accept.py` | Headless free-run acceptance scoring (`--mode tcp` / `--mode window`) |
 | `coverage_report.py` | Coverage report, three lenses |
 | `framediff.py` / `dualrun.py` | Oracle frame-diff / lockstep differential runs |
@@ -35,7 +36,7 @@ entry, not the play entry. For when-to-run-what (workflows, gates, CI), see
 | `android_apk_check.py` | APK content guard for built APKs (`--expect public/private`) |
 | `validate_android.sh` | On-device acceptance gate: install → launch → assertions → evidence |
 | `android_press_test.py`, `android_lifecycle_test.py`, `android_touch_test.py`, `android_trace_replay.py` | On-device gates — see [android/README.md](../android/README.md) |
-| `patches/` | Local gbarecomp framework patches — see [patches/README.md](patches/README.md) |
+| `patches/` | Local framework patches (gbarecomp, its nested arm-recomp-core, recomp-ui) — see [patches/README.md](patches/README.md) |
 
 The remaining scripts (`chunkprobe.py`, `hangprobe.py`, `hangrepro.py`,
 `spinhunt.py`, `pc0_hunt.py`, `eventcrawl.py`, `hle_audit.py`,

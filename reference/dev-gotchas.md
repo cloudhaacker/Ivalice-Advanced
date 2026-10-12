@@ -282,21 +282,28 @@ access, which is enough:
 ## Submodules and local framework patches
 
 - Pins (2026-10-06): gbarecomp @ `ecc9c55` (newest main, chosen
-  deliberately), recomp-ui @ `cac2b8f`; nested: arm-recomp-core @ 15fc7b7,
-  rbengine @ 2a03e7, recomp-net @ c58f125.
+  deliberately), recomp-ui @ `cac2b8f` (still the pin on 2026-10-12; it now
+  carries `tools/patches/recomp-ui-local.patch` as a working-tree edit —
+  39 upstream commits behind, a deliberate milestone to bump);
+  nested: arm-recomp-core @ 15fc7b7, rbengine @ 2a03e7, recomp-net @ c58f125.
 - `tools/patches/*.patch` are working-tree edits to `gbarecomp/`. Re-apply
-  after submodule updates with the **consolidated** patches — there are two
-  since 2026-10-09: `gbarecomp-local.patch` (one pristine→dev diff of
-  gbarecomp; exports with the nested gitlink excluded) and
+  after submodule updates with the **consolidated** patches — there are three
+  since 2026-10-12: `gbarecomp-local.patch` (one pristine→dev diff of
+  gbarecomp; exports with the nested gitlink excluded),
   `arm-recomp-core-local.patch` (the nested `external/arm-recomp-core`
-  repo's first local patch); the per-feature files are reference diffs
+  repo's first local patch) and `recomp-ui-local.patch` (the `recomp-ui/`
+  submodule; settings-overlay list scrolling, ffta-recomp issue #24 — the
+  runtime UI is recomp-ui code, so a menu behavior fix lives there, not in
+  `src/`); the per-feature files are reference diffs
   only — their contexts interleave and do not stack in any order (verified
   2026-10-09). `tools/check.py --only patches` validates all of them
-  (forward against the pristine pin, reverse when applied; `arm-recomp-core-*`
-  files are routed to the nested repo by that filename prefix) and
+  (forward against the pristine pin, reverse when applied;
+  `arm-recomp-core-*` and `recomp-ui-*` files are routed to those repos by
+  filename prefix) and
   **replays pin + each consolidated patch, requiring a byte-match with the
   corresponding dev tree** — it fails on drift or a stale consolidated
-  patch. Re-export commands: `tools/patches/README.md`.
+  patch. The recomp-ui tests that cover the patch run as suite `ui-tests`
+  (`tools/ui_check.py`). Re-export commands: `tools/patches/README.md`.
 
 ## Run examples
 

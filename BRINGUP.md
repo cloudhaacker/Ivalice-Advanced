@@ -5705,3 +5705,83 @@ Test path notes (for the next device contact):
   stamp). The corpus inputs (`game.toml`, symbols) were untouched, so the
   recompiler was re-run directly (byte-identical output, no tracked diff)
   and the stamp touched, rather than faking freshness.
+
+---
+
+## 2026-10-12 (late 11) — Issue #24: overlay list scrolling (nav follow + touch drag)
+
+Player report: with a controller the overlay's menu does not scroll as the
+selection walks down it, and on mobile a swipe does not scroll (you have to
+drag the bar on the right). Root-caused to the **recomp-ui** runtime settings
+menu, not the FFTA host, by reading the presentation and then measuring it:
+`recomp-ui/src/common/backends/imgui/runtime_ui_imgui.cpp` builds the two
+list children (`##sections`, `##items`), the host owns the selection
+(`recomp_runtime_ui_handle_input` from `host_window.cpp` `runtime_ui_event`),
+and the menu runs `ImGuiWindowFlags_NoNavInputs` so ImGui's own nav never
+scrolls. Nothing else did — a list child scrolls only from the wheel or by
+dragging its scrollbar, and recomp-ui's SDL backends hand fingers to ImGui as
+a mouse, so a swipe was a click-shaped no-op.
+
+Reproduced at the ImGui level with a standalone driver (`/tmp`, not committed;
+same geometry as the real menu — 2400x1080 touch-friendly, 7 described rows in
+"Assist Tools", list inner 745 px, `ScrollMax.y=284.4`): six D-pad DOWN presses
+("row 0 → row 6") left `Scroll.y` at 0.0 the whole way (the last two rows sat
+`284 px` below the fold), and a 240 px finger drag moved `Scroll.y` by 0.0.
+
+Fix, carried as `tools/patches/recomp-ui-local.patch` (215-file replay
+byte-match; per-feature forward-ok against the pin `cac2b8f`):
+
+- **Follow the selection** (`follow_selection`): when the selection actually
+  moved, scroll by the least amount that brings the row into view — both the
+  section sidebar and the rows list, both layouts, both presentations'
+  selection sources. Only on change, so a player who scrolled away keeps
+  their position; `recomp_runtime_ui_open` forgets the last follow so the
+  opening frame can bring the selection back.
+- **Touch drag-scroll + fling** (`begin_list_drag`/`end_list_drag`, enabled
+  only for `RECOMP_RUNTIME_UI_PRESENTATION_TOUCH_FRIENDLY`; a desktop drag
+  stays a click and keeps the wheel): 10 px threshold, velocity coast with
+  `exp(-5/s)` decay. While a drag owns the pointer the rows ignore hover and
+  clicks, so a swipe cannot activate the row it started over; presses on
+  `-`/`+`, the edit field, `< Back` and the scrollbar strip are left to their
+  own widgets, and any new press stops a coasting list.
+- Presentation state lives in the model (`RecompRuntimeUi::list`,
+  `-1` = none) rather than a file-static, since the model is already where
+  `editing_text` lives; `recomp_runtime_ui_create/close` reset it.
+
+Three ImGui details that cost iterations and are worth keeping (all verified
+in this pin, `1.91.9b`):
+
+1. `IsWindowHovered()` is **false** at the end of the child on the press
+   frame — the row under the finger has just become `g.ActiveId`, and the
+   default flags return false when an active item blocks. The claim needs
+   `ImGuiHoveredFlags_AllowWhenBlockedByActiveItem`.
+2. Inside a *scrolled* child, `GetCursorScreenPos()`/`GetContentRegion*` mix
+   scroll and screen space (measured: cursor y 893 in a child whose window
+   rect is `[148..893]`), so the list's scrollable band is measured from
+   `GetWindowPos()`/`GetWindowHeight()`.
+3. A `SetScrollY` lands in the child's **next** frame
+   (`Begin`→`CalcNextScrollFromScrollTargetAndClamp`), i.e. one frame of lag;
+   tests must render two frames per press before asserting.
+
+Tests/gates: new suite `ui-tests` (`tools/ui_check.py`, 2 binaries, ~12 s
+cold / instant cached, needs only a compiler — added to `FAST`, to the
+`patches` doc rows and to the CI subset in `.github/workflows/ci.yml`).
+`recomp-ui`'s `tests/runtime_ui_imgui_test.cpp` gained `list_scroll_case`
+(nav follow + wrap back up, 120 px swipe scrolls without activating, coast
+then stop, a tap still toggles) and `desktop_nav_scroll_case` (nav follow;
+a desktop drag must NOT scroll). Fresh-clone simulation: with the changes
+stashed, `ui_check --force` passes on the pristine pin (12.2 s), so CI stays
+green; the patched behavior is covered locally. `check.py --only
+unit-cpp,unit-py,ui-tests,patches,android-static` ALL PASS (5/5), and the
+**full `check.py` ALL PASS (16/16)** on the rebuilt binary — attract hash
+unchanged (`1EF4C118A8438CADE6E5847DC6716A7A800D157A568DECB272F2F7052EF321C1`),
+all four strict route replays FULLY_STATIC, `ws_smoke` PASS (6 cases x 3
+widths), `hle-audit` OK, `desktop-accept` PASS (the windowed twin skips
+under the acceptance lock, as designed). `FFTARecomp` rebuilds clean against
+the patch. Not device-verified on Android yet — the touch paths are
+exercised by the ImGui tests, and the next device contact should swipe the
+settings list.
+
+Landing: not upstreamed. `recomp-ui` upstream master is 39 commits ahead and
+still has no scroll handling, so the patch is not subsumed; the README
+records it as a `mstan/recomp-ui` PR candidate alongside the `gbarecomp` set.
