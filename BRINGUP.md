@@ -5778,9 +5778,21 @@ unchanged (`1EF4C118A8438CADE6E5847DC6716A7A800D157A568DECB272F2F7052EF321C1`),
 all four strict route replays FULLY_STATIC, `ws_smoke` PASS (6 cases x 3
 widths), `hle-audit` OK, `desktop-accept` PASS (the windowed twin skips
 under the acceptance lock, as designed). `FFTARecomp` rebuilds clean against
-the patch. Not device-verified on Android yet — the touch paths are
-exercised by the ImGui tests, and the next device contact should swipe the
-settings list.
+the patch.
+
+Device: the release APK built from this commit
+(`tools/make_release.py --apk`, `FFTARecomp-v1.6-6-g521fba7-dirty-android-
+arm64-v8a.apk` sha1 `16902cbf57bc5e82e698b49b5301f9cf3ba69266`, guard
+`--expect public`) was installed on the M2102K1AC (device `base.apk` sha1
+matches the host artifact byte-for-byte) and the boot gate passed
+(`tools/validate_android.sh --no-install`: 5/5 assertions, evidence in
+`android/artifacts/last-run`). **Player-confirmed on the device: the
+settings overlay now touch-scrolls** (issue #24 closed behaviorally; the
+pre-fix build needed the scrollbar). Release note: `build_apk.py`'s
+preflight refused the first attempt — `android/app/build.gradle` is a
+freshness input and the issue-#20 edit left it newer than
+`generated/.regen_stamp`; `tools/cycle.py` cleared it (regen 63134 units,
+byte-identical, attract hash unchanged) as in the issue-#20 session.
 
 Landing: not upstreamed. `recomp-ui` upstream master is 39 commits ahead and
 still has no scroll handling, so the patch is not subsumed; the README
