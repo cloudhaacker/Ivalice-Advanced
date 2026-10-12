@@ -5478,3 +5478,42 @@ Remaining: device feel pass (pill placement/size under thumb, haptic
 sanity) + a windowed launcher Assist-page screenshot; both need a
 phone/GUI session, not done headless. Long-press on the pill still opens
 the settings menu (unclaimed gesture, same as any screen tap) — accepted.
+
+## 2026-10-12 (late 6) — Issue #11 device validation: pill PASS on phone
+
+Device: user's Xiaomi (codename `mars`, panel 1440x3200@560 — note: NOT the
+Poco X3 Pro the codename suggests; all geometry driven live off `wm size` +
+boot log, so the mismatch cost nothing). Private ROM-included APK rebuilt
+with the #11 work (`build_apk.py` DONE 162.8 s: build + content guard +
+install + boot gate, all green), then a fresh observe session
+(`debug-args.txt --tcp-observe 19888` via run-as quoting
+`adb shell "run-as … sh -c '…'"` — bare `adb shell run-as … sh -c` gets its
+quotes stripped and lands in `/`).
+
+New gate: `tools/android_pill_test.py` (device-only, like the other
+android_* tests — not in `check.py`): screenshot + `run_status` frame-rate
+state machine over the observe TCP. **PILL-TEST PASS 7/7**: boot dark pill
+@60/s → tap pill: GOLD pill @174/s (latch engages) → tap pill: dark
+@58/s (latch releases) → control tap away: still dark (no spurious edge).
+
+Test-method findings (all folded into the script's docstring):
+- Scripted `touch_tap` never releases on policy-less games: steps drain
+  through `run_touch_policy`, installed only when `opts.input_frame` is set
+  (FFTA: none) — taps sat in `script_pending` forever. Immediate
+  `touch_down/up` (direct `hub.submit`, no drain needed) is the working
+  path. Same reason gesture recognition/long-press timers don't advance
+  without a policy — pre-existing engine behavior, out of scope.
+- Holds must stay SHORT (0.25 s): a 1 s hold crossed the 450 ms long-press
+  threshold and opened the runtime menu, which then ate later taps modally.
+  (That failure incidentally proved Phase 0 on-device: the menu shows the
+  new Assist Tools section.)
+- Geometry must come LIVE from `touch_status` (`px_per_mm` 20.267, insets
+  137,105,0,112): the boot log prints pre-JNI density (22.05) and unsettled
+  insets (0s). The pill honoring live safe insets is correct behavior.
+- `adb shell input tap` unneeded throughout; TCP injection bypasses the
+  ROM's OS tap filtering entirely.
+
+Visual: gold "FF" pill top-center confirmed on-device screenshot (clear of
+L/R shoulders, pad + game scene behind); user's own verdict: "the pill
+seems fine". Remaining #11 items: launcher Assist-page windowed screenshot
+(desktop GUI session) and the noted Rewind-row wart (upstream proposal).
