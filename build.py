@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fresh-clone bootstrap: from a clone to a running build/FFTARecomp.
 
-Wraps the newcomer setup (README § Setup) into one idempotent script:
+Wraps the newcomer setup (README § Quick start) into one idempotent script:
 
   1. submodules         git submodule update --init --recursive (two-pass)
   2. dumps              game.gba + BIOS present and SHA-1-verified
@@ -85,7 +85,7 @@ def run(cmd, cwd=REPO, capture=True, env=None, timeout=1800):
                               capture_output=capture, text=True, timeout=timeout)
     except FileNotFoundError:
         die(f"command not found: {cmd[0]}",
-            hint="install the build dependencies (README § Requirements)")
+            hint="install the build dependencies (README § Building from source)")
 
 
 def run_ok(cmd, cwd=REPO):
@@ -371,7 +371,7 @@ def main():
     print(f"\nbuild.py: DONE in {dur:.1f}s — build/FFTARecomp is ready")
     print("  play:      tools/play.sh")
     print("  gate:      .venv/bin/python tools/check.py")
-    print("  optional:  mGBA oracle build — see README § Setup")
+    print("  optional:  mGBA oracle build — see reference/oracle-harness.md")
     return 0
 
 

@@ -120,7 +120,7 @@ cmake --build build --target FFTARecomp --parallel 8
 | `src/` | Host code: `main.cpp` (hooks/plugins), `ffta_ram_dispatch.h`, launcher boot |
 | `android/` | Android target: Gradle project, runtime TOML, payload defaults, device gate — guide `android/README.md` |
 | `generated/` | Recompiler output — gitignored, never edited |
-| `tools/` | The harness — key ones listed in the table above; full list: README § Repository layout |
+| `tools/` | The harness — key ones listed in the table above; full list: `tools/README.md` |
 | `.agents/skills/` | `gbarecomp-recomp-playbook` — portable playtest/healing/audit playbook (SKILL.md routes its references) |
 | `mods/` `inputs/` `symbols/` `reference/` | Widescreen catalog; input traces; symbol seeds; study notes |
 | `gbarecomp/`, `recomp-ui/` | Pinned submodules — do not update casually (pins + local patches: `reference/dev-gotchas.md`) |
@@ -144,7 +144,10 @@ crash playbooks: `BRINGUP.md`.
 | Topic | Load |
 |---|---|
 | Decisions, priors, corrections, crash playbooks | `BRINGUP.md` |
-| Setup, run, layout, roadmap | `README.md` |
+| Quick start, features, controls, building | `README.md` |
+| What this is, running/display options, repository map, contributing | `docs/README.md` |
+| Harness tool list | `tools/README.md` |
+| Study-notes index, sources, credits | `reference/README.md` |
 | Manual setup route (no build.py) + troubleshooting | `docs/manual-build.md` |
 | Playtest/debug cookbook, healing loop, gates, coverage, CI, unit tests | `tests/README.md` |
 | Android target: build, run, device gate, known behavior | `android/README.md` |

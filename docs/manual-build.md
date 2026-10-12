@@ -17,7 +17,8 @@ git submodule update --init --recursive
 ```
 
 **2. Place your ROM dump** — `game.gba` at the repo root (FFTA USA). Launch
-verifies the ROM hash (SHA-1 in the root README) and fails loudly if it is
+verifies the ROM hash (SHA-1 in the root README § Building from source) and
+fails loudly if it is
 wrong or missing. No BIOS dump is needed: the launch BIOS is the bundled
 clean-room emibios at `bios/emibios_gba_bios.bin` (issue #17).
 
@@ -94,12 +95,15 @@ And optionally the attract gate, which pins the exact frame hash:
 .venv/bin/python tools/attract_check.py    # PASS + exit 0 expected
 ```
 
-Then play — `tools/play.sh` (guide: `tests/README.md`).
+Then play — run the built binary (`./build/FFTARecomp`; running and display
+options: [README.md](README.md)). For an *instrumented playtest session*
+use `tools/play.sh` (guide: [`tests/README.md`](../tests/README.md)).
 
 ## Troubleshooting
 
-- `build.py` stops at **dumps** → the ROM is missing or has the wrong
-  hash (expected SHA-1s in the root README); it never downloads them.
+- `build.py` stops at **dumps** → the ROM or BIOS is missing or has the
+  wrong hash (ROM SHA-1: root README § Building from source; BIOS pin:
+  `bios/README.md`); it never downloads them.
 - `build.py` stops at **framework patches** → the submodule drifted from
   its pin; check `git -C gbarecomp status`.
 - `gba_recompile: command not found` → step 5 was not run in this checkout.
@@ -108,9 +112,10 @@ Then play — `tools/play.sh` (guide: `tests/README.md`).
   a dispatch miss near pc `0x300`, step 6 ran without
   `--config bios/gba_bios.toml`.
 - Launch aborts with an identity/hash error → wrong or missing dump; compare
-  the SHA-1s listed in the root README.
+  against the pinned SHA-1s (ROM: root README § Building from source; BIOS:
+  `bios/README.md`).
 - CMake cannot find SDL2 → install the dev package (see root README
-  Requirements in Quick start).
+  § Building from source).
 - `import capstone` fails in tools → step 3's venv (use
   `.venv/bin/python tools/...`).
 - A submodule directory is empty after cloning → step 1's retry line.

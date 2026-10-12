@@ -37,7 +37,7 @@ jobs:
             ninja-build libsdl2-dev libgl-dev libfreetype-dev libharfbuzz-dev
 
       # unit-py imports tools/misspack.py, which needs capstone. Local runs
-      # always use .venv (README setup); the runner needs the same dep on
+      # always use .venv (docs/manual-build.md); the runner needs the same dep on
       # the interpreter that runs check.py (sys.executable). Pinned to the
       # .venv version; manylinux py3-none wheel, nothing to build.
       - name: Python

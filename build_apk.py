@@ -150,7 +150,7 @@ def step_preflight():
     java, major = find_java()
     if java is None:
         die("no usable JDK found (need >= 17 and <= 26 for Gradle 8.11.1)",
-            hint="install JDK 21 (android/README.md § Build prerequisites) "
+            hint="install JDK 21 (android/README.md § Build) "
                  "or set JAVA_HOME")
     # Gradle inherits this process' env, not our discovery: export what we
     # validated so the build below sees it. setdefault keeps an explicit
@@ -169,7 +169,7 @@ def step_preflight():
                 break
     if not sdk or not Path(sdk).is_dir():
         die("ANDROID SDK not found",
-            hint="set ANDROID_HOME (android/README.md § Build prerequisites)")
+            hint="set ANDROID_HOME (android/README.md § Build)")
     ndk = Path(sdk) / "ndk"
     if not ndk.is_dir() or not any(ndk.iterdir()):
         die(f"no NDK under {ndk}",
@@ -195,8 +195,8 @@ def step_preflight():
                                      (BIOS, BIOS_SHA1, "BIOS", BIOS_SIZE)):
         if not path.exists():
             die(f"{label} missing: {path}", hint="run build.py first "
-                "(README § Setup) — the private build embeds the ROM; the "
-                "BIOS is committed repo material")
+                "(README § Quick start) — the private build embeds the ROM; "
+                "the BIOS is committed repo material")
         if path.stat().st_size != size:
             die(f"{label} has the wrong size: {path}")
         if sha1_file(path) != want:

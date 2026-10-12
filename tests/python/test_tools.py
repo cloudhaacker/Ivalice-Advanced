@@ -19,8 +19,8 @@ Covers the pure logic the healing/audit flow depends on:
     gate reads it — corpus mtimes cannot date a regen)
 
 Run: .venv/bin/python tests/python/test_tools.py [-v]
-Requires capstone (misspack dependency): use .venv per README setup, or
-`pip install capstone==5.0.7` — CI installs that same pin.
+Requires capstone (misspack dependency): use .venv per docs/manual-build.md,
+or `pip install capstone==5.0.7` — CI installs that same pin.
 """
 import pathlib
 import re
@@ -40,7 +40,7 @@ except ModuleNotFoundError as exc:
     if exc.name == "capstone":
         raise SystemExit(
             "unit-py needs capstone (misspack dependency): run via "
-            ".venv/bin/python (README setup) or `pip install "
+            ".venv/bin/python (docs/manual-build.md) or `pip install "
             "capstone==5.0.7`") from None
     raise
 

@@ -1,9 +1,10 @@
 # Testing & verification — FFTA Recomp
 
 Instrumented playtesting, the coverage/healing loop, the regression gates,
-and CI. The root [README](../README.md) covers setup, building, and the
-project overview; everything below assumes a built `build/FFTARecomp` and
-the repo-local `.venv/`.
+and CI. The root [README](../README.md) is the project overview (quick
+start, features, controls, building); running and display options live in
+[docs/README.md](../docs/README.md). Everything below assumes a built
+`build/FFTARecomp` and the repo-local `.venv/`.
 
 ## Host unit tests
 
@@ -68,7 +69,9 @@ the repo-local `.venv/`.
 
 ## Playtesting & debugging with `tools/play.sh`
 
-`tools/play.sh` launches the windowed build with the session instrumentation
+`tools/play.sh` is the **testing** entry, not the play entry — for normal
+play, run the built binary directly (see `docs/README.md` § Running the
+built game). It launches the windowed build with the session instrumentation
 already on (input recording, live miss journaling, persistent battery save)
 and archives the previous session's artifacts at launch, so back-to-back
 playtests cannot clobber each other.

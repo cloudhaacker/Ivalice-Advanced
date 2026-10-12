@@ -2,7 +2,7 @@
 """cycle.py — the standard change cycle: cold regen → dispatch sanity → build
 → attract gate (+ optional non-strict miss harvest).
 
-Run after ANY game.toml / src change (AGENTS.md § "Validation discipline"):
+Run after ANY game.toml / src change (AGENTS.md § Workflows, "A. Change cycle"):
 
   .venv/bin/python tools/cycle.py                  # regen + build + gate
   .venv/bin/python tools/cycle.py --harvest 2400   # + miss fragment harvest

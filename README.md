@@ -1,197 +1,157 @@
-# FFTA Recomp
+# Final Fantasy Tactics Advance Recomp
 
-> Native PC recompilation of **Final Fantasy Tactics Advance** (GBA, USA / AFXE) built on the [mstan/gbarecomp](https://github.com/mstan/gbarecomp) framework.
+> **Experimental preview.** This recompilation is built on
+> [gbarecomp](https://github.com/mstan/gbarecomp), the reusable
+> static-recompilation framework whose reference games are its proving
+> ground. This is not a finished commercial port, so expect rough edges and
+> please report problems. For more context, read
+> [Recomp + AI: 5 Months Later »](https://1379.tech/recomp-ai-5-months-later/).
 
-This is not an emulator. The game's ARM/Thumb code is statically translated to
-host C++ (AOT), compiled, and executed natively — with a **self-healing
-coverage** loop so the next build is fully static.
+Static recompilation of **Final Fantasy Tactics Advance** for Linux and
+Android, with a validated widescreen view and strict fully-static execution.
 
-> **You must own the game.** The ROM is user-supplied, hash-verified at
-> launch, and **never committed** (no ROM-derived bytes in git history, ever —
-> that includes `generated/`, `saves/`, `logs/`, patches, and frame dumps).
-> No game code, graphics, text, or audio is included — this repository is
-> tooling and notes only — and the project is unofficial: not affiliated with
-> or endorsed by Square Enix or Nintendo.
->
-> **The BIOS is bundled, not dumped:** the launch BIOS is
-> [emibios](https://github.com/coolbho3k/emibios) — a clean-room,
-> LGPL-3.0-or-later BIOS replacement committed at `bios/` (issue #17). It is
-> recompiled and linked like the rest of the machine; a retail Nintendo dump
-> is no longer required (the launcher still accepts one if you point the
-> config at it).
-
-- ROM: Final Fantasy Tactics Advance (USA), SHA-1
-  `4ac05441f4de70a4ec3dd932116346c61b8783d9`, 16,777,216 bytes → `game.gba`
-- BIOS (bundled): emibios `main @c4d5d71`, SHA-1
-  `0c0d404d16c6b55b3071aba714f82077da132f14`, 16,384 bytes →
-  `bios/emibios_gba_bios.bin`
-
----
+The game ROM is **not included**. You must provide your own legally obtained
+dump of *Final Fantasy Tactics Advance* (USA). The launch BIOS **is**
+included: a clean-room, freely redistributable
+[emibios](https://github.com/coolbho3k/emibios) build committed at `bios/` —
+no Nintendo BIOS dump is required.
 
 ## Quick start
 
-Requirements: CMake ≥ 3.20 + Ninja, GCC or Clang (C++17), SDL2 (dev), git,
-Python 3.10+ — plus the ROM above (the only user-supplied file). Everything
-after cloning is one idempotent script:
+### Desktop (Linux)
+
+1. Clone with submodules and place your legally obtained ROM dump at the
+   repo root:
+
+   ```sh
+   git clone --recurse-submodules https://github.com/james2doyle/ffta-recomp.git
+   cd ffta-recomp
+   cp /path/to/ffta-usa.gba game.gba
+   ```
+
+2. Build with the idempotent bootstrap script (dependencies → framework
+   patches → recompilation → build → strict smoke test):
+
+   ```sh
+   python3 build.py
+   ```
+
+3. Run the self-built binary. With no arguments it opens the launcher —
+   select your **Final Fantasy Tactics Advance (USA)** ROM and select
+   **Play**:
+
+   ```sh
+   ./build/FFTARecomp
+   ```
+
+The launcher pre-fills the BIOS with the bundled clean-room build, remembers
+your settings, and your ROM is hash-verified at launch. Enable **Skip
+launcher** (or pass the paths directly) to start the game without the UI:
 
 ```sh
-git clone --recursive <repo-url> ffta-recompiled && cd ffta-recompiled
-cp /path/to/ffta-usa.gba game.gba
-python3 build.py            # deps → recompile → build → smoke test (FULLY_STATIC)
-tools/play.sh --scale 4     # play: 4x window (960x640)
+./build/FFTARecomp --bios bios/emibios_gba_bios.bin --rom game.gba
 ```
 
-Controls: arrows = D-pad, X = A, Z = B, Enter = Start, Backspace = Select,
-C = L, V = R. Re-run `build.py` after pulling; it skips finished steps.
+Display and window options (`--scale`, `--screen`, fullscreen, widescreen)
+are listed in [docs/README.md](docs/README.md).
 
-Prefer the script over the manual route ([docs/manual-build.md](docs/manual-build.md)
-— reference + troubleshooting for every step above). Android is a separate
-target: [android/README.md](android/README.md).
+### Android
 
-## Display options
+1. Complete the desktop quick start first — the APK build consumes the
+   generated corpus and embeds your ROM.
+2. Build the app:
 
-```sh
-tools/play.sh --scale 8 --screen backlit   # bigger window + GBA-screen color
-```
+   ```sh
+   python3 build_apk.py
+   ```
 
-- `--scale N` (1–8, default 3): window size is N×240 × N×160 pixels
-  (4 → 960x640, 8 → 1920x1280). `play.sh` forwards extra flags to the binary.
-- `--screen KIND`: GBA screen simulation — `raw` (default, exact passthrough),
-  `unlit`, `frontlit`, `backlit`, `classic`. Also via `[video].screen` in
-  `game.toml`, or the `GBARECOMP_SCREEN` environment variable.
-- Widescreen up to 448 px (`--view-width`, `--resize-view`) is a validated
-  feature with its own model — guide: [reference/widescreen.md](reference/widescreen.md).
+3. With a device attached, the script installs the APK and runs the
+   boot-health gate. The ROM is embedded, so the app boots straight into the
+   game. Full build, install, and device-validation instructions live in
+   [`android/README.md`](android/README.md).
 
-Headless runs are for scripts and gates; use `tools/play.sh` for anything
-interactive:
+## Features
 
-```sh
-./build/FFTARecomp --bios bios/emibios_gba_bios.bin --rom game.gba \
-  --frames 6000 --no-window       # headless; add --dump-png out.png for a frame
-```
+- Native Linux and Android builds
+- Strict fully-static execution — zero interpreter fallback on any executed
+  path, kept that way by a self-healing coverage loop
+- Validated widescreen view up to 448 px
+- GBA screen simulation: `raw`, `unlit`, `frontlit`, `backlit`, `classic`
+- ROM and BIOS setup through the shared
+  [recomp-ui](https://github.com/mstan/recomp-ui) launcher; ROM and BIOS
+  hashes verified at launch
+- Keyboard, controller, and touchscreen controls
+- Windowed and fullscreen desktop play
+- Cartridge saves and save states
 
-Session recording, savestates, debug ports and clean shutdown are covered in
-**[tests/README.md](tests/README.md)**.
+## Controls
 
-## Status
-
-All bring-up phases are complete; **every executed path replays
-strict-FULLY_STATIC** (zero interpreter fallback), and the attract
-regression hash has been stable since pinning. Widescreen (W1–W3, up to
-448 px) and the **Android port** are landed and device-verified
-([android/README.md](android/README.md)) — the current engine passed the
-on-device boot, press-acceptance and suspend/kill/resume lifecycle gates
-2026-10-09. Open items and gating decisions live in `AGENTS.md` § Status;
-the dated decision log, evidence and crash playbooks are `BRINGUP.md`.
-
-## Testing & debugging
-
-All testing, debugging and verification workflows live in
-**[tests/README.md](tests/README.md)**:
-
-- **Play & record** — `tools/play.sh` (instrumented sessions, savestates,
-  debug port; keymap `build/keybinds.ini`)
-- **Coverage/healing loop** — play -> harvest -> merge seeds -> `tools/resolve.py`
-  -> `tools/cycle.py`
-- **Regression gate** — `.venv/bin/python tools/check.py` (host tests,
-  attract, widescreen smoke, strict route replays)
-- **CI** — `.github/workflows/ci.yml` (fork-safe tier 1) and the full-gate
-  tier split
-- **Android** — device gate `tools/validate_android.sh` (install → launch →
-  assertions → evidence) plus device-free checks `tools/android_static_check.py`
-  (CI tier 1); build/run guide: [android/README.md](android/README.md)
-
-## Repository layout
-
-| Path | What |
+| GBA control | Keyboard |
 |---|---|
-| `build.py` | Fresh-clone bootstrap — submodules → dumps → venv → patches → tools → BIOS → corpus → build → smoke (see Quick start) |
-| `build_apk.py` | Android bootstrap — preflight → private Gradle build (ROM embedded; BIOS bundled from `bios/`) → APK content guard → install + device gate (android/README.md § Build) |
-| `game.toml` | Per-game config: identity pin + all audit seeds (evidence in `note`s) |
-| `src/` | Host integration: `main.cpp`, launcher boot, stack setup |
-| `android/` | Android target: Gradle project + engine-shell wiring, runtime TOML, payload defaults, device gate — guide `android/README.md` |
-| `tests/` | Host unit tests + the testing guide — playtesting, healing loop, gates, CI (`tests/README.md`) |
-| `docs/` | Deep-dive build docs — the manual setup route (`docs/manual-build.md`) |
-| `generated/` | Recompiler output — gitignored, **never edited** |
-| `mods/` | Preloaded mod catalog shipped beside the exe — the default-enabled `ffta.enhancement.widescreen` manifest activating the linked `ffta.widescreen` plugin |
-| `gbarecomp/`, `recomp-ui/` | Pinned framework submodules (see `reference/dev-gotchas.md` for pins) |
-| `tools/` | The whole harness: `play.sh`, `check.py` (regression gate), `ws_check.py` (widescreen smoke), `savecheck.py` (save validation), `resolve.py`, `cache_harvest.py`, `cycle.py`, `attract_check.py`, `android_static_check.py` (device-free Android checks), `android_apk_check.py` (APK content guard), `misspack.py`, `coverage_report.py`, `framediff.py`, `dualrun.py`, `ringscan.py`, `keyprobe.py`, `trace_split.py`, `disarm.py`, … |
-| `.agents/skills/` | Project-local agent skills — `gbarecomp-recomp-playbook`, a portable healing-loop/audit playbook with task-grouped references |
-| `inputs/` | Deterministic input traces (`<frame>,0x<hex>` active-low, sticky) |
-| `symbols/` | Curated symbol seeds (attributed; consumed via `--symbols`) |
-| `BRINGUP.md` | Decision log — the project's memory; read it |
-| `AGENTS.md` | Rules of engagement for agents; read it before changing anything |
+| D-Pad | Arrow keys |
+| A / B | X / Z |
+| Start | Enter |
+| Select | Backspace |
+| L / R | C / V |
 
-## Contributing
+Controllers are detected automatically, and button mappings can be changed
+from the launcher. On Android, use the on-screen touch controls.
 
-Full rules live in `AGENTS.md`; the essentials:
+## Building from source
 
-1. **Never guess.** Every ROM claim comes from disassembly you ran, address
-   cited; every `game.toml` entry carries its evidence in `note`.
-2. **Never edit `generated/`.** Curation happens in `game.toml` and `src/`.
-3. **ROM hygiene.** No ROM-derived bytes in git, ever.
-4. **Log decisions** in `BRINGUP.md` (date, action, result, conclusion) and
-   commit after every milestone.
-5. **Don't auto-write `game.toml`** — proposals are reviewed by a human/agent
-   before merging.
+Desktop development requires CMake ≥ 3.20, Ninja, GCC or Clang (C++17),
+SDL2 development libraries, git, and Python 3.10+.
 
-The coverage/healing workflow (play → harvest → resolve → verify) is
-documented in [tests/README.md](tests/README.md).
+`python3 build.py` is the one-command route; re-running after a pull skips
+finished steps. The raw pipeline it wraps — every step by hand, with
+troubleshooting — is documented in
+[`docs/manual-build.md`](docs/manual-build.md):
 
-## References & attribution
+```sh
+cmake -S gbarecomp -B gbarecomp/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build gbarecomp/build --target gba_recompile gba_scan --parallel 8
+./gbarecomp/build/gba_recompile --rom game.gba --config game.toml \
+  --symbols symbols/ffta_symbols.tsv --data-symbols symbols/ffta_data_symbols.tsv \
+  --out generated --max-functions 65536
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DGBARECOMP_ENABLE_MODS=ON
+cmake --build build --target FFTARecomp --parallel 8
+```
 
-- [mstan/gbarecomp](https://github.com/mstan/gbarecomp) — the recompilation
-  framework (read its `PRINCIPLES.md`, `DEBUG.md`, `docs/TOML_SCHEMA.md`);
-  `recomp-ui` for the launcher/runtime UI.
-- [mstan/EmeraldRecomp](https://github.com/mstan/EmeraldRecomp) and
-  [mstan/WarioWareTwistedRecomp](https://github.com/mstan/WarioWareTwistedRecomp)
-  — reference implementations for the widescreen margin/UI-anchoring model
-  (studied for `reference/widescreen.md`).
-- Community research (used as reference only, with attribution — see
-  `BRINGUP.md` studies): Data Crystal wiki (ROM/RAM maps), LeonarthCG/
-  FFTA_Engine_Hacks (address index), spiiin/FFTAUtils (map-data formats),
-  charlie-troy/ffta-decomp (revision-exact partial decomp; **no license —
-  never ingest its sources/logs, reference only**), FFHacktics forum.
-- Port credits and third-party terms: `THIRD_PARTY_ATTRIBUTION.md` (the
-  `reference/datacrystal/` pages are GFDL 1.2 — license text included
-  alongside them).
+Android build and device-validation instructions live in
+[`android/README.md`](android/README.md).
 
-## Thanks
+Generation requires the supported ROM revision — *Final Fantasy Tactics
+Advance* (USA, AFXE), SHA-1 `4ac05441f4de70a4ec3dd932116346c61b8783d9`,
+16,777,216 bytes — pinned in [`game.toml`](game.toml); the launch BIOS is
+the bundled clean-room emibios ([`bios/README.md`](bios/README.md)).
+ROM-derived generated code, saves, patches, frame dumps, and build output
+remain local and are never committed.
 
-Nothing here would exist without work other people shared:
-
-- **[mstan](https://github.com/mstan)** — the
-  [gbarecomp](https://github.com/mstan/gbarecomp) framework and
-  [recomp-ui](https://github.com/mstan/recomp-ui), plus the reference-game
-  recompilations and the R.A.I.D. community around them.
-- **Bregalad and loveemu** — "GBA Mus Ripper" / `sappy_detector.c` behind our
-  m4a engine detection ([berg8793](https://github.com/berg8793/gba-mus-ripper)
-  and [CaptainSwag101](https://github.com/CaptainSwag101/gba-mus-ripper) forks
-  for cross-checking).
-- **The [Data Crystal](https://datacrystal.tcrf.net/) contributors** — FFTA
-  ROM/RAM maps, scripting and compression pages (via the Wayback Machine).
-- **[LeonarthCG](https://github.com/LeonarthCG)** —
-  [FFTA_Engine_Hacks](https://github.com/LeonarthCG/FFTA_Engine_Hacks), the
-  address index behind our engine studies.
-- **[charlie-troy](https://github.com/charlie-troy)** —
-  [ffta-decomp](https://github.com/charlie-troy/ffta-decomp), used for naming
-  and cross-checks.
-- **[spiiin](https://github.com/spiiin)** —
-  [FFTAUtils](https://github.com/spiiin/FFTAUtils): map-data formats, verified
-  data regions.
-- **BCROBERT, JoKyR, Terence Fergusson, and the GameFAQs code-guide authors
-  (Adrammelech, labmaster, TetrisTheMovie, Vegikachu)** — structures and formulas.
-- **The [FFHacktics](https://ffhacktics.com/) community** — long-running FFTA
-  research that made all of this findable.
-- **The [mGBA](https://mgba.io/) project** — our differential-testing oracle.
-
-Redistribution terms for anything included here live in
-`THIRD_PARTY_ATTRIBUTION.md` and `reference/datacrystal/README.md`.
+Contributors can run `.venv/bin/python tools/check.py` for the automated
+regression gate (host unit tests, attract hash, widescreen smoke, strict
+route replays) and `tools/play.sh` for an instrumented playtest session.
+Testing, debugging, coverage, and CI workflows live in
+[`tests/README.md`](tests/README.md); the repository map in
+[`docs/README.md`](docs/README.md); project rules in
+[`AGENTS.md`](AGENTS.md).
 
 ## License
 
-The project's own code and documentation are licensed **PolyForm
-Noncommercial 1.0.0** (`LICENSE`) — free to use, share, and modify for
-noncommercial purposes. Third-party components keep their own terms (the
-`gbarecomp` framework: PolyForm NC; `recomp-ui`: MIT;
-`reference/datacrystal/`: GFDL 1.2) — see `THIRD_PARTY_ATTRIBUTION.md`.
+PolyForm Noncommercial 1.0.0 — see [`LICENSE`](LICENSE). Third-party
+components retain their own licenses; see
+[`THIRD_PARTY_ATTRIBUTION.md`](THIRD_PARTY_ATTRIBUTION.md).
+
+## Legal
+
+This is an unofficial, non-commercial preservation and research project. It
+is not affiliated with or endorsed by Square Enix or Nintendo. Final Fantasy
+Tactics Advance and related names, characters, artwork, and game data are
+trademarks or copyrights of their respective owners.
+
+No copyrighted game ROM or Nintendo BIOS data is distributed by this
+project. The bundled BIOS is a clean-room replacement, not a Nintendo dump.
+
+---
+
+Part of the **R.A.I.D. — Retro AI Development** static-recompilation
+community.

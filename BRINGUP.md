@@ -4913,3 +4913,69 @@ TOML seed inventory + bin byte-pins ARE the CI-able form of corpus
 coverage.
 
 **Result.** unit-py 27→37 tests, fast gate 6/6, attract golden unchanged.
+
+---
+
+## 2026-10-11 (late 3) — docs: README restructured to the WarioWare model; folder READMEs; dangle clean sweep
+
+**Prompt.** "The README is still awful. Make it as close to the
+WarioWareTwistedRecomp README as possible. Everything else gets put in a
+README under a folder that makes sense for the information in there."
+Follow-ups: `play.sh` is testing-only (play = the self-built binary);
+remove the Status section; "clean up all the dangles as well — clean
+sweep"; then log and commit.
+
+**Action.** Root README rewritten section-for-section after
+mstan/WarioWareTwistedRecomp (experimental-preview blockquote, one-liner,
+ROM-not-included/BIOS-bundled note, Quick start Desktop-Linux/Android,
+Features, Controls, Building from source, License, Legal, R.A.I.D.
+footer). Deltas from the model are fact-driven only: BIOS bundled
+(emibios) instead of user-dumped, Select = Backspace (the real keymap),
+source-only quick start (no releases yet), "built on gbarecomp" not
+"byproduct of developing gbarecomp". Status section removed from the
+root and moved to docs/README.md. Play is the self-built binary
+(`./build/FFTARecomp` — launcher or `--bios/--rom`); `tools/play.sh`
+demoted to the instrumented testing entry everywhere it was framed as
+the play route (root README, docs/manual-build.md, tests/README.md,
+tools/README.md).
+
+Displaced content → new folder READMEs: `docs/README.md` (status,
+what-this-is, running/display options as binary flags, manual-build
+pointer, repository map, contributing essentials), `tools/README.md`
+(the harness table), `reference/README.md` (study-notes index, sources,
+thanks).
+
+Clean sweep (every `README`/`§` citation audited; two PRE-EXISTING
+broken § citations found and fixed):
+- `AGENTS.md`: codebase-map tools row + reference index → the new folder
+  READMEs (was "README § Repository layout").
+- `build.py`: § Setup/§ Requirements hints → § Quick start /
+  § Building from source; oracle hint → `reference/oracle-harness.md`.
+- `build_apk.py`: § Setup → § Quick start; PRE-EXISTING "§ Build
+  prerequisites" (not a heading) → § Build (2×).
+- `tools/cycle.py`: PRE-EXISTING `AGENTS.md` § "Validation discipline"
+  (no such heading — AGENTS was restructured 2026-10-08) → § Workflows
+  "A. Change cycle".
+- `ci.yml` + `tests/python/test_tools.py`: "README setup" →
+  `docs/manual-build.md`.
+- `docs/manual-build.md`: play step binary-first; SHA-1 pointers split
+  (ROM: root README § Building from source; BIOS: `bios/README.md` —
+  only the ROM SHA-1 lives in the root now); "root README Requirements"
+  → § Building from source.
+- `tests/README.md`: intro now points running/display options at
+  `docs/README.md`.
+
+BRINGUP history entries referencing old README sections left untouched
+(append-only log). Verified no tracked ROM-derived clutter at root
+(screenshot, savestates, hang logs all untracked).
+
+**Result.** One-off link/anchor checker over all 36 repo .md files
+(every `[text](target)` resolves; every `#anchor` matches a GitHub-style
+heading slug; submodules/.venv/build excluded): **0 broken**. § citations
+verified against real headings (android/README § Build/§ Known behavior/
+§ Mods state/§ Decisions/§ On-device suspend/resume protocol; tests/README
+§ Continuous integration/§ healing loop; THIRD_PARTY § Bundled clean-room
+BIOS; gbarecomp PRINCIPLES/DEBUG/docs/TOML_SCHEMA exist). `py_compile`
+green (build.py, build_apk.py, cycle.py, test_tools.py); unit-py 37/37
+green. Docs-only change — no game.toml/src/generated/ touched, so no
+cycle.py gate required.
