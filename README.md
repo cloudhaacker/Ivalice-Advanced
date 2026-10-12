@@ -66,7 +66,7 @@ Headless runs are for scripts and gates; use `tools/play.sh` for anything
 interactive:
 
 ```sh
-./build/FFTARecomp --bios gbarecomp/bios/gba_bios.bin --rom game.gba \
+./build/FFTARecomp --bios bios/emibios_gba_bios.bin --rom game.gba \
   --frames 6000 --no-window       # headless; add --dump-png out.png for a frame
 ```
 
@@ -106,7 +106,7 @@ All testing, debugging and verification workflows live in
 | Path | What |
 |---|---|
 | `build.py` | Fresh-clone bootstrap — submodules → dumps → venv → patches → tools → BIOS → corpus → build → smoke (see Quick start) |
-| `build_apk.py` | Android bootstrap — preflight → private Gradle build (ROM+BIOS embedded) → APK content guard → install + device gate (android/README.md § Build) |
+| `build_apk.py` | Android bootstrap — preflight → private Gradle build (ROM embedded; BIOS bundled from `bios/`) → APK content guard → install + device gate (android/README.md § Build) |
 | `game.toml` | Per-game config: identity pin + all audit seeds (evidence in `note`s) |
 | `src/` | Host integration: `main.cpp`, launcher boot, stack setup |
 | `android/` | Android target: Gradle project + engine-shell wiring, runtime TOML, payload defaults, device gate — guide `android/README.md` |

@@ -59,7 +59,6 @@ PRIVATE_MARKER = "-PRIVATE-rom-included.apk"
 # (Payload-vs-staging drift is additionally caught by the content guard, which
 # byte-compares the packaged payload against these sources.)
 FRESHNESS_INPUTS = (
-    REPO / "generated/dispatch_table.cpp",
     REPO / "game.toml",
     REPO / "src/main.cpp",
     REPO / "CMakeLists.txt",
@@ -210,10 +209,20 @@ def step_preflight():
         die("no generated/ corpus", hint="run build.py (or tools/cycle.py) "
             "on desktop first — an Android build consumes it, cannot "
             "produce it")
-    if generated.stat().st_mtime < (REPO / "game.toml").stat().st_mtime:
-        die("generated/ corpus is stale", hint="re-run build.py "
-            "(game.toml is newer than generated/)")
-    details.append("corpus present")
+    # Freshness gate: the recompiler preserves mtimes for byte-identical
+    # output, so the emitted files cannot date a regen — build.py /
+    # cycle.py stamp it (generated/.regen_stamp). No stamp = never regen'd
+    # here; a stamp older than any build input = stale corpus.
+    stamp = generated.parent / ".regen_stamp"
+    if not stamp.exists():
+        die("generated/ corpus has no regen stamp", hint="re-run build.py "
+            "(or tools/cycle.py) on desktop — an Android build consumes "
+            "the corpus, cannot produce it)")
+    for source in FRESHNESS_INPUTS:
+        if source.stat().st_mtime > stamp.stat().st_mtime:
+            die("generated/ corpus is stale", hint="re-run build.py "
+                "(%s is newer than the last regen)" % source.name)
+    details.append("corpus present + fresh (regen stamp)")
     return ", ".join(details)
 
 

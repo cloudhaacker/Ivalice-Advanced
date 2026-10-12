@@ -247,8 +247,10 @@ real phone stays the authority for runtime behavior.
 After a Gradle build, `tools/android_apk_check.py` (`--only android-apk` in
 `tools/check.py`; outside the default run — a desktop worktree has no APK)
 guards the artifact itself: the packaged payload must byte-match the staging
-sources, a private build's embedded ROM/BIOS must match the pins
-(hash-verified), a public build must embed neither, `libmain.so` must exist
+sources, a private build's embedded ROM must match the pin
+(hash-verified), a public build must embed **no ROM** — the bundled
+clean-room BIOS (emibios, hash-verified against the config pin) is
+expected in **every** build — `libmain.so` must exist
 exactly once per ABI, both activities must stay `sensorLandscape` with the
 build type's debuggable flag, and the zip must be free of duplicate / stray /
 oversized entries (the junk-blob class below). `--apk PATH` selects a

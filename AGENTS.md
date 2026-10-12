@@ -88,7 +88,7 @@ cmake --build gbarecomp/build --target gba_recompile gba_scan --parallel 8
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DGBARECOMP_ENABLE_MODS=ON
 cmake --build build --target FFTARecomp --parallel 8
 # run (BIOS + ROM hash-verify at launch)
-./build/FFTARecomp --bios gbarecomp/bios/gba_bios.bin --rom game.gba \
+./build/FFTARecomp --bios bios/emibios_gba_bios.bin --rom game.gba \
   --frames 2400 --no-window
 ```
 

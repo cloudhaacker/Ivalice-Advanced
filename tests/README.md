@@ -416,11 +416,14 @@ Two tiers, split by what may leave your machine:
   forward-validated against the **pristine pin**, so it works on a fresh
   clone), and the device-free Android checks (identity pins, payload
   contract, tracked-file hygiene, a fake-`adb` self-test of the device gate
-  script; no SDK needed). It needs no ROM, BIOS, or savestates, and
-  therefore cannot run the game itself (the BIOS byte-pin and stack-guard
-  tests skip there).
+  script; no SDK needed). It needs no ROM or savestates, and therefore
+  cannot run the game itself (the ROM byte-pin and stack-guard tests skip
+  there). The launch BIOS **is** repo material since the emibios swap
+  (`bios/`, LGPL — issue #17), so tier 1 verifies the BIOS pin end-to-end
+  (committed bin == TOML == manifest pin; the retail-dump byte-pin test
+  stays local-only and skips).
 - **Tier 2 — the full gate (`attract`, `ws_smoke`, route replays).** Needs
-  `game.gba` + BIOS + the sha-pinned local fixtures (`saves/ws_fixtures/`,
+  `game.gba` + the sha-pinned local fixtures (`saves/ws_fixtures/`,
   `saves/regress/`), which are game-derived and never committed. Run it on
   a **self-hosted runner with the material pre-placed**, or a job that
   fetches a private fixture bundle under a token — gated to

@@ -264,9 +264,13 @@ def step_regen(force):
         die("missing required files: " + ", ".join(missing),
             hint="incomplete checkout — re-clone, or re-run "
                  "`python3 build.py` to rebuild the framework tools")
-    if not force and GENERATED.exists():
-        newest = max((p.stat().st_mtime for p in GENERATED.rglob("*")
-                      if p.is_file()), default=0)
+    # The recompiler preserves mtimes for byte-identical output (to avoid
+    # desktop rebuild cascades), so the corpus files' own mtimes cannot
+    # date a regen. The stamp records it; consumers (build_apk.py's
+    # freshness gate) compare their inputs against the stamp instead.
+    stamp = GENERATED / ".regen_stamp"
+    if not force and GENERATED.exists() and stamp.exists():
+        newest = stamp.stat().st_mtime
         stale = [p for p in REGEN_INPUTS if p.exists()
                  and p.stat().st_mtime > newest]
         if not stale:
@@ -280,6 +284,8 @@ def step_regen(force):
         die("corpus regeneration failed", hint=tail(r))
     if not (GENERATED / "dispatch_table.cpp").exists():
         die("regeneration produced no generated/dispatch_table.cpp")
+    stamp.parent.mkdir(parents=True, exist_ok=True)
+    stamp.touch()
     m = re.search(r"TOTAL emitted:?\s+(\d+)", r.stdout)
     return f"{m.group(1)} units" if m else "done"
 

@@ -22,7 +22,9 @@
 # Explicit base ROM — belt-and-suspenders with *.gba above
 game.gba
 
-# BIOS dumps — supply locally when bios.hle = false; never redistribute
+# Retail BIOS dumps — never commit or redistribute under any of these
+# names (the launch BIOS is the committed clean-room emibios at
+# bios/emibios_gba_bios.bin, which does not match these patterns)
 bios.bin
 gba_bios.bin
 bios*.bin

@@ -4752,3 +4752,61 @@ device gate + APK guard rework (public builds must CONTAIN emibios, forbid
 ROM/retail), LGPL compliance (LICENSES/, attribution row), and the upstream
 proposal (launcher pin-set + public-guard exemption — the config-driven
 shape preferred over the hardcoded constant).
+
+## 2026-10-11 (issue #17) — E3/E4: device-verified, APK guard reworked, LGPL done
+
+**Action.** Closed the emibios milestone on device and in packaging:
+
+- **APK content guard reworked** (`tools/android_apk_check.py`): the
+  bundled clean-room BIOS is *staged material, byte-verified in every
+  build* — public included; ROMs are the only private assets left.
+  Red-verified against the pre-swap stale APK (failed: missing
+  `emibios_gba_bios.bin` + retail `gba_bios.bin` flagged as extra — a
+  retail dump is no longer acceptable payload material). Green 8/8 on
+  both the new private build and the new public build.
+- **Engine public-guard exemption live**: the public `assembleDebug`
+  (no `-PprivateRom`) ran `verifyNoPrivateAssets` with the emibios
+  staged in the payload — passed via the declared-pin exemption
+  (`emibios-public-guard-bundled.patch`); without it the build fails on
+  the 16 KiB `.bin`. The public APK is `app-debug.apk` (distributable
+  name), ROM-free, emibios hash-verified: the R3 "bring your own ROM"
+  artifact exists.
+- **LGPL compliance**: `LICENSES/LGPL-3.0-or-later.txt` (the FSF
+  combined LGPL-3.0 + GPL-3.0 text emibios ships; verbatim copying of a
+  license document is permitted by its own terms — same class as the
+  GFDL exception), a `THIRD_PARTY_ATTRIBUTION.md` § "Bundled clean-room
+  BIOS" row (unmodified upstream binary, source link, rebuild path), and
+  `bios/README.md` (what it is, the pins, the rebuild recipe).
+- **Device validation** (30c1f958): private build gate GATE PASSED
+  (4/4 build_apk steps; reworked guard green). Then a **fully wiped
+  install** (uninstall → gate): GATE PASSED 5/5, fresh boot log 17 lines,
+  **zero bridges, no frag written**, `cpu_backend=static-recompiled` —
+  payloadVersion-4 re-extract, emibios load under the TOML pin (the
+  runtime hard-fails on sha mismatch, so a green boot is the pin proof;
+  the mobile banner carries no bios_loaded line), HLE boot skip, no SAF
+  prompts of any kind (`biosRequired=false` + embedded ROM).
+- **Harness fix found during this**: the recompiler preserves mtimes for
+  byte-identical output, so corpus-file mtimes cannot date a regen —
+  build_apk.py's freshness gate and build.py's up-to-date check both
+  misfired ("corpus is stale" forever after a content-neutral game.toml
+  touch). Fix: `generated/.regen_stamp` (gitignored), written by
+  build.py step_regen and cycle.py; the freshness gates compare inputs
+  against the stamp.
+- **Docs**: tier-1/tier-2 wording (BIOS is repo material now; CI tier 1
+  verifies the pin; tier 2 needs no BIOS), README/AGENTS/manual-build
+  run commands repointed, CI header comment, .gitignore comment.
+
+**Discovered (not emibios, follow-up):** resuming the pre-swap
+mid-play suspend state (frame 45171) surfaced **4 game-corpus gaps** —
+`0x080EDC08`, `0x080EDC7E`, `0x080F543C` (×216 — hot bridged loop),
+`0x080F54B6`, all Thumb, no dispatch rows on desktop either. These are
+playtest-reachable game paths no strict route covers — classic
+healing-loop debt, orthogonal to the BIOS swap (same corpus before and
+after; the fresh-boot gate writes no frag). Next healing session should
+harvest + triage them.
+
+**Conclusion.** Issue #17's swap is device-verified on both boot paths,
+packaging-verified on both build modes, and legally documented. The
+emibios work is complete; what remains under issue #3 is the release
+pipeline (make_release.py, tag-triggered CI, first tagged release) plus
+the 4-miss healing session above.

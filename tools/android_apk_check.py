@@ -2,12 +2,13 @@
 """APK content guard for FFTARecomp (check.py suite: `android-apk`).
 
 Static, device-free verification of a built APK — unzip + aapt2, no phone:
-the payload it would install must byte-match the staging sources, a private
-test build must embed the pinned ROM (and BIOS when present), a public build
-must embed neither, native libraries and manifest facts must match the build
-config, and the zip must be free of duplicate / stray / oversized entries
-(the incremental-repackaging junk-blob class, android/README.md § Known
-behavior).
+the payload it would install must byte-match the staging sources (including
+the bundled clean-room BIOS — emibios, LGPL, staged in every build public
+and private), a private test build must additionally embed the pinned ROM,
+a public build must embed NO ROM, native libraries and manifest facts must
+match the build config, and the zip must be free of duplicate / stray /
+oversized entries (the incremental-repackaging junk-blob class,
+android/README.md § Known behavior).
 
 Run after `./gradlew :app:assembleDebug` (android/README.md § Build):
 
@@ -74,6 +75,7 @@ def build_config():
         "target_sdk": one(r'targetSdk\s+(\d+)', template_text, "targetSdk"),
         "bios_sha1": android_toml["bios"]["sha1"],
         "bios_size": 16 * 1024,
+        "bios_name": os.path.basename(android_toml["bios"]["path"]),
     }
 
 
@@ -187,7 +189,10 @@ class Context:
         return "assets/payload/roms/%s" % self.config["rom_file"]
 
     def bios_asset(self):
-        return "assets/payload/bios/gba_bios.bin"
+        # The bundled clean-room BIOS (emibios, LGPL — staged repo material,
+        # not a private dump). Name comes from the config pin so the check
+        # cannot drift from game_android.toml.
+        return "assets/payload/bios/%s" % self.config["bios_name"]
 
     def sha1_of(self, entry):
         digest = hashlib.sha1()
@@ -202,11 +207,14 @@ class Context:
 
 def expected_payload():
     """asset path -> source file, mirroring gbarecomp-app.gradle staging
-    (variant TOML renamed, both mods sources folded into payload/mods)."""
+    (variant TOML renamed, the bundled clean-room BIOS, both mods sources
+    folded into payload/mods)."""
     config = build_config()
     expected = {
         "assets/payload/variants/%s/game.toml" % config["variant"]:
             REPO / "android/game_android.toml",
+        "assets/payload/bios/%s" % config["bios_name"]:
+            REPO / "bios" / config["bios_name"],
     }
     for source in (REPO / "mods/preloaded", REPO / "android/payload/mods"):
         for path in sorted(source.rglob("*")):
@@ -243,17 +251,14 @@ def check_identity(ctx):
 
 def check_markers(ctx):
     has_rom = any(n.startswith("assets/payload/roms/") for n in ctx.names)
-    has_bios = any(n.startswith("assets/payload/bios/") for n in ctx.names)
     if ctx.private:
-        need(has_rom or has_bios,
-             "private-named APK embeds nothing — built without "
-             "-PprivateRom/-PprivateBios?")
+        need(has_rom,
+             "private-named APK embeds no ROM — built without -PprivateRom?")
     else:
         offenders = [n for n in ctx.names
-                     if n.startswith(("assets/payload/roms/",
-                                      "assets/payload/bios/"))]
+                     if n.startswith("assets/payload/roms/")]
         need(not offenders,
-             "a distributable-named APK contains private assets: %s"
+             "a distributable-named APK embeds a ROM: %s"
              % ", ".join(offenders))
     if ctx.expect:
         need((ctx.expect == "private") == ctx.private,
@@ -264,15 +269,19 @@ def check_payload(ctx):
     config = ctx.config
     expected = expected_payload()
     rom_asset = ctx.rom_asset()
-    bios_asset = ctx.bios_asset()
     payload = [n for n in ctx.names if n.startswith("assets/payload/")]
-    private_assets = {n for n in payload
-                      if n.startswith("assets/payload/roms/")
-                      or n.startswith("assets/payload/bios/")}
-    stray_private = sorted(private_assets - {rom_asset, bios_asset})
-    need(not stray_private,
-         "unexpected private-asset paths: %s" % ", ".join(stray_private))
-    core = sorted(set(payload) - private_assets)
+    # ROMs are the only private assets. Everything else in the payload —
+    # including the bundled clean-room BIOS at bios/ — must byte-match the
+    # staging sources exactly, in EVERY build (public included: the BIOS
+    # is deliberately staged repo material, issue #17).
+    roms = {n for n in payload if n.startswith("assets/payload/roms/")}
+    if ctx.private:
+        need(roms == {rom_asset},
+             "unexpected ROM assets: %s" % ", ".join(sorted(roms)))
+    else:
+        need(not roms, "public APK embeds ROM assets: %s"
+             % ", ".join(sorted(roms)))
+    core = sorted(set(payload) - roms)
     missing = sorted(set(expected) - set(core))
     extra = sorted(set(core) - set(expected))
     need(not missing and not extra,
@@ -287,13 +296,19 @@ def check_embeds(ctx):
     config = ctx.config
     rom_asset = ctx.rom_asset()
     bios_asset = ctx.bios_asset()
+    # The bundled BIOS must be present and pin-verified in every build.
+    need(bios_asset in ctx.infos,
+         "APK is missing the bundled clean-room BIOS (%s — staged repo "
+         "material; build.gradle payloadDirs)" % bios_asset)
+    bios = ctx.infos[bios_asset]
+    need(bios.file_size == config["bios_size"],
+         "bundled BIOS is %d bytes, expected %d"
+         % (bios.file_size, config["bios_size"]))
+    digest = ctx.sha1_of(bios_asset)
+    need(digest == config["bios_sha1"],
+         "bundled BIOS sha1 %s != pinned %s"
+         % (digest, config["bios_sha1"]))
     if not ctx.private:
-        offenders = [n for n in ctx.names
-                     if n in (rom_asset, bios_asset)
-                     or n.startswith(("assets/payload/roms/",
-                                      "assets/payload/bios/"))]
-        need(not offenders, "public APK embeds private assets: %s"
-             % ", ".join(offenders))
         return
     need(rom_asset in ctx.infos,
          "private build is missing the embedded ROM (%s)" % rom_asset)
@@ -304,14 +319,6 @@ def check_embeds(ctx):
     digest = ctx.sha1_of(rom_asset)
     need(digest == config["rom_sha1"],
          "embedded ROM sha1 %s != pinned %s" % (digest, config["rom_sha1"]))
-    if bios_asset in ctx.infos:
-        bios = ctx.infos[bios_asset]
-        need(bios.file_size == config["bios_size"],
-             "embedded BIOS is %d bytes, expected %d"
-             % (bios.file_size, config["bios_size"]))
-        digest = ctx.sha1_of(bios_asset)
-        need(digest == config["bios_sha1"],
-             "embedded BIOS sha1 %s != pinned %s" % (digest, config["bios_sha1"]))
 
 
 def check_native_libs(ctx):
@@ -408,7 +415,7 @@ CHECKS = [
     ("apk: identity (package, sdk levels, launcher)", check_identity),
     ("apk: public/private markers consistent", check_markers),
     ("apk: payload matches staging sources", check_payload),
-    ("apk: embedded ROM/BIOS verified (private) / absent (public)",
+    ("apk: bundled BIOS verified (both) / embedded ROM verified (private)",
      check_embeds),
     ("apk: native libs per ABI", check_native_libs),
     ("apk: manifest activities + debuggable flag", check_manifest),

@@ -98,7 +98,7 @@ Then play — `tools/play.sh` (guide: `tests/README.md`).
 
 ## Troubleshooting
 
-- `build.py` stops at **dumps** → the ROM/BIOS is missing or has the wrong
+- `build.py` stops at **dumps** → the ROM is missing or has the wrong
   hash (expected SHA-1s in the root README); it never downloads them.
 - `build.py` stops at **framework patches** → the submodule drifted from
   its pin; check `git -C gbarecomp status`.
