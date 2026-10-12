@@ -5566,3 +5566,34 @@ unchanged); `check.py` ALL PASS 15/15 (unit-cpp PASS incl. the new test;
 patches replay byte-matches the 431-file tree; routes B/G/K + user_load
 FULLY_STATIC; hangrepro / desktop-accept / hle-audit / ws_smoke green; the
 windowed acceptance skipped on the concurrent-run lock, as designed).
+
+## 2026-10-12 (late 8) — R-track: v1.6 cut (issue #3; carries #11 + #14)
+
+Tag `v1.6` = `789fac6` (the issue #14 commit), pushed; a **draft** release
+("FFTARecomp v1.6") was cut on james2doyle/ffta-recomp with curated notes
+(speed boost #11 incl. the FF pill, analog stick #14, Controls docs, #22
+symbol research, #3 release tooling). The tag-triggered workflow is still
+runner-less/queued, so this is a manual tier-2 cut like v1.5; the workflow's
+`release view || create` + `upload --clobber` remains idempotent against it.
+
+Artifacts built from the tagged tree by `tools/make_release.py` (all
+content-guarded ROM-free; assets attached to the draft, hashes in its notes):
+
+- `FFTARecomp-v1.6-linux-x64.zip` — sha1
+  `92a4eb9f9ed34b28cc32b3af29f5e554ea0ed067`, 45,745,653 B
+- `FFTARecomp-v1.6-windows-x64.zip` — sha1
+  `d95641736716523f66dc376fc6665a2d88a80897`, 43,553,223 B (static
+  imports=29; built-in smoke FULLY_STATIC)
+- `FFTARecomp-v1.6-android-arm64-v8a.apk` — sha1
+  `f8f17191a80568fee996a790254198d8d4538066`, 35,078,819 B (guard
+  `--expect public`; manifest `versionName='1.6'` confirmed via aapt;
+  still **debug-signed** — v1.5→v1.6 updates need the same key or a
+  reinstall)
+
+**Determinism, re-proven**: the `--apk` pass rebuilds the Linux zip first —
+byte-identical sha1 `92a4eb9f…` both times.
+
+**Not in the repo**: the cut used throwaway orchestration scripts in `/tmp`
+(three `make_release.py` calls + a notes-table formatter); the canonical,
+tested machinery stays `tools/make_release.py` (+ guards). Release left as
+a draft for publish review.
