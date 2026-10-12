@@ -4629,3 +4629,53 @@ debt pacing); fast-forward multiplier has no gate coverage (logic-only).
 Probes (`yield-gate-probe.patch`: yield census, frame deltas, skip counts)
 were scaffolding — stripped after the counts closed; proof is this entry.
 Commit after this entry.
+
+## 2026-10-11 (issue #3 prep) — BIOS HLE flip: zero-fallback census, 11 seeds, device-verified
+
+**Why:** the release-hygiene story (issue #3) needs the binary free of
+translated Nintendo BIOS code. The engine's HLE (mGBA-derived clean-room
+SWI services, MPL-2.0) was already in the pin; the game just had to flip
+`[bios].hle` and prove no SWI falls back to LLE.
+
+**Census evidence (GBARECOMP_SWI_LOG + GBARECOMP_SWI_TRACE):**
+- attract 1200f: 1317/1317 HLE-taken (0x0B CpuSet ×1308, 0x0C CpuFastSet ×9)
+- battle route B 5094f: 7341/7341 HLE-taken (0x06/08/0A/0B/0C/0F/11)
+- suspend route G 19400f: 11474/11474 HLE-taken (0x0B/0C/0F/12)
+- Zero fallback on every route. HLE-implemented set mirrored from
+  `bios_hle.cpp` dispatch() in `tools/hle_audit.py` (red-verified both
+  ways: HLE-off fails taken counts; dropped-SWI fails coverage).
+
+**Flip:** `game.toml` + `android/game_android.toml` `[bios].hle = true`.
+Attract golden stays LLE (`attract_check.py` pins `GBARECOMP_BIOS_HLE=0`):
+the attract frame sits mid-intro-movie (timing-chaotic content — same
+backend diverges run to run in phase), so the pin guards rendering on
+the oracle-faithful path while `hle_audit.py` owns the HLE path.
+
+**Device boot-path seeds (10 units, frag from android-runtime.log):**
+0x080D9CF4, 0x080FF180, 0x080FF1D8, 0x0810EA78, 0x0810EC04, 0x0810EF0C,
+0x0810FAF8, 0x0810FBF8, 0x0810FC6C, 0x081333B8 — all Thumb, all with
+prologue + ROM pointer-table evidence (misspack). The HLE boot skip +
+SWI servicing changed the entry pattern the corpus was grown under, so
+the first HLE device boot found doors the LLE corpus never walked.
+
+**Gameplay seed (1 unit, frag from user playtest):**
+0x080190A8 → `table_0836D7B8` (29-entry abs32 switch, thumb|1, trailing
+default-case dups). Same shape as the earlier battle tables.
+
+**Corpus:** 55763 → 56180 units (10 boot + 1 gameplay seed). Full gate
+15/15 green on the new corpus (attract pin intact, all strict routes
+FULLY_STATIC, hle-audit green, ws_smoke green).
+
+**Device verification:** user playtest on the HLE build — gameplay works,
+no issues. The 10 boot-path misses were real gaps (now seeded); the
+gameplay miss was the first post-intro code the attract route never
+reaches.
+
+**Logging fix (committed separately, 2b4fd12):** external `logs/` dir,
+manifest line, engine freopen check, gate log-clear, static wiring
+check. The device gate's stale-log reads caused half the confusion
+today; the log-clear fixes that class.
+
+**Still pending:** scanline/DMA HLE track (PRs #29/#31 — pin move +
+revalidation). The HLE flip is proven on desktop routes; the device
+boot path is converged (11 seeds, user playtest clean).
