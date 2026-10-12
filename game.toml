@@ -972,7 +972,8 @@ note = "playtest batch a: start from misspack prologue scan; covers 1 interior m
 [[extra_func]]
 addr = 0x08021004
 mode = "thumb"
-note = "playtest batch a: start from misspack prologue scan; covers 2 interior miss pc(s); source logs/playtest_pack.md"
+name = "character_animation_set_get"
+note = "playtest batch a: start from misspack prologue scan; covers 2 interior miss pc(s); source logs/playtest_pack.md; name added 2026-10-12: indexes gActionTablePtr by r0<<2 (TojiKitten/FFTA-randomizer animation hook; disasm-verified push {lr} prologue)"
 
 [[extra_func]]
 addr = 0x08021064

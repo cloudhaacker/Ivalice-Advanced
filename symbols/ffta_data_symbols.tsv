@@ -329,3 +329,19 @@
 # 0x080CEA58 match is data), 0x02024A38 mission-info price, 0x02001F54
 # "money" pair (refuted in field context), unit +0x182 "No Cards", u32 +0x94,
 # byte +0x05, multi-write slide semantics, gClanSkills slot order.
+# Section 21: TojiKitten/FFTA-randomizer table map (2026-10-12; MIT repo;
+# their offsets are file offsets = GBA addr - 0x08000000). Sizes: race
+# blocks + formations use their row counts, rows re-validated here (race
+# rows: nameID<767, abilityID<=0x15A, type<=5; formations: memberCount<=16,
+# in-ROM member ptrs; blocks tile exactly). Item-name ptrs: all 753 in-ROM,
+# [753]=0. Weapon masks end = item_data_getter base 0x0851D180. Item-ability
+# sets: 95 rows by row-structure scan (first non-conforming row ends it).
+0x0851BB6C	rom	0x460	gRaceAbilitiesHuman
+0x0851BFDC	rom	0x260	gRaceAbilitiesBangaa
+0x0851C244	rom	0x2F0	gRaceAbilitiesNuMou
+0x0851C53C	rom	0x2A0	gRaceAbilitiesViera
+0x0851C7E4	rom	0x2B8	gRaceAbilitiesMoogle
+0x0851D0F4	rom	0x8C	gAllowedWeaponTypeMasks
+0x08520080	rom	0x76C	gItemAbilitySets
+0x08526680	rom	0xBC4	gTextItemNames
+0x0854D1A0	rom	0x40B0	gBattleFormations

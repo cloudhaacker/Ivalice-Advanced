@@ -615,3 +615,19 @@
 0x080EDC08	thumb	ability_anim_cmd_080EDC08
 0x080F543C	thumb	ability_anim_cmd_080F543C
 0x08133618	thumb	sub_08133618
+# Section 22: TojiKitten/FFTA-randomizer (MIT) call targets (2026-10-12;
+# prologue halfwords disarm-verified here for every entry; their enginehack
+# hook sites confirm live use). Resolves the § 21 backlog item 0x080C9574:
+# job bit set/clear at EWRAM 0x02001F70, bit = id&7 (their discoverJobMemory;
+# retail new-game sweep 0x080C9340 discovers 16 ids). 0x08021004 was already
+# an extra_func seed (playtest batch a). Semantics beyond prologue are their
+# labels + our spot disasm — naming-only.
+0x08021004	thumb	character_animation_set_get
+0x08030044	thumb	location_state_set
+0x08043F90	thumb	world_map_flag_set
+0x08097704	thumb	battle_animation_setup_helper
+0x080C9340	thumb	new_game_job_discovery
+0x080C9574	thumb	job_discovery_flag_set
+0x080CA078	thumb	party_level_scan
+0x080CF7F4	thumb	clan_record_scan
+0x081426B8	thumb	signed_divide

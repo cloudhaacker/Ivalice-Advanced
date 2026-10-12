@@ -5312,3 +5312,47 @@ posture; the GitHub-CI variant stays feasible via the scene-standard
 private-ROM-repo checkout whenever that policy changes); wine is a boot
 smoke, not a device-verified run (a real Windows launch on a player's
 machine is the one remaining untested mile).
+
+## 2026-10-12 (late 4) — TojiKitten/FFTA-randomizer survey → symbols §22 + data §21
+
+User asked: survey https://github.com/TojiKitten/FFTA-randomizer (MIT
+Electron tool that patches retail AFXE at hardcoded file offsets; their
+offset + 0x08000000 = our GBA address) for facts useful here. Cloned to
+/tmp, three parallel read-only subagents (data tables / engine hooks /
+history), then every candidate re-verified in-repo: prologue disasm with
+tools/disarm.py, table bytes + boundaries against game.gba. Evidence lives
+in the symbols-file §22 header and the data-file §21 header.
+
+Folded in (all verified):
+- 9 function names (§22): 0x080C9574 job_discovery_flag_set — resolves the
+  §21 backlog item (bit set/clear at EWRAM 0x02001F70, bit = id&7, from
+  their discoverJobMemory + our disasm); 0x080C9340 new_game_job_discovery
+  (their hook NOPs its 16-id retail sweep); 0x08030044 location_state_set;
+  0x081426B8 signed_divide; 0x08097704 battle_animation_setup_helper;
+  0x080CA078 party_level_scan; 0x080CF7F4 clan_record_scan; 0x08043F90
+  world_map_flag_set; 0x08021004 character_animation_set_get.
+- 9 data symbols (§21): 5 race-ability tables 0x0851BB6C..0x0851CA9C
+  (8 B rows, sizes 0x460/0x260/0x2F0/0x2A0/0x2B8 — rows field-checked,
+  blocks tile exactly); gAllowedWeaponTypeMasks 0x0851D0F4 (0x8C; ends
+  exactly at item_data_getter base 0x0851D180); gItemAbilitySets 0x08520080
+  (0x76C, 95 rows by row-structure scan — lower bound); gTextItemNames
+  0x08526680 (753 ptrs, all in-ROM, [753]=0); gBattleFormations 0x0854D1A0
+  (0x40B0, 414 records field-validated; [0].memberPtr = gStartingParty
+  0x0852CDE0).
+
+Gotcha logged: a --symbols name LOSES to an existing [[extra_func]] seed at
+the same address (seed_by_key keeps the first entry; the finder only adopts
+a seed's non-empty name). Fix: name the extra_func in game.toml — done for
+0x08021004; keep this in mind when a §-added name fails to appear.
+
+Result: cycle PASS — 63134 emitted, unchanged; check.py ALL PASS 15/15 with
+FULLY_STATIC dispatch_misses=0 on route_B/G/K + user_load, ws smoke ok;
+attract hash unchanged (1EF4C118…). All 9 names + 9 data symbols present in
+generated/symbol_map.cpp + data_symbol_map.cpp. Names are metadata only —
+no behavior change observed, as expected.
+
+Caveats: item-ability row count is a lower bound (first non-conforming row);
+the 414-formation count is their table-map value (all rows validated, end
+boundary not independently confirmed); randomizer table offsets are file
+offsets — cite as +0x08000000. Their ROM check is only "AFXE" at 0xAC (no
+hash/version branch); our strict SHA-1 identity gate stays.
