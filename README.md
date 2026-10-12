@@ -44,6 +44,12 @@ libharfbuzz0b`). Display and widescreen options (`--view-width 448`,
 `--resize-view`, `--scale`, fullscreen) are listed in
 [docs/README.md](docs/README.md).
 
+The **Windows release** is the same public package differently hosted: the
+Windows zip from [releases](../../releases) keeps `FFTARecomp.exe`,
+`game.toml`, `bios/`, `assets/`, and `mods/` beside each other — extract to
+a writable folder, run `FFTARecomp.exe`, pick your ROM in the launcher.
+Everything is statically linked; there are no DLLs to install.
+
 ### Desktop (Linux)
 
 1. Clone with submodules and place your legally obtained ROM dump at the

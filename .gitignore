@@ -186,3 +186,8 @@ hang_dump.log
 
 # release packaging output (tools/make_release.py)
 release-stage/
+
+# windows cross build (tools/win_cross_deps.py, tools/make_release.py --windows)
+cross-prefix/
+cross-build/
+build-win/

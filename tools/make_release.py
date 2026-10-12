@@ -86,6 +86,18 @@ REQUIRED_DIRS = [
     "assets/img",
 ]
 
+
+def exe_name(platform):
+    """The staged executable's name: bare on POSIX, suffixed on Windows."""
+    return "FFTARecomp.exe" if platform == "windows" else "FFTARecomp"
+
+
+def required_files(platform):
+    """The staged required set, per target platform (same layout, the
+    executable's name differs)."""
+    return [exe_name(platform) if rel == "FFTARecomp" else rel
+            for rel in REQUIRED_FILES]
+
 # The zip README: self-contained (no links into repo folders that do not
 # ship). The repo README § "Using a release binary" is the same story for
 # users browsing the repository.
@@ -150,6 +162,159 @@ class Fail(Exception):
         self.hint = hint
 
 
+# --- windows cross-release (issue #3, R2) ------------------------------------
+
+WIN_BUILD = REPO / "build-win"
+TOOLCHAIN = REPO / "tools" / "mingw-x64.cmake"
+CROSS_PREFIX = REPO / "cross-prefix"
+WINE_FRAMES = 240
+
+# System DLLs are the only legal imports of a static release exe. Anything
+# mingw-runtime or third-party here = the "static" build silently fell back
+# to dynamic (the exact regression D. static-release machinery exists to
+# prevent — and it fails silently at configure/link, so this is the gate).
+STATIC_FORBIDDEN_DLLS = frozenset({
+    "SDL2.DLL", "LIBSTDC++-6.DLL", "LIBGCC_S_SEH-1.DLL",
+    "LIBWINPTHREAD-1.DLL", "FREETYPE-6.DLL", "HARFBUZZ-0.DLL",
+    "ZLIB1.DLL",
+})
+
+
+def parse_import_dlls(objdump_text):
+    """Pure core of the static-link guard (unit-tested): DLL names the PE
+    imports, upper-cased."""
+    import re
+    return {m.group(1).upper() for m in re.finditer(
+        r"DLL Name:\s*(\S+)", objdump_text)}
+
+
+def static_link_violations(dlls):
+    """Third-party DLL imports in a static release exe (empty = clean)."""
+    return sorted(set(dlls) & STATIC_FORBIDDEN_DLLS)
+
+
+def win_configure_needed():
+    """Why build-win/ must be (re)configured: None = usable as is."""
+    cache = WIN_BUILD / "CMakeCache.txt"
+    if not cache.exists():
+        return "no build-win/ (fresh tree)"
+    text = cache.read_text(errors="ignore")
+    for needle in ("mingw-x64.cmake", "GBARECOMP_STATIC_RELEASE:BOOL=ON",
+                   "CMAKE_BUILD_TYPE:STRING=Release",
+                   "--no-insert-timestamp -s"):
+        if needle not in text:
+            return f"cache lacks {needle} (flags changed)"
+    return None
+
+
+def win_build_exe(jobs, strip):
+    """Configure (if needed) + build the static release exe."""
+    marker = CROSS_PREFIX / ".done"
+    missing = [d for d in ("zlib", "freetype", "harfbuzz", "sdl2")
+               if not any(marker.glob(f"{d}-*"))]
+    if missing:
+        die("cross prefix incomplete: " + ", ".join(missing),
+            hint="run .venv/bin/python tools/win_cross_deps.py build "
+                 "(tools/win_cross_deps.py status shows the gaps)")
+    reason = win_configure_needed()
+    env = dict(**os.environ)
+    env["PKG_CONFIG_PATH"] = str(CROSS_PREFIX / "lib" / "pkgconfig")
+    if reason:
+        print(f"windows: (re)configuring build-win/ ({reason})")
+        if WIN_BUILD.exists():
+            shutil.rmtree(WIN_BUILD)
+        # -static-libgcc/-static-libstdc++: engine rule (gbarecomp
+        # CMakeLists — add_link_options in the subdir cannot reach the
+        # parent exe target, so it comes via CMAKE_EXE_LINKER_FLAGS).
+        # -s: strip at LINK time, not post-link (binutils strip rewrites
+        # the PE TimeDateStamp on every run — R2 determinism lesson);
+        # --no-strip drops it. --no-insert-timestamp epochs the link
+        # stamp so the -s'd output stays deterministic to the zip.
+        linker = ("-static -static-libgcc -static-libstdc++ "
+                  "-Wl,--no-insert-timestamp"
+                  + (" -s" if strip else ""))
+        r = subprocess.run(
+            ["cmake", "-S", str(REPO), "-B", str(WIN_BUILD), "-G", "Ninja",
+             f"-DCMAKE_TOOLCHAIN_FILE={TOOLCHAIN}",
+             "-DCMAKE_BUILD_TYPE=Release",
+             f"-DCMAKE_TOOLCHAIN_FILE={TOOLCHAIN}",
+             "-DCMAKE_BUILD_TYPE=Release",
+             f"-DCMAKE_EXE_LINKER_FLAGS={linker}",
+             "-DGBARECOMP_STATIC_RELEASE=ON",
+             f"-DGBARECOMP_MINGW_PREFIX_UNIX={CROSS_PREFIX}",
+             "-DFFTA_BUILD_TESTS=OFF"], env=env)
+        if r.returncode != 0:
+            die("windows cmake configure failed",
+                hint="tools/win_cross_deps.py status — is the prefix "
+                     "complete? See BRINGUP § R2 for the cross-build notes")
+    r = subprocess.run(["cmake", "--build", str(WIN_BUILD), "--target",
+                        "FFTARecomp", "--parallel", str(jobs)], env=env)
+    if r.returncode != 0:
+        die("windows build failed (see output above)",
+            hint="build-win/ is preserved for inspection")
+    exe = WIN_BUILD / "FFTARecomp.exe"
+    if not exe.is_file():
+        die("windows build produced no build-win/FFTARecomp.exe")
+    return exe
+
+
+def check_static_link(exe):
+    """objdump the PE import table: third-party DLLs forbidden."""
+    r = subprocess.run(["x86_64-w64-mingw32-objdump", "-p", str(exe)],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        die("objdump failed on " + str(exe),
+            hint="mingw-w64-binutils provides x86_64-w64-mingw32-objdump")
+    bad = static_link_violations(parse_import_dlls(r.stdout))
+    if bad:
+        die("static release exe imports third-party DLLs: "
+            + ", ".join(bad),
+            hint="GBARECOMP_STATIC_RELEASE=ON fell back to dynamic "
+                 "(libSDL2.dll.a won over libSDL2.a?) — see the prefix "
+                 "prune_dynamic() rule in tools/win_cross_deps.py")
+    return len(parse_import_dlls(r.stdout))
+
+
+def wine_smoke(zip_path, folder):
+    """Boot the packaged exe from a bare extraction under wine: launcher
+    config files beside the binary, --no-window headless, strict
+    FULLY_STATIC assertion (mirrors the desktop_accept acceptance shape).
+    """
+    import tempfile
+    tmp = Path(tempfile.mkdtemp(prefix="win-smoke-"))
+    try:
+        with zipfile.ZipFile(zip_path) as zf:
+            zf.extractall(tmp)
+        root = tmp / folder
+        env = {k: v for k, v in os.environ.items()
+               if not k.startswith("GBARECOMP_")}
+        env["GBARECOMP_STRICT_STATIC"] = "1"
+        env["WINEDEBUG"] = "-all"
+        env["WINEARCH"] = "win64"
+        env["WINEPREFIX"] = str(tmp / "winehome")
+        env["WINEDLLOVERRIDES"] = "mscoree,mshtml="
+        env["SDL_VIDEODRIVER"] = "dummy"
+        env["SDL_AUDIODRIVER"] = "dummy"
+        r = subprocess.run(
+            ["wine", str(root / "FFTARecomp.exe"),
+             "--bios", "bios/emibios_gba_bios.bin",
+             "--rom", str(REPO / "game.gba"),
+             "--frames", str(WINE_FRAMES), "--no-window"],
+            cwd=str(root), env=env, capture_output=True, text=True,
+            timeout=600)
+        out = r.stdout + r.stderr
+        line = next((l.strip() for l in out.splitlines()
+                     if "self_heal_coverage" in l), "")
+        detail = line or (out.strip().splitlines() or ["<no output>"])[-1]
+        if r.returncode != 0 or "FULLY_STATIC" not in line:
+            die("wine smoke did not reach FULLY_STATIC: " + detail,
+                hint="the static exe booted but a miss fired under wine "
+                     "(Windows divergences are real bugs — heal loop them)")
+        return line
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def die(msg, hint=None):
     raise Fail(msg, hint)
 
@@ -190,25 +355,9 @@ def newest_mtime(paths):
     return newest
 
 
-def check_freshness():
-    """Refuse to package a stale artifact (mirrors build_apk.py's gate).
-
-    Three rules:
-      1. generated/.regen_stamp exists — no stamp = never regen'd here;
-      2. no regen input (game.toml, symbols/, src/, CMakeLists.txt,
-         generated/) is newer than the stamp — an input newer than the
-         last regen means the corpus predates it. Git checkouts smudge
-         mtimes on unchanged files (branch switches/pulls) and that
-         lands here too — deliberately: a cycle.py run clears it, and
-         the gate never packages a maybe-stale tree;
-      3. the binary is newer than the newest corpus file — the
-         recompiler preserves mtimes for byte-identical output, so a
-         no-op regen moves nothing and this stays true; a real corpus
-         change is only linked by a rebuild, which moves the binary.
-    """
-    if not BINARY.is_file():
-        die(f"missing {BINARY}",
-            hint="build first: python3 build.py (or AGENTS.md § Commands)")
+def _check_corpus_fresh():
+    """Corpus freshness (rules 1-2 of the stamp gate): the stamp exists and
+    no regen input is newer. Platform-independent."""
     stamp = REPO / "generated/.regen_stamp"
     if not stamp.is_file():
         die("generated/ corpus has no regen stamp",
@@ -228,23 +377,57 @@ def check_freshness():
                 hint="re-run tools/cycle.py (regen + build), then package — "
                      "the gate never ships a maybe-stale tree (a pull that "
                      "rewrites files lands here too; one cycle clears it)")
+
+
+def check_freshness():
+    """Refuse to package a stale artifact (mirrors build_apk.py's gate).
+
+    Three rules:
+      1. generated/.regen_stamp exists — no stamp = never regen'd here;
+      2. no regen input (game.toml, symbols/, src/, CMakeLists.txt,
+         generated/) is newer than the stamp — an input newer than the
+         last regen means the corpus predates it. Git checkouts smudge
+         mtimes on unchanged files (branch switches/pulls) and that
+         lands here too — deliberately: a cycle.py run clears it, and
+         the gate never packages a maybe-stale tree;
+      3. the binary is newer than the newest corpus file — the
+         recompiler preserves mtimes for byte-identical output, so a
+         no-op regen moves nothing and this stays true; a real corpus
+         change is only linked by a rebuild, which moves the binary.
+    """
+    if not BINARY.is_file():
+        die(f"missing {BINARY}",
+            hint="build first: python3 build.py (or AGENTS.md § Commands)")
+    _check_corpus_fresh()
     corpus_newest = newest_mtime([REPO / "generated"])
     if BINARY.stat().st_mtime < corpus_newest:
         die("build/FFTARecomp is older than the generated/ corpus",
             hint="re-run tools/cycle.py (rebuild), then package")
 
 
-def sweep_stage(stage):
+def check_freshness_windows():
+    """The cross build compiles the (host-independent) corpus fresh, but a
+    stale corpus is still a stale corpus: rules 1-2 only (no binary rule —
+    build-win/ may not exist yet)."""
+    _check_corpus_fresh()
+
+
+def sweep_stage(stage, platform="linux"):
     """Return the list of private-material / completeness violations.
 
     Empty list = clean. Pure function of the staged tree: unit-tested
     directly (tests/python/test_tools.py) with synthetic stages.
+    The platform selects the staged executable's name (FFTARecomp vs
+    FFTARecomp.exe); all hash and extension rules are identical.
     """
     stage = Path(stage)
+    exe = exe_name(platform)
     violations = []
 
-    # 1. Required set present (and the binary carries its exec bit).
-    for rel in REQUIRED_FILES:
+    # 1. Required set present (and the binary carries its exec bit — on a
+    # POSIX stage; on the Windows platform the bit is meaningless to the
+    # player but still enforced here as a staging invariant).
+    for rel in required_files(platform):
         p = stage / rel
         if not p.is_file():
             violations.append(f"missing required file: {rel}")
@@ -252,10 +435,10 @@ def sweep_stage(stage):
         p = stage / rel
         if not (p.is_dir() and any(p.iterdir())):
             violations.append(f"missing required (non-empty) dir: {rel}")
-    bin_mode = (stage / "FFTARecomp").stat().st_mode \
-        if (stage / "FFTARecomp").is_file() else 0
+    bin_mode = (stage / exe).stat().st_mode \
+        if (stage / exe).is_file() else 0
     if bin_mode and not (bin_mode & stat.S_IXUSR):
-        violations.append("FFTARecomp lost its exec bit")
+        violations.append(f"{exe} lost its exec bit")
 
     # 2. Forbidden material — walk everything staged.
     for dirpath, dirnames, filenames in os.walk(stage):
@@ -289,6 +472,105 @@ README_NOTE = """
 *(This README is generated by tools/make_release.py at packaging time; the
 canonical project README lives in the source repository.)*
 """
+
+
+def readme_for(platform):
+    if platform == "windows":
+        def rep(body, old, new):
+            if old not in body:
+                die(f"windows README template pattern missed: {old[:60]}...",
+                    hint="README_TEMPLATE changed — update the windows "
+                         "rewrites to match")
+            return body.replace(old, new)
+        body = README_TEMPLATE
+        body = rep(body,
+            "machine code was translated ahead-of-time into a native Linux "
+            "binary. This\nis not an emulator.",
+            "machine code was translated ahead-of-time into a native "
+            "Windows binary. This\nis not an emulator.")
+        body = rep(body,
+            "Linux x86-64, plus system libraries (packages):",
+            "Windows 10+ x86-64. Everything is statically linked — no "
+            "runtime DLLs to install (the bundled BIOS sits in `bios/`).")
+        body = rep(body,
+            """| Distro | Packages |
+|---|---|
+| Debian/Ubuntu | `libsdl2-2.0-0 libopengl0 libfreetype6 libharfbuzz0b` |
+| Fedora | `SDL2 mesa-libGL freetype harfbuzz` |
+| Arch | `sdl2 libgl freetype2 harfbuzz` |
+""",
+            "")
+        body = rep(body, "./FFTARecomp", "FFTARecomp.exe")
+        return body.format(rom_sha1=ROM_SHA1) + README_NOTE
+    return README_TEMPLATE.format(rom_sha1=ROM_SHA1) + README_NOTE
+
+
+def stage_windows(version, strip=True, jobs=8):
+    """Cross-configure (if needed) + build the static release exe, guard it,
+    strip it in-stage, and stage the Windows layout (issue #3, R2).
+
+    The launcher boots from game.toml beside the exe; the ROM pick is the
+    player's own dump (issue #3 "bring your own ROM"). No ROM is embedded —
+    the sweep below proves it. build-win/ is preserved for inspection.
+    """
+    exe = win_build_exe(jobs, strip)
+    n_imports = check_static_link(exe)
+
+    folder = f"FFTARecomp-{version}-windows-x64"
+    stage = OUT_DIR / folder
+    if stage.exists():
+        shutil.rmtree(stage)
+    stage.mkdir(parents=True)
+
+    def cp_file(src, rel):
+        dst = stage / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
+
+    # The exe ships straight from build-win/ (link-time stripped by
+    # default); nothing post-processes it, so the staged bytes are exactly
+    # the linked bytes.
+    cp_file(exe, "FFTARecomp.exe")
+    os.chmod(stage / "FFTARecomp.exe", 0o755)
+
+    # Runtime layout beside the exe (assets + mods land in build-win/ via
+    # the engine's POST_BUILD staging, exactly like build/ on Linux).
+    for sub in ("assets", "mods"):
+        src = WIN_BUILD / sub
+        if not src.is_dir():
+            die(f"windows build produced no {sub}/ beside the exe",
+                hint="build-win/ is preserved for inspection")
+        shutil.copytree(src, stage / sub)
+
+    cp_file(REPO / "game.toml", "game.toml")
+    cp_file(REPO / "bios/emibios_gba_bios.bin", "bios/emibios_gba_bios.bin")
+    cp_file(REPO / "bios/README.md", "bios/README.md")
+    cp_file(REPO / "LICENSE", "LICENSE")
+    shutil.copytree(REPO / "LICENSES", stage / "LICENSES")
+    cp_file(REPO / "THIRD_PARTY_ATTRIBUTION.md", "THIRD_PARTY_ATTRIBUTION.md")
+    (stage / "README.md").write_text(readme_for("windows"),
+                                     encoding="utf-8")
+
+    violations = sweep_stage(stage, platform="windows")
+    if violations:
+        shutil.rmtree(stage)
+        die("windows release stage rejected:\n  " + "\n  ".join(violations),
+            hint="nothing private may enter a public artifact "
+                 "(AGENTS.md § Public-repo hygiene)")
+    zip_path = OUT_DIR / f"{folder}.zip"
+    if zip_path.exists():
+        zip_path.unlink()
+    count = write_portable_zip(stage, folder, zip_path)
+    problems = verify_zip(zip_path, count)
+    if problems:
+        die("zip verification failed:\n  " + "\n  ".join(problems))
+
+    smoke = wine_smoke(zip_path, folder)
+    digest = sha1_file(zip_path)
+    print(f"release: {zip_path.name} sha1={digest} "
+          f"size={zip_path.stat().st_size} "
+          f"(static imports={n_imports}, smoke: {smoke.split(',')[0]})")
+    return zip_path
 
 
 def stage_apk(version):
@@ -417,7 +699,7 @@ def write_portable_zip(stage, folder, zip_path):
                                 date_time=(1980, 1, 1, 0, 0, 0))
             zi.compress_type = zipfile.ZIP_DEFLATED
             zi.create_system = 3  # unix, so external_attr carries the mode
-            mode = 0o755 if rel == "FFTARecomp" else 0o644
+            mode = 0o755 if rel in ("FFTARecomp", "FFTARecomp.exe") else 0o644
             zi.external_attr = (0o100000 | mode) << 16
             zf.writestr(zi, p.read_bytes())
     return len(files)
@@ -434,10 +716,12 @@ def verify_zip(zip_path, expected_count):
             name = info.filename
             if "\\" in name or name.startswith("/") or ".." in name.split("/"):
                 problems.append(f"non-portable entry name: {name}")
-            if name.rsplit("/", 1)[-1] == "FFTARecomp":
+            if name.rsplit("/", 1)[-1] in ("FFTARecomp", "FFTARecomp.exe"):
                 mode = (info.external_attr >> 16) & 0o777
                 if mode & stat.S_IXUSR != stat.S_IXUSR:
-                    problems.append(f"FFTARecomp lost exec bit in zip: {mode:o}")
+                    problems.append(
+                        f"{name.rsplit('/', 1)[-1]} lost exec bit in zip: "
+                        f"{mode:o}")
     return problems
 
 
@@ -454,9 +738,22 @@ def main(argv=None):
                     help="also build + guard + stage the public Android "
                          "APK (ROM-less; needs the Android SDK/NDK/JDK — "
                          "android/README.md § Build)")
+    ap.add_argument("--windows", action="store_true",
+                    help="cross-compile + guard + stage the static Windows "
+                         "exe (issue #3, R2 — MinGW cross on a Linux box; "
+                         "the corpus regen consumes the repo's game.gba, "
+                         "but no ROM bytes enter the artifact — the sweep "
+                         "proves it; needs mingw-w64-toolchain + "
+                         "tools/win_cross_deps.py prefix)")
     a = ap.parse_args(argv)
 
     t0 = time.time()
+    if a.windows:
+        check_freshness_windows()
+        version = a.version or git_version()
+        OUT_DIR.mkdir(exist_ok=True)
+        stage_windows(version, strip=not a.no_strip, jobs=8)
+        return 0
     check_freshness()
     version = a.version or git_version()
     OUT_DIR.mkdir(exist_ok=True)

@@ -688,18 +688,19 @@ class ReleasePackTests(unittest.TestCase):
         import make_release  # noqa: E402 (tools/ on sys.path)
         cls.mr = make_release
 
-    def _stage(self, td):
+    def _stage(self, td, platform="linux"):
         """Minimal passing stage: the required set, nothing else."""
         root = pathlib.Path(td) / "stage"
         root.mkdir(parents=True)
+        exe = "FFTARecomp.exe" if platform == "windows" else "FFTARecomp"
 
         def f(rel, data=b"x"):
             p = root / rel
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_bytes(data)
-            p.chmod(0o755 if rel == "FFTARecomp" else 0o644)
+            p.chmod(0o755 if rel == exe else 0o644)
 
-        f("FFTARecomp")
+        f(exe)
         f("game.toml")
         # The real committed BIOS at its pin: the one .bin the sweep allows.
         f("bios/emibios_gba_bios.bin",
@@ -719,6 +720,48 @@ class ReleasePackTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(dir="/tmp") as td:
             root = self._stage(td)
             self.assertEqual(self.mr.sweep_stage(root), [])
+
+    def test_sweep_windows_clean(self):
+        # The R2 windows stage: same layout, same rules, the .exe name —
+        # and the bare linux binary must FAIL there (not the required exe).
+        import tempfile
+        with tempfile.TemporaryDirectory(dir="/tmp") as td:
+            root = self._stage(td, platform="windows")
+            self.assertEqual(self.mr.sweep_stage(root, platform="windows"),
+                             [])
+            (root / "FFTARecomp.exe").unlink()
+            (root / "FFTARecomp").write_bytes(b"x")
+            v = self.mr.sweep_stage(root, platform="windows")
+            self.assertTrue(
+                any("missing required file: FFTARecomp.exe" in x for x in v),
+                v)
+
+    def test_static_link_guard(self):
+        # Pure core of the --windows static-link gate: synthetic objdump
+        # output → forbidden DLLs flagged, system DLLs clean.
+        fake_objdump = """
+FFTARecomp.exe:     file format pei-x86-64
+
+The Import Tables (interpreted .idata section contents)
+vma:            Hint    Time      Forward  DLL       First
+                Table   Stamp     Chain    Name      Thunk
+...
+\tDLL Name: KERNEL32.dll
+\tDLL Name: USER32.dll
+\tDLL Name: GDI32.dll
+\tDLL Name: SDL2.dll
+\tDLL Name: libgcc_s_seh-1.dll
+"""
+        dlls = self.mr.parse_import_dlls(fake_objdump)
+        self.assertEqual(
+            sorted(dlls),
+            ["GDI32.DLL", "KERNEL32.DLL", "LIBGCC_S_SEH-1.DLL", "SDL2.DLL",
+             "USER32.DLL"])
+        bad = self.mr.static_link_violations(dlls)
+        self.assertEqual(bad, ["LIBGCC_S_SEH-1.DLL", "SDL2.DLL"])
+        clean = {"KERNEL32.DLL", "MSVCRT.DLL", "USER32.DLL", "ADVAPI32.DLL",
+                 "SHELL32.DLL", "OPENGL32.DLL", "VERSION.DLL"}
+        self.assertEqual(self.mr.static_link_violations(clean), [])
 
     def test_sweep_rejects_gba(self):
         import tempfile

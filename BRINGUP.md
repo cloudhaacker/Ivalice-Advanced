@@ -5122,3 +5122,59 @@ or a reinstall), runner registration (`FFTA_ROM` env + label
 **Result**: fast gate 6/6 pre-tag; release live with both assets
 `uploaded`; tier-1 CI on main+v1.5 green-path (same suites the local gate
 ran); R2 the only unchecked R-track item.
+
+## 2026-10-11 (late 7) — R-track: R2 Windows exe, built here, attached to v1.5 (issue #3)
+
+**Landed** (the APK flow, verbatim: local toolchain → guard → manual
+attach — no CI, no asset repo, nothing over the network): a static
+Windows exe (`FFTARecomp-v1.5-windows-x64.zip`, `cf0b5abd…`, 43.5 MB, live
+on the v1.5 release alongside the Linux zip and the APK). Zero DLL
+dependencies; the launcher boots beside the exe and picks the player's
+ROM (issue #3 "bring your own ROM").
+
+**Toolchain** (same-machine cross): `mingw-w64-toolchain` from pacman
+(x86_64-w64-mingw32-gcc 16.2.0). MSYS2 is Windows-only and Arch ships no
+mingw binary library packages, so `tools/win_cross_deps.py` builds the
+static prefix from pinned sources: zlib 1.3.2 + freetype 2.14.3 + harfbuzz
+14.6.0 + SDL2 2.32.10 (tarball sha256-pinned, idempotent markers,
+`cross-prefix/` + `cross-build/` gitignored). Itches found and encoded:
+zlib's own option names (`ZLIB_BUILD_*` — the standards don't apply),
+harfbuzz 14.x dropped `fontconfig`, meson NEEDS `--prefix` (its default
+`/usr/local` would have poisoned nothing but failed loudly here),
+`prune_dynamic()` after every install (zlib builds a shared libz.dll even
+with `BUILD_SHARED_LIBS=OFF — an import lib in the prefix would make
+freetype link `zlib1.dll` and silently re-add a DLL).
+
+**Game configure**: `tools/mingw-x64.cmake` toolchain file + the engine's
+own static-release machinery — `GBARECOMP_STATIC_RELEASE=ON`,
+`GBARECOMP_MINGW_PREFIX_UNIX=<prefix>`, and `-static -static-libgcc
+-static-libstdc++` via `-DCMAKE_EXE_LINKER_FLAGS` (the engine's comment
+says subdir `add_link_options` cannot reach the parent exe; configure-time
+cache is the sanctioned path). `FFTA_BUILD_TESTS=OFF`; the 63k-unit corpus
+is reused as-is (host-independent C++).
+
+**Determinism — proved twice, failed once.** Failed first: rebuilds moved
+(1 byte-field each) because GNU ld stamps TimeDateStamp with the link
+time; `--no-insert-timestamp` fixed the header (objdump reads epoch).
+Failed again: the **staged** exe moved anyway — `binutils strip` rewrites
+the PE `TimeDateStamp` with the *current* time on every run (COFF header
++ debug-dir words; two strips back to back agreed, strips minutes apart
+didn't — the fake "strip is deterministic" probe caught). Structural fix:
+`-s` at LINK time, never post-link; the zip now reproduces byte-for-byte
+across wipe-rebuilds (exe `1ce4117d…`, zip `cf0b5abd…`; the pre-fix
+`ab72951f…` / `53b3d225…` / `0c2d6a…` attachments are superseded — v1.5
+carries the reproducible one). Cache probe invalidates on flag changes
+(`win_configure_needed` lists `--no-insert-timestamp -s`).
+
+**Gates** (all live, all green): objdump import table = 29 system DLLs
+only (forbid-list: SDL2, libstdc++-6, libgcc_s_seh-1, winpthread, freetype,
+harfbuzz, zlib DLLs — none present); sweep (same ROM/BIOS/binary hash
+rules, exe-named); deterministic zip; wine boot smoke from the bare
+extraction: FULLY_STATIC dispatch_misses=0 interpreted_insns=0. ReleasePackTests
++4 (windows sweep roundtrip + static-guard core): 44 → 48.
+
+**Limits, stated**: no CI (the ROM stays on this box — the standing
+posture; the GitHub-CI variant stays feasible via the scene-standard
+private-ROM-repo checkout whenever that policy changes); wine is a boot
+smoke, not a device-verified run (a real Windows launch on a player's
+machine is the one remaining untested mile).

@@ -13,7 +13,9 @@ entry, not the play entry. For when-to-run-what (workflows, gates, CI), see
 |---|---|
 | `play.sh` | Instrumented windowed playtest: input recording, live miss journaling, persistent battery save, previous-session archiving. Extras: `--tcp-observe PORT`, `--launcher`, `--scale N`, `--fullscreen` |
 | `check.py` | Full regression gate: host unit tests, attract hash, widescreen smoke, strict route replays (`--fast`, `--only a,b`, `--jobs N`) |
-| `make_release.py` | Desktop release packager (issue #3 R-track): allowlist stage → private-material sweep (hash-pinned ROM/BIOS rejection) → deterministic portable zip; refuses a stale build. `--apk` adds the guarded public Android APK artifact (clean repackage, ROM-less, `--expect public`). Runs as `check.py --only release` |
+| `make_release.py` | Desktop release packager (issue #3 R-track): allowlist stage → private-material sweep (hash-pinned ROM/BIOS rejection) → deterministic portable zip; refuses a stale build. `--apk` adds the guarded public Android APK artifact (clean repackage, ROM-less, `--expect public`). `--windows` adds the static cross-compiled Windows exe artifact (MinGW static, zero DLLs, objdump-guarded, wine-smoked; ROM-less). Runs as `check.py --only release` |
+| `win_cross_deps.py` | Pinned static cross-dependency prefix for `--windows`: zlib / freetype / harfbuzz / SDL2 into `cross-prefix/` (idempotent markers; sha256-pinned tarballs). Why source builds: Arch has no mingw binary library packages (and MSYS2 is Windows-only). `fetch` / `build` / `status` / `clean` / `purge` |
+| `mingw-x64.cmake` | CMake cross toolchain for `--windows` (x86_64-w64-mingw32, prefix-first search) |
 | `cycle.py` | Change cycle after `game.toml`/`src/` edits: cold regen → dispatch sanity → build → attract gate |
 | `resolve.py` | Strict-replay miss seeder — seeds a trace's misses through a temp overlay, repeats until FULLY_STATIC (`--trace <csv>`, `--load-state`) |
 | `cache_harvest.py` | Post-crash miss harvesting (`--out logs/proposal.frag`) |
