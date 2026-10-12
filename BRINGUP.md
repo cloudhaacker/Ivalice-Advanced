@@ -5030,3 +5030,33 @@ tiers note.
 **Result.** Fast gate 6/6; `--only release` PASS; R1 + R6 done (issue #3
 R-track: R3/R4/R2/R5 remain — APK artifact, `release.yml` tag trigger,
 Windows stretch, first tagged release).
+
+## 2026-10-11 (late 4) — R-track: R3 public APK release artifact (issue #3)
+
+**Landed** `tools/make_release.py --apk`: the public (ROM-less) Android APK
+as a release artifact, staged beside the zip.
+
+**Flow**: preflight reuses `build_apk.py` (JDK/SDK/NDK discovery, SDL
+submodule, dump verify — the release runner carries the ROM for the
+bootstrap anyway) but its own gradle call (`build_apk.step_gradle` bakes in
+`-PprivateRom`). **Clean repackage always**: `android/app/build` removed
+before gradle — native objects under `android/app/.cxx` survive (compile
+stays cached) but the packaging restarts from scratch. Then the
+`android_apk_check.py --expect public` gate, then staging as
+`FFTARecomp-<version>-android-arm64-v8a.apk`.
+
+**The live run found both traps:**
+1. `build_apk.newest_apk()` globs the `*-PRIVATE-rom-included` marker only —
+   it can never find a public build; the public APK is always at AGP's
+   `android/app/build/outputs/apk/debug/app-debug.apk` (the engine's rename
+   deliberately applies only to private builds).
+2. The guard's packaging-sanity check rejected the first artifact:
+   65.7 MB APK vs 35.1 MB of entries — **29 MB of incremental-repackaging
+   slack** stranded from prior builds, invisible to infolist (the exact
+   junk class that check exists for). The clean repackage above is the
+   structural fix; the guard stays as belt-and-braces.
+
+**Result**: zip `c41267b4…` (45.7 MB) + public APK `e81303d5…` (35.1 MB,
+guard 8/8 `--expect public`), both `release-stage/` (gitignored).
+`assembleDebug` is debug-signed — the release-key (`gbaKeystore`) decision
+stays flagged open for R5 on issue #3.

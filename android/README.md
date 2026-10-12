@@ -145,6 +145,15 @@ Gradle/adb directly as above. `sdkmanager` exits 1 after successfully
 unzipping an NDK when a root-owned `emulator/package.xml` blocks its legacy
 XML rewrite — harmless.
 
+**Release artifact** (issue #3): `tools/make_release.py --apk` builds this
+public path itself — preflight via `build_apk.py`, a **clean repackage**
+(`android/app/build` removed first; native objects under `android/app/.cxx`
+survive, so incremental-repackage slack can never strand bytes in the zip —
+the junk class the APK guard's packaging-sanity check rejects), then the
+[`tools/android_apk_check.py`](tools/android_apk_check.py) gate with
+`--expect public` before staging `release-stage/FFTARecomp-<version>-android-arm64-v8a.apk`
+(debug-signed; the release-key decision is tracked on issue #3).
+
 ## Run + verify on device
 
 ```sh

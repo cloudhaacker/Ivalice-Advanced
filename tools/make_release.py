@@ -40,8 +40,12 @@ than the corpus → refuse.
 
 Usage:
   .venv/bin/python tools/make_release.py [--version V] [--no-strip] [--clean]
+  .venv/bin/python tools/make_release.py --apk   # + the public Android APK
 
-Output zip: release-stage/FFTARecomp-<version>-linux-x64.zip (gitignored).
+Output (release-stage/, gitignored):
+  FFTARecomp-<version>-linux-x64.zip    deterministic portable zip
+  FFTARecomp-<version>-android-arm64-v8a.apk     (--apk; ROM-less, debug-signed)
+
 The last stdout line is "release: <name> sha1=<sha1> ..." for check.py.
 """
 import argparse
@@ -287,6 +291,72 @@ canonical project README lives in the source repository.)*
 """
 
 
+def stage_apk(version):
+    """Build, guard, and stage the public (ROM-less) Android APK artifact.
+
+    Gradle without -PprivateRom embeds no ROM: the app boots into the SAF
+    setup flow (issue #3 "bring your own ROM"). Reuses build_apk.py's
+    preflight (JDK/SDK/NDK discovery + SDL submodule + dump verification —
+    the release runner carries the ROM for the bootstrap anyway), but its
+    own gradle call: build_apk.step_gradle bakes in -PprivateRom.
+
+    The artifact passes tools/android_apk_check.py --expect public (the
+    same 8-check gate the private build answers, ROM-presence inverted:
+    bundled BIOS hash-verified, embedded ROM forbidden) BEFORE staging, and
+    is copied under the distributable name (public builds keep AGP's
+    app-debug.apk — only private builds get the engine's
+    *-PRIVATE-rom-included.apk rename, so they can't be mistaken for
+    releases; this name can't be mistaken either way).
+
+    assembleDebug is debug-signed. Shipping the DEBUG key is the open R5
+    decision (a release key via -PgbaKeystore lets sideloaded updates
+    install over earlier installs); until then the artifact stays
+    debug-signed and that stays flagged.
+    """
+    sys.path.insert(0, str(REPO))  # build_apk.py lives at the repo root
+    import build_apk  # noqa: E402 (local import: zip-only runs need no SDK)
+    print("preflight: " + build_apk.step_preflight())
+    abi = "arm64-v8a"
+    jobs = max(1, min(16, os.cpu_count() or 8))
+    # A release artifact is ALWAYS a clean package: gradle's incremental
+    # repackaging strands slack from prior builds between zip entries (the
+    # junk class android_apk_check's packaging-sanity check exists for —
+    # 29 MB of it on the first attempt here). Native objects live under
+    # android/app/.cxx, which is NOT touched: the native compile stays
+    # cached, only the packaging restarts from scratch.
+    app_build = REPO / "android/app/build"
+    if app_build.is_dir():
+        shutil.rmtree(app_build)
+    gradlew = REPO / "android" / "gradlew"
+    r = subprocess.run([str(gradlew), ":app:assembleDebug",
+                        f"-PgbaAbis={abi}", f"-PgbaNativeJobs={jobs}"],
+                       cwd=str(REPO / "android"))
+    if r.returncode != 0:
+        die("gradle assembleDebug (public) failed",
+            hint="android/README.md § Build — JDK 21, SDK platform 35, NDK, "
+                 "SDL submodule are the usual suspects")
+    # AGP's debug output path; the engine's *-PRIVATE-rom-included rename
+    # only applies to private builds, and build_apk.newest_apk() globs that
+    # PRIVATE marker only — a public build is always right here.
+    apk = REPO / "android/app/build/outputs/apk/debug/app-debug.apk"
+    if not (apk.is_file() and apk.stat().st_size > 0):
+        die(f"gradle reported success but no APK at {apk.relative_to(REPO)}")
+    guard = subprocess.run(
+        [sys.executable, str(REPO / "tools/android_apk_check.py"),
+         "--apk", str(apk), "--expect", "public"],
+        capture_output=True, text=True)
+    if guard.returncode != 0:
+        tail = "\n".join((guard.stdout + guard.stderr).strip().splitlines()[-12:])
+        die(f"APK guard rejected the artifact ({apk.name}):\n{tail}",
+            hint="a public release artifact may not contain ROM material — "
+                 "see tools/android_apk_check.py")
+    name = f"FFTARecomp-{version}-android-{abi}.apk"
+    dst = OUT_DIR / name
+    shutil.copy2(apk, dst)
+    print(f"release: {name} sha1={sha1_file(dst)} "
+          f"size={dst.stat().st_size} (guard: --expect public)")
+
+
 def stage_release(version, strip=True):
     """Build the allowlisted stage. Returns (stage_dir, folder_name)."""
     folder = f"FFTARecomp-{version}-linux-x64"
@@ -375,6 +445,10 @@ def main(argv=None):
                     help="ship the binary with symbols")
     ap.add_argument("--clean", action="store_true",
                     help="remove the stage dir after zipping")
+    ap.add_argument("--apk", action="store_true",
+                    help="also build + guard + stage the public Android "
+                         "APK (ROM-less; needs the Android SDK/NDK/JDK — "
+                         "android/README.md § Build)")
     a = ap.parse_args(argv)
 
     t0 = time.time()
@@ -405,6 +479,8 @@ def main(argv=None):
     print(f"release: {zip_path.name} sha1={digest} "
           f"size={zip_path.stat().st_size} "
           f"({time.time() - t0:.1f}s)")
+    if a.apk:
+        stage_apk(version)
     return 0
 
 
