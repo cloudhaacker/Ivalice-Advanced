@@ -9,8 +9,9 @@
 # Assertions ([PASS] / [FAIL] lines):
 #   1. the package process is running (pidof)
 #   2. GbaGameActivity is the resumed activity (dumpsys activity activities)
-#   3. files/android-runtime.log is readable via run-as and reports
-#      cpu_backend=static-recompiled
+#   3. the runtime log reports cpu_backend=static-recompiled (read from the
+#      user-visible external logs/ dir — no run-as — with the app-private
+#      files/ location as the fallback)
 #   4. the runtime log has no dispatch misses (no "SELF-HEAL" line and no
 #      "missing static coverage" line)
 #   5. Android's crash buffer has no entries mentioning "fftarecomp". Only
@@ -49,6 +50,10 @@ AUTOSTART_EXTRA="org.gbarecomp.extra.AUTOSTART"
 RUNTIME_LOG="android-runtime.log"
 MISS_FRAG="recomp_master_misses_AFXE.toml.frag"
 COVERAGE_JSON="recomp_coverage_AFXE.json"
+# User-visible external app dir (no run-as needed; the 2026-10-11 logging
+# fix moved log/frag/coverage here). The gate reads this first and falls
+# back to the app-private location when external storage is unavailable.
+EXTERNAL_FILES_DIR="/sdcard/Android/data/$PACKAGE/files"
 
 # ---------------------------------------------------------------------------
 # Defaults / options
@@ -360,10 +365,15 @@ fi
 
 # A previous session's log/frag would fail the miss assertions forever
 # (observed 2026-10-11: byte-identical stale counts across runs). Clear them
-# pre-launch so the gate only ever reads this run. Best effort like the
-# crash-buffer clear above — a failure notes, never aborts.
+# pre-launch so the gate only ever reads this run — both the external logs/
+# dir (the canonical location since the logging fix) and the app-private
+# fallback. Best effort like the crash-buffer clear above.
+CLEARED_EXT=0
+if "${ADB[@]}" shell "rm -f '$EXTERNAL_FILES_DIR/logs/$RUNTIME_LOG' '$EXTERNAL_FILES_DIR/logs/$MISS_FRAG' '$EXTERNAL_FILES_DIR/logs/$COVERAGE_JSON'" >/dev/null 2>&1; then
+  CLEARED_EXT=1
+fi
 if "${ADB[@]}" shell run-as "$PACKAGE" sh -c 'cd files && rm -f android-runtime.log recomp_master_misses_AFXE.toml.frag recomp_coverage_AFXE.json' >/dev/null 2>&1; then
-  info "cleared the previous session log/frag (fresh-run reads only)"
+  info "cleared the previous session log/frag (external+$([ $CLEARED_EXT -eq 1 ] && echo '+' || echo '-')app-private; fresh-run reads only)"
 else
   note "could not clear the previous session log/frag — miss assertions may read stale entries (non-fatal)"
 fi
@@ -423,17 +433,27 @@ else
   fi
 fi
 
-# 3./4. runtime log (app-private: only reachable through run-as)
+# 3./4. runtime log — external first (the canonical location since the
+# 2026-10-11 logging fix), app-private as the fallback.
 LOG_LOCAL="$PULL_DIR/$RUNTIME_LOG"
 LOG_FETCHED=0
+LOG_SOURCE=""
 RUN_AS_REASON=""
-if fetch_private "files/$RUNTIME_LOG" "$LOG_LOCAL" && [ -s "$LOG_LOCAL" ]; then
+if "${ADB[@]}" shell "cat '$EXTERNAL_FILES_DIR/logs/$RUNTIME_LOG'" >"$LOG_LOCAL" 2>/dev/null && [ -s "$LOG_LOCAL" ]; then
   LOG_FETCHED=1
+  LOG_SOURCE="external"
 else
+  : >"$LOG_LOCAL"
+  if fetch_private "files/$RUNTIME_LOG" "$LOG_LOCAL" && [ -s "$LOG_LOCAL" ]; then
+    LOG_FETCHED=1
+    LOG_SOURCE="app-private"
+  fi
+fi
+if [ "$LOG_FETCHED" -eq 0 ]; then
   if [ -n "$FETCH_ERR" ]; then
     RUN_AS_REASON="app-private read failed: $FETCH_ERR (a debug/private build is required for run-as)"
   elif [ ! -s "$LOG_LOCAL" ]; then
-    RUN_AS_REASON="runtime log missing or empty"
+    RUN_AS_REASON="runtime log missing or empty (checked external logs/ and app-private files/)"
   else
     RUN_AS_REASON="app-private read failed"
   fi
@@ -442,7 +462,7 @@ fi
 
 if [ "$LOG_FETCHED" -eq 1 ]; then
   if grep -aq 'cpu_backend=static-recompiled' "$LOG_LOCAL"; then
-    pass_check "runtime log readable ($(bytes_of "$LOG_LOCAL") bytes) and reports cpu_backend=static-recompiled"
+    pass_check "runtime log readable ($LOG_SOURCE, $(bytes_of "$LOG_LOCAL") bytes) and reports cpu_backend=static-recompiled"
   else
     backend=$(grep -ao 'cpu_backend=[^[:space:]]*' "$LOG_LOCAL" | tr -d '\r' | sed -n '1p' || true)
     fail_check "runtime log readable, but cpu_backend=static-recompiled is missing (found: ${backend:-no cpu_backend line})"
@@ -512,7 +532,13 @@ fi
 for name in "$MISS_FRAG" "$COVERAGE_JSON"; do
   dest="$PULL_DIR/$name"
   FETCH_ERR=""
-  if fetch_private "files/$name" "$dest"; then
+  # External first (canonical since the logging fix), app-private fallback.
+  if "${ADB[@]}" shell "cat '$EXTERNAL_FILES_DIR/logs/$name'" >"$dest" 2>/dev/null && [ -s "$dest" ]; then
+    printf '  %-38s %s\n' "$name" "saved (external, $(bytes_of "$dest") bytes)"
+    if [ "$name" = "$MISS_FRAG" ]; then
+      note "non-empty miss frag pulled — review it via the healing loop (tests/README.md)"
+    fi
+  elif fetch_private "files/$name" "$dest"; then
     if [ -s "$dest" ]; then
       printf '  %-38s %s\n' "$name" "saved ($(bytes_of "$dest") bytes)"
       if [ "$name" = "$MISS_FRAG" ]; then
@@ -523,7 +549,7 @@ for name in "$MISS_FRAG" "$COVERAGE_JSON"; do
     fi
   else
     rm -f "$dest"
-    printf '  %-38s %s\n' "$name" "not present (${FETCH_ERR:-run-as cat: no such file})"
+    printf '  %-38s %s\n' "$name" "not present (${FETCH_ERR:-no such file, external or app-private})"
   fi
 done
 
