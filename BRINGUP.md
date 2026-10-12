@@ -5170,8 +5170,8 @@ carries the reproducible one). Cache probe invalidates on flag changes
 
 Action: web survey of community hacks, ROM patches and cheat sources for
 FFTA (USA/AFXE) to scope "Support hacks and cheats" (issue #22). Result:
-catalog compiled; comment drafted for the issue (posting gated on user
-sign-off per standing GitHub policy).
+catalog compiled; comment posted to the issue with user sign-off
+(issuecomment-6128615602; Tools/ecosystems section dropped per request).
 
 Findings:
 - Every mainstream patch targets the No-Intro USA (AUS) dump — SHA-1
