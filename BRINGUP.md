@@ -5166,6 +5166,44 @@ across wipe-rebuilds (exe `1ce4117d…`, zip `cf0b5abd…`; the pre-fix
 carries the reproducible one). Cache probe invalidates on flag changes
 (`win_configure_needed` lists `--no-insert-timestamp -s`).
 
+## 2026-10-12 — issue #22 research: FFTA hacks/mods/cheats survey (no code change)
+
+Action: web survey of community hacks, ROM patches and cheat sources for
+FFTA (USA/AFXE) to scope "Support hacks and cheats" (issue #22). Result:
+catalog compiled; comment drafted for the issue (posting gated on user
+sign-off per standing GitHub policy).
+
+Findings:
+- Every mainstream patch targets the No-Intro USA (AUS) dump — SHA-1
+  `4AC05441…` = our pinned `game.gba`. Patch formats in the wild: IPS
+  (Lunar IPS), UPS (upset), BPS (beat). Support = patch-apply step ahead
+  of recomp + relaxed launcher identity pin for known-good patched
+  outputs (the ROM hash-verify at launch currently rejects them).
+- Major hacks (all RHDN, game page 1419): Maeson (9373 — full rebalance,
+  BPS main + IPS optionals, built on LeonarthCG engine hacks), Secret
+  Starters / R-Editions (9062) + Secret Starters Vanilla (9339), TV Mode
+  Default (8559 — palette fix, directly relevant to non-GBA displays),
+  Advanced Battle (4438 — monster-tame overhaul, UPS), Minor Tweak Pack
+  (2078), Anarchy (law remover; RomHackPlaza mirror), FFTA2 music
+  insertion (654). Classic forum mods: Grim Grimoire (beta 0.993) and
+  Long Night (v0.64) via ffhacktics thread 11997 hub; FFTA X (insane
+  difficulty) — host dead, archive.org only.
+- Tooling: LeonarthCG/FFTA_Engine_Hacks (Event Assembler buildfile → UPS),
+  TojiKitten/FFTA-randomizer, MultiworldGG FFTA apworld (BizHawk),
+  spiiin/FFTAUtils, Darthatron editors + Law Remover (ffhacktics 11996).
+- Cheats: GameHacking.org (game 4576) GameShark/AR/CodeBreaker DBs; code
+  compendia already swept into `reference/ffta-gamefaqs-code-guides.md`
+  (verified `gMoney` 0x02001F64 etc.). Cheats are RAM pokes → runtime code
+  handler, ROM-hash-independent, but addresses are vanilla-specific.
+- Caveat: total conversions relocate code/data → our address-specific
+  corpus + game.toml seeds would need per-hack overlays (self-heal covers
+  misses but the frozen gates assume vanilla). Hygiene unchanged: link to
+  patches, never commit patch/ROM bytes.
+
+Conclusion: support splits into (a) pre-recomp patch application with
+format detection, (b) identity handling for patched ROMs, (c) runtime
+cheat-code layer keyed to the vanilla RAM map.
+
 **Gates** (all live, all green): objdump import table = 29 system DLLs
 only (forbid-list: SDL2, libstdc++-6, libgcc_s_seh-1, winpthread, freetype,
 harfbuzz, zlib DLLs — none present); sweep (same ROM/BIOS/binary hash
