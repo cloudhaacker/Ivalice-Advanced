@@ -16,6 +16,32 @@ included: a clean-room, freely redistributable
 [emibios](https://github.com/coolbho3k/emibios) build committed at `bios/` —
 no Nintendo BIOS dump is required.
 
+## Features
+
+- Native Linux, PC, and Android builds
+- Keyboard, controller, and touchscreen controls
+- Windowed and fullscreen desktop play
+- Validated widescreen view up to 448 px
+- Cartridge saves and save states
+- Strict fully-static execution — zero interpreter fallback on any executed
+  path, kept that way by a self-healing coverage loop
+- GBA screen simulation: `raw`, `unlit`, `frontlit`, `backlit`, `classic`
+  [recomp-ui](https://github.com/mstan/recomp-ui) launcher; ROM and BIOS
+  hashes verified at launch
+
+## Controls
+
+| GBA control | Keyboard |
+|---|---|
+| D-Pad | Arrow keys |
+| A / B | X / Z |
+| Start | Enter |
+| Select | Backspace |
+| L / R | C / V |
+
+Controllers are detected automatically, and button mappings can be changed
+from the launcher. On Android, use the on-screen touch controls.
+
 ## Quick start
 
 ### Using a release binary (no build)
@@ -96,33 +122,6 @@ are listed in [docs/README.md](docs/README.md).
    boot-health gate. The ROM is embedded, so the app boots straight into the
    game. Full build, install, and device-validation instructions live in
    [`android/README.md`](android/README.md).
-
-## Features
-
-- Native Linux and Android builds
-- Strict fully-static execution — zero interpreter fallback on any executed
-  path, kept that way by a self-healing coverage loop
-- Validated widescreen view up to 448 px
-- GBA screen simulation: `raw`, `unlit`, `frontlit`, `backlit`, `classic`
-- ROM and BIOS setup through the shared
-  [recomp-ui](https://github.com/mstan/recomp-ui) launcher; ROM and BIOS
-  hashes verified at launch
-- Keyboard, controller, and touchscreen controls
-- Windowed and fullscreen desktop play
-- Cartridge saves and save states
-
-## Controls
-
-| GBA control | Keyboard |
-|---|---|
-| D-Pad | Arrow keys |
-| A / B | X / Z |
-| Start | Enter |
-| Select | Backspace |
-| L / R | C / V |
-
-Controllers are detected automatically, and button mappings can be changed
-from the launcher. On Android, use the on-screen touch controls.
 
 ## Building from source
 
