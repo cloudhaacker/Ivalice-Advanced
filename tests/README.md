@@ -482,4 +482,14 @@ Two tiers, split by what may leave your machine:
   `tests/python/test_tools.py` (`ReleasePackTests`), which **does** run on
   tier 1. The packaged zip is deterministic (fixed timestamps, sorted
   entries), so a release job can hash it and users can diff releases.
+- **Release — `.github/workflows/release.yml` (tier 2, tag-triggered).**
+  A `v*` tag push (write access — fork PRs can never trigger it)
+  bootstraps the full tree on the self-hosted runner — the ROM comes from
+  the runner's `FFTA_ROM` env var (pre-placed outside the workspace, never
+  in git) and is copied in for the corpus regen only — then runs the full
+  gate and packages both artifacts (`tools/make_release.py --apk`). Every
+  attached file is content-guarded **before** the release exists: the zip
+  by the make_release sweep, the APK by `android_apk_check --expect
+  public`. `workflow_dispatch` runs the whole pipeline except the attach
+  step — a rehearsal that publishes nothing.
 

@@ -5060,3 +5060,26 @@ stays cached) but the packaging restarts from scratch. Then the
 guard 8/8 `--expect public`), both `release-stage/` (gitignored).
 `assembleDebug` is debug-signed — the release-key (`gbaKeystore`) decision
 stays flagged open for R5 on issue #3.
+
+## 2026-10-11 (late 5) — R-track: R4 tag-triggered release workflow (issue #3)
+
+**Landed** `.github/workflows/release.yml`: `v*` tag push → bootstrap
+(`build.py`) → full gate → package (`make_release.py --apk`) → attach.
+`workflow_dispatch` runs everything except the attach (rehearsal that
+publishes nothing — dispatch is branch-named, the attach step is
+`startsWith(github.ref, 'refs/tags/')`-gated).
+
+**Posture** (tier-2, per tests/README.md § CI): tag pushes require write
+access (forks can't trigger — no exfiltration surface); the ROM comes from
+the runner's `FFTA_ROM` env var (path outside the workspace, configured on
+the runner, never in the repo) and is copied in after checkout for the
+corpus regen only; every attached file is content-guarded BEFORE the
+release exists (zip: make_release sweep; APK: `--expect public`). Attach
+by exact deterministic filename (`FFTARecomp-<tag>-linux-x64.zip` +
+`-android-arm64-v8a.apk`) — at a tag, `git describe` is exactly the tag,
+and a bare `release-stage/*.zip` glob would also attach stale zips from
+earlier local runs.
+
+**Open items** (R5): the release signing key (`gbaKeystore` — debug-signed
+until decided), notes content beyond `--generate-notes`, and the runner
+label (`self-hosted` assumed — adjust to the actual label if different).
