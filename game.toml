@@ -7318,3 +7318,45 @@ format = "abs32"
 entries_mode = "auto"
 name = "table_0836D7B8"
 note = "29-entry abs32 switch @0x0836D7B8 (ROM read: 08018E21/E95/EB5/EB5/8FF1/904D/90A9/9121/91B1/920D/9269/928D/9495/97BD/92C1/92C1/EB5/EB5/9399 x8/93CD/93FD/9431, thumb|1, trailing default-case dups); covers hit 0x080190A8 (prologue push {r4,lr}, bridged x1; device gameplay 2026-10-11); raw interworking pointers, entries_mode=auto"
+
+# ─── Batch 2026-10-11: device-resume ability-animation command handlers ───
+# Source: the first gate run that auto-resumed a mid-battle suspend state
+# (frame 45171, external logs/android-runtime.log bridge entries). The
+# ability-animation command interpreter dispatches handlers via
+# `bl 0x08142250` -> `bx r3` (register-dispatch, disarm-verified @0x08142250)
+# with the handler pointer taken from gAbilityAnimationTable — statically
+# unresolvable, so whole handler regions stayed unwalked until a playtest
+# exercised them. Not emibios-related: game-ROM code, corpus byte-identical
+# across the BIOS swap (BRINGUP 2026-10-11 issue #17 E3/E4 session).
+
+[[jump_table]]
+addr = 0x083947D8
+stride = 8
+count = 218
+format = "abs32"
+entries_mode = "auto"
+name = "gAbilityAnimationTable"
+note = "gAbilityAnimationTable (decomp data symbol, exact @0x083947D8): 218 {u32 thumb handler, u32 packed params} records ending at the 0x00000000 terminator @0x08394EA8; 137 distinct handlers (81 shared records), handler region 0x080E4000-0x080F7xxx. Register-dispatched via bl 0x08142250 -> bx r3 from the interpreter sites 0x08005A08/0x08005A70 (disarm-verified). Raw interworking pointers (bit0 set), entries_mode=auto — a 'thumb' entry mode leaves the bit unmasked and dispatch sanity fails on odd rows (2026-10-11 lesson, same as the 0x0839A59C batch). Device bridge evidence: 0x080F543C x216 (hot animation-command loop), 0x080EDC08 x1; 28/218 targets already covered by prior playtests, this seed covers the remaining commands structurally — every ability's animation script, played or not."
+
+# Interior case labels of two animation-command handlers are also directly
+# dispatchable entries (bridged x1 each on device: 0x080EDC7E, 0x080F54B6 —
+# same bl->bx r3 path, lr lands back at the caller's continuation). Ranges
+# cover the whole handler switches, not just the observed hits.
+
+[[resume_range]]
+start = 0x080EDC08
+end   = 0x080EDE64               # exclusive: bx r1 @0x080EDE62, next fn 0x080EDE64
+mode  = "thumb"
+note  = "animation-command handler (gAbilityAnimationTable slot @0x08394968, ptr 0x080EDC09); entry f0b5 push {r4-r7,lr} @0x080EDC08, switch on [r1] vs pool magic, shared epilogue at 0x080EDE52; interior case 0x080EDC7E bridged x1 on device (frame-45171 resume)"
+
+[[resume_range]]
+start = 0x080F543C
+end   = 0x080F5710               # exclusive: bx r1 @0x080F570E, next fn 0x080F5710
+mode  = "thumb"
+note  = "animation-command handler (slot @0x08394AA8, ptr 0x080F543D); entry f0b5 @0x080F543C, switch on [r6] incl. cmp #0x102 (0x81<<1), shared epilogue at 0x080F5706; interior case 0x080F54B6 bridged x1 + entry bridged x216 on device — the hot per-frame animation command of the resumed battle"
+
+[[extra_func]]
+addr = 0x08133618
+mode = "thumb"
+name = "sub_08133618"
+note = "event-callback-shaped leaf (f0b5 push {r4,lr} @0x08133618; bl 0x08131DD4 with r1=#0xD; conditional bl 0x080CDEC8; pop/pop/bx @0x08133634-38; disarm-verified). Bridged x1 on device during the suspend-resume continuation (bridge-log evidence, depth 14; NOT in the session frag — journal gap unexplained, the external android-runtime.log line is the record). In the unwalked gap 0x081333D8..0x0813388C."

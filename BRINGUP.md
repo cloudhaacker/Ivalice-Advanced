@@ -4810,3 +4810,64 @@ packaging-verified on both build modes, and legally documented. The
 emibios work is complete; what remains under issue #3 is the release
 pipeline (make_release.py, tag-triggered CI, first tagged release) plus
 the 4-miss healing session above.
+
+## 2026-10-11 (late) — healing loop: gAbilityAnimationTable batch (+6,954 units)
+
+**Source.** The E3/E4 device gate run — the first to auto-resume a
+mid-battle suspend state (frame 45171) from the ~12-min unharvested phone
+playtest. Bridge evidence (4 PCs): 0x080F543C x216 (hot per-frame
+animation-command loop), 0x080EDC08 x1, interiors 0x080F54B6 x1 /
+0x080EDC7E x1, plus 0x08133618 x1 (bridge-log only — NOT in the session
+frag; journal gap noted).
+
+**Root cause — why a "well-trodden" subsystem was uncovered.** The
+ability-animation command interpreter dispatches handlers via
+`bl 0x08142250 -> bx r3` (register-dispatch, disarm-verified) with the
+handler pointer read from gAbilityAnimationTable @0x083947D8 — 218
+`{u32 thumb ptr, u32 packed params}` records, 137 distinct handlers,
+region 0x080E4000..0x080F7xxx. Register-indirect + table-fed = invisible
+to the static walker; nothing short of executing an animation command
+covers its handler. Every battle touches this system — but each ability
+animation script uses only a few of the 218 command words, so coverage
+grows per-command-executed, not per-system. The frozen routes + desktop
+playtests had exercised ~28; the phone playtest (never harvested) hit
+more; the rest belong to abilities nobody had played. Not emibios: game
+ROM code, corpus byte-identical across the BIOS swap.
+
+**Seeds** (game.toml § device-resume batch): one [[jump_table]] over the
+whole registry (stride 8, count 218, format abs32, **entries_mode=auto**
+— the raw interworking pointers carry the thumb bit; a "thumb" mode
+leaves bit0 unmasked and dispatch-sanity fails on 5350 odd rows, caught
+and fixed same day), plus [[resume_range]] over the two observed
+handlers' extents (entry..exclusive end, covering whole switches not
+just hits), plus one [[extra_func]] for 0x08133618 (event-callback leaf,
+bl 0x08131DD4/0x080CDEC8, disarm-verified).
+
+**Validation.** cycle PASS: regen 57299→**63134 units** (+6,954 — the
+registry handlers pulled their whole call trees), dispatch sanity OK,
+build OK, **attract golden unchanged** (1EF4C118...). Coverage lenses:
+walker 97.8%→**98.7%**; pool proxy 99.3%→**94.8%** — honest reading: the
+pool denominator grew (speculative literal harvest now maps 3,485 more
+units), so the drop is a *map of the next frontier* (more dispatch
+families behind other tables in the same region), not a regression;
+executed-path lens stays 100% FULLY_STATIC, which is the acceptance
+that matters.
+
+**Process fixes (the "keeps getting missed" lessons, same date).**
+(1) Symbol-table step added to every healing-loop doc — playbook
+SKILL.md merge step, AGENTS.md workflow B step 2, tests/README.md § the
+healing loop, android/README.md § device playtests: naming-only
+ffta_symbols.tsv entries for new functions + measured-size
+ffta_data_symbols.tsv entries for new tables (replace the 0x0
+placeholder), in the same session as the seed merge. Applied now:
+Section 20 (3 functions), Section 18 data (gAbilityAnimationTable
+placeholder → measured 0x6D0 + the two sub-switch tables 0x20/0x28);
+TSV guards 27/27. (2) Device-playtest journals must be harvested in the
+same session (the unharvested phone journal was the silent debt that
+made this batch invisible until a gate resume).
+
+**Follow-up.** The pool-lens drop points at ~3,485 pointer-reachable
+units in the same handler region behind other tables — triage next
+session (misspack/oracle protocol, PRINCIPLES first). 0x08133618's
+journal gap (bridge-log line but no frag entry) noted for the
+selfheal-journal reviewer.

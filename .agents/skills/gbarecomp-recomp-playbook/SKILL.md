@@ -29,6 +29,13 @@ interpreted instructions).
    Harvest the heal-cache unit filenames as a second source.
 3. **Merge** reviewed proposals into the config, with disassembly evidence in
    every note. Never auto-write the config; never edit generated code.
+   **Update the symbol tables in the same session:** every newly-identified
+   function gets a naming-only entry in the function-symbols file, and
+   every newly-identified dispatch/pointer table gets a data-symbol entry
+   with its measured size (walk to the terminator; the "size unknown"
+   placeholder is replaced). Coverage may come from the config seeds; the
+   symbol tables are how the next session recognizes what this one found —
+   skipping them is how a whole subsystem gets re-discovered from scratch.
 4. **Resolve until static.** Strict-replay the session; seed the first miss
    through a temporary overlay; rebuild; repeat until no miss remains.
 5. **Verify.** Cold regenerate, build, run the golden-hash gate, then one

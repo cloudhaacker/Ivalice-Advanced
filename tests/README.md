@@ -245,7 +245,24 @@ instruments everything:
 **3 — Merge reviewed seeds** into `game.toml` (`[[extra_func]]` /
 `[[jump_table]]` / `[[code_copy]]`, each with a disassembly-evidence `note`;
 `tools/misspack.py <frag>` builds the evidence pack). Never auto-write
-`game.toml`; proposals are reviewed.
+`game.toml`; proposals are reviewed. **Same-session symbols check** (the
+step that keeps getting missed): every newly-identified function gets a
+naming-only entry in `symbols/ffta_symbols.tsv`, and every newly-identified
+dispatch/pointer table gets a data-symbol entry in
+`symbols/ffta_data_symbols.tsv` with its measured size (walk to the
+terminator — replace the `0x0` size-unknown placeholder). Coverage comes
+from the `game.toml` seeds; the symbol tables are how the *next* session
+recognizes what this one found — skipping them is how a whole subsystem
+gets re-discovered from scratch (the 2026-10-11 gAbilityAnimationTable
+lesson).
+
+**Device playtests journal too** (report-only bridges): the runtime
+writes `recomp_master_misses_AFXE.toml.frag` to the external app dir
+(`/sdcard/Android/data/<pkg>/files/logs/`, issue #6 logging) — pull and
+review it in the same session, exactly like a desktop frag. An unharvested
+device journal is silent coverage debt (the 2026-10-11
+gAbilityAnimationTable batch: 218 records sat invisible until a gate run
+resumed that session's suspend state — BRINGUP same date).
 
 **4 — Resolve to static.** `.venv/bin/python tools/resolve.py --trace
 logs/playthrough.csv [--load-state saves/<state>] [--frames N]` — it

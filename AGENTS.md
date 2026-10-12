@@ -63,7 +63,11 @@ included).
    The run's own output is the exit banner (`self_heal_coverage=…`) plus
    `recomp_master_misses_AFXE.toml.frag` / `recomp_coverage_AFXE.json` next
    to the exe.
-2. Review + **manually** merge seeds into `game.toml` (never auto-write).
+2. Review + **manually** merge seeds into `game.toml` (never auto-write);
+   **update `symbols/*.tsv` in the same session** — naming-only function
+   entries for every newly-identified function, data-symbol entries with
+   measured sizes for every newly-identified table (a skipped symbols
+   update is how a whole subsystem gets re-discovered from scratch).
 3. `.venv/bin/python tools/resolve.py --trace <csv> [--load-state <state>]`
    — strict-replays, seeds misses through a temp overlay, repeats until
    `self_heal_coverage=FULLY_STATIC`. Split mid-session reload traces with

@@ -73,6 +73,21 @@ runtime args can only arrive via an app-private `debug-args.txt` (adb
   phone UI with a SHA-1 pin; the launch BIOS is the bundled clean-room
   emibios staged into every payload (`bios/emibios_gba_bios.bin`,
   `biosRequired=false` — issue #17), so no BIOS is ever picked.
+- **After EVERY device playtest, harvest the miss journal** (same rule as
+  desktop `play.sh` sessions): the runtime writes
+  `logs/recomp_master_misses_AFXE.toml.frag` + `recomp_coverage_AFXE.json`
+  to the user-visible external dir
+  (`/sdcard/Android/data/org.gbarecomp.fftarecomp/files/logs/`) in
+  report-only mode — bridges are loud but tolerated. Pull it (`adb shell
+  cat …` or the gate's evidence dir), review, and merge genuine seeds
+  into `game.toml` **plus the same-session symbols check**
+  (`symbols/ffta_symbols.tsv` naming-only entries for new functions,
+  `symbols/ffta_data_symbols.tsv` entries with measured sizes for new
+  tables — see tests/README.md § the healing loop) — never auto-merged.
+  An unharvested device journal is silent coverage debt: the 2026-10-11
+  gAbilityAnimationTable batch (218 records, 137 handlers) sat invisible
+  in the app's log dir until a gate run happened to resume that
+  session's suspend state.
 - **Pad idle auto-hide**: the touch pad hides after 15 s of screen-wide
   touch inactivity (`touch_pad_idle_hide_seconds = 15` in `src/main.cpp`);
   any touch reveals it and then acts normally — a tap after the quiet
