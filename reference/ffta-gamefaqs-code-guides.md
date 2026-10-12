@@ -101,3 +101,29 @@ Protocol: savestate file bytes at `addr - 0x02000000 + 0xFC`
 Fresh corroboration of § 12: record +0x106 name-mode dispatch works on
 battle enemies too (mode 0 → random-name table; party slot0 mode 2 →
 gPartyNameBuffer).
+
+## Shop-cluster cells demoted to cheat-private scratch (2026-10-12, live TCP)
+
+Live session (windowed --tcp-observe 19870, store scene + world map,
+read-only probes): the "Shops Sell Everything" cells 0x020273C9/CC,
+0x0202745C/60 and the 0x02024434 "count" read **0 in the store and 0 on
+the world map**, except the 0x02024420 block, which is a **UI/cursor
+descriptor** (consumed by blinker fn 0x08017F04 / draw helper 0x08017E80
+via the 0x02002180 halfword table; scene-independent, byte-identical
+between scenes). Its 0x02024464 pointer (→ 0x0202B240 table) and
+0x08017E81 are part of that UI machinery, not shop stock.
+
+Decisive negative: a **ROM-wide byte-pattern scan for every candidate
+address as a literal-pool word finds ZERO code references** for all six
+shop cells + 0x02024A38 (0x02001F6C's single "hit" 0x080CEA58 is embedded
+data, not a pool). Conclusion: the cheat set allocates its own EWRAM
+buffer and its encrypted master lines (CBA 12+12) are a **runtime code
+patch** — the raw 8+4 lines are the data half of a code-injection cheat,
+not engine shop cells. The real shop-stock engine stays unlocated (new
+ground; reachable via miss-harvest disasm when a shop scene is played on
+a fresh state).
+
+Session-notes discipline: probes of a user-launched session must be
+read-only (`read_ewram` etc.); `quit` in observe mode closes the debug
+listener permanently without touching the game (runtime.cpp spawns the
+observe server in its own thread; the game survives).
