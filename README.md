@@ -23,6 +23,8 @@ no Nintendo BIOS dump is required.
 - Windowed and fullscreen desktop play
 - Validated widescreen view up to 448 px
 - Cartridge saves and save states
+- Fast-forward speed boost — hold `Tab` / right trigger, tap the `FF`
+  touch pill, or latch it from the menu; speed (2–10x) set in Assist Tools
 - Strict fully-static execution — zero interpreter fallback on any executed
   path, kept that way by a self-healing coverage loop
 - GBA screen simulation: `raw`, `unlit`, `frontlit`, `backlit`, `classic`
