@@ -291,10 +291,10 @@ class TsvGuardTests(unittest.TestCase):
         # names silently loses in symbol_map.cpp). Four overlaps are
         # tolerated, all deliberate and documented in the TSVs: the three
         # accessor entries (function seed doubles as table label —
-        # UnitStat/AbilityProp/AbilityMpCost, data-symbols § 3) and
-        # 0x085680DC (gNamePtrTableB starts where gTextRandomUnitNames
-        # lives — same bytes, two views).
-        allowed = {"0X080C7EA4", "0X080CCD50", "0X0812ED98", "0X085680DC"}
+        # UnitStat/AbilityProp/AbilityMpCost, data-symbols § 3). The fourth
+        # allowlist entry (0x085680DC gTextRandomUnitNames vs gNamePtrTableB,
+        # same bytes two views) was collapsed to one row 2026-10-12.
+        allowed = {"0X080C7EA4", "0X080CCD50", "0X0812ED98"}
         seen = {}
         for name in ("ffta_symbols", "ffta_data_symbols"):
             path = REPO / "symbols" / f"{name}.tsv"

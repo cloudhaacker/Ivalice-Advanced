@@ -4,7 +4,9 @@
 Runs: host unit tests (C++ + Python) -> recomp-ui runtime-UI tests (the
 patched settings overlay) -> patch validity -> device-free Android checks ->
 attract golden gate -> widescreen smoke (margin census / center-crop / stale
-guard, needs the local game.state1/state2 fixtures) -> strict route replays
+guard, needs the local game.state1/state2 fixtures) -> render-path cadence
+gate (60 Hz scheduler invariants + no every-other-frame consumer on the
+presented surfaces) -> strict route replays
 (user save-load repro, session G, session K, battle movement route B) against
 the frozen fixtures in saves/regress/.
 
@@ -160,6 +162,24 @@ def check_ws_smoke():
         # line carries the reason (fresh clones have no states by design).
         return False, line or "fixtures missing (saves/ws_fixtures)"
     return r.returncode == 0, line or f"exit {r.returncode}"
+
+
+def check_cadence():
+    """Render-path cadence gate (tools/cadence_probe.py): the
+    compute-at-60/read-at-30 detector. Steps one VBlank at a time on the
+    battle-overview pan fixture and asserts the 60 Hz scheduler
+    invariants (frame_step staging parities toggle per VBlank,
+    gVblankCounter +1/step) plus no every-other-frame consumer on the
+    presented surfaces (io/oam/pal/vram + display-reg shadow). Guards the
+    BRINGUP § 2026-10-12 (late 12) verdict: ffta's render path is 60 Hz
+    end to end (no 30 Hz read gate to patch)."""
+    r = run([sys.executable, "tools/cadence_probe.py", "--frames", "96",
+             "--strict", "--state", str(REPO / "game.state1")], timeout=600)
+    line = (r.stdout.strip().splitlines() or [""])[-1]
+    if r.returncode == 2:
+        # Missing local state fixture (fresh clones have none by design).
+        return False, line or "fixtures missing (game.state1)"
+    return r.returncode == 0 and "cadence_probe: PASS" in line, line
 
 
 def check_ui_tests():
@@ -416,6 +436,7 @@ CHECKS = {
     "desktop-accept-window": check_desktop_accept_window,
     "android-apk": check_android_apk,
     "release": check_release,
+    "cadence": check_cadence,
     "attract": check_attract,
     "hle-audit": check_hle_audit,
     "ws_smoke": check_ws_smoke,
@@ -437,7 +458,7 @@ OPTIONAL = {"android-apk", "release"}
 # on a fresh clone without the ROM (CI tier 1: unit-cpp, unit-py, ui-tests,
 # patches).
 NEEDS_EXE = {"attract", "hle-audit", "ws_smoke", "user_load", "route_G",
-             "route_K", "route_B"}
+             "route_K", "route_B", "cadence"}
 
 
 def main():

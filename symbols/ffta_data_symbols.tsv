@@ -83,7 +83,10 @@
 0x085644FC	rom	0x0	gLocationData
 0x08565880	rom	0x0	gTextClanNames
 0x08566A00	rom	0x0	gTextNames
-0x085680DC	rom	0x0	gTextRandomUnitNames
+# (2026-10-12: the §-1 row 0x085680DC gTextRandomUnitNames folded into § 12
+# gNamePtrTableB — same bytes, one label per address. Alias kept for
+# attribution: the table indexes the gTextNames blob above with the
+# name-mode-0 pool, i.e. the random/generic unit names.)
 # Section 6: JoKyR "Advanced Hacking Guide" (GameFAQs 2005) — record layout
 # live-verified on our build 2026-10-07, BASE CORRECTED 2026-10-11 (was
 # 0x02000000 from JoKyR/GameFAQs inheritance; that base was never independently
@@ -174,9 +177,12 @@
 # investigation — accessor 0x080CA1BC dispatches on record+0x106:
 # mode 1 -> gNamePtrTableA[field], mode 0 -> gNamePtrTableB[field],
 # else -> 0x02001F1C (gPartyNameBuffer). Entry counts verified by walking
-# until the first non-ROM-pointer word.)
+# until the first non-ROM-pointer word. RESIZED 2026-10-12: gNamePtrTableB
+# walks 725 name-text pointers (0xB54) before its terminator — the 0x800
+# here contradicted the stated walk; A's 107 re-confirmed. Alias:
+# gTextRandomUnitNames (ffta-decomp §-1 row folded here 2026-10-12).
 0x085516D0	rom	0x1AC	gNamePtrTableA
-0x085680DC	rom	0x800	gNamePtrTableB
+0x085680DC	rom	0xB54	gNamePtrTableB
 
 # Section 13: display-register shadow (2026-10-08; literal-verified DMA0
 # source of display_regs_commit — 39 halfwords = the register block

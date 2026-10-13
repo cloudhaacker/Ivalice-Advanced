@@ -5866,8 +5866,9 @@ slot buffers (sizes measured from the accessor strides), gVblankCounter
 (new facts folded into the § 23 note instead: rng_next runs once per
 frame_step at 0x08000476 and is the Phase-4 LGC 0x41C64E6D/12345 over
 gRngState). Pre-existing defect flagged, NOT touched: ffta_data_symbols.tsv
-lists 0x085680DC twice (gTextRandomUnitNames § 1 vs gNamePtrTableB § 21,
-likely the same table; from the 2026-10-12 TojiKitten import).
+lists 0x085680DC twice (gTextRandomUnitNames § 1 vs gNamePtrTableB § 12,
+2026-10-08 resolver tables — same bytes, two views; the TsvGuardTests
+allowlist already tolerated it). Resolved in the next entry.
 
 Acceptance (names-only): `tools/cycle.py` PASS — regen discovered 63134 /
 emitted 63134 (corpus unchanged), dispatch sanity OK, build OK, attract
@@ -5879,3 +5880,60 @@ change. Unnamed leftovers from this audit, for a later pass: the composer
 0x08003F10 (scene dispatcher; role partly pinned), and the seal/compose
 interleave question (the reset fill runs on the slot the composers write —
 order vs the compose call is unpinned).
+
+## 2026-10-12 (late 13) — Both audit threads closed: 0x085680DC dedup + cadence_probe as a gate
+
+**Thread 1 — the 0x085680DC double-listing, ruled.** The two rows were
+`gTextRandomUnitNames` (§ 1, ffta-decomp import 2026-10-07) and
+`gNamePtrTableB` (§ 12, the 2026-10-08 name-resolver tables — NOT the
+TojiKitten import as late 12 said; corrected there). TsvGuardTests already
+tolerated it in its 4-entry duplicate allowlist ("same bytes, two views").
+Ruling: **`gNamePtrTableB` wins, the decomp's name stays as an alias.**
+Evidence: the consumer `name_ptr_resolve` 0x080CA1BC dispatches on
+record+0x106 (mode 1 -> TableA[field], mode 0 -> TableB[field], else the
+party name buffer), so the A/B pair naming is load-bearing; § 12 has the
+measured size; the decomp's descriptive name is kept in the §-1 comment
+for attribution. Resolution: §-1 row folded into § 12 (alias comment
+left in place), allowlist 4 -> 3 (three deliberate cross-file accessor
+overlaps remain; any 4th duplicate now fails). **Size fix while there:**
+gNamePtrTableB walks **725 name-text pointers (0xB54)** before its
+terminator word — the recorded 0x800 (512) contradicted § 12's own stated
+walk method (re-measured here: entries 0..724 all point into the
+`gTextNames` blob 0x08566A00+, entry 725 = 0x8000ff01 terminator);
+gNamePtrTableA's 107 entries re-confirmed. Size row 0x800 -> 0xB54.
+
+**Thread 2 — `tools/cadence_probe.py` promoted to the harness + gate.**
+The /tmp audit scripts are now `tools/cadence_probe.py` (probe + sweep in
+one tool; auto-port so concurrent check.py suites cannot collide, temp
+save copy, GBARECOMP_* scrubbed) and are wired as check.py suite
+`cadence` (default run, NEEDS_EXE; docs in tools/README.md +
+tests/README.md § Verification). Gate: 60 Hz scheduler invariants (the
+frame_step staging parities toggle every VBlank and stay equal,
+gVblankCounter +1/step >= 95%) + `--strict` = zero every-other-frame
+consumers on the PRESENTED surfaces (io/oam/pal/vram + the
+gDisplayRegShadow window). State fixture `game.state1` (local-only, exit 2
+when missing — ws_smoke precedent).
+
+**Calibration findings (methodology amendment to late 12):** the weak
+"change ratio ~= 0.5" detector has two false-positive shapes —
+static-then-live transitions (hidden OAM entries (y=0xA8) appearing
+mid-run then updating EVERY frame land at 0.51 by window luck) and
+double-buffer slot writes. The real 30 Hz signature is STRICT ALTERNATION
+(gaps of exactly 2 between change steps), and even that needs scope:
+IWRAM staging alternates legitimately (slot A written on even steps,
+slot B on odd) — on game.state1 the gOamStageSlotA1 pair shows exactly
+that (73 bytes at 0x030002xx/0x030006xx, phases 35/38). So the gate reads
+the presented surfaces only, where every frame is a full rewrite; added
+the `io` region (the committed 0x04000008.. display regs) as the true
+presented signal. Late 12's "ZERO bytes at exact 0.5 cadence" was true
+under the weak detector; the refined detector confirms the same verdict
+on the presented surfaces and explains the staging alternation as the
+double buffer — the conclusion (no compute-at-60/read-at-30 split;
+nothing for a 15-byte patch to unlock) is unchanged.
+
+Acceptance: `check.py --only unit-py,cadence` ALL PASS (2/2 — TsvGuard
+allowlist tightened AND the new suite green, 1.2 s); `tools/cycle.py`
+PASS — regen 63134 discovered/emitted (corpus unchanged), dispatch
+sanity OK, build OK, attract gate PASS frames=1200 sha256
+1EF4C118A8438CADE6E5847DC6716A7A800D157A568DECB272F2F7052EF321C1.
+Commit after this entry.

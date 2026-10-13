@@ -1,0 +1,388 @@
+#!/usr/bin/env python3
+"""Per-frame update-cadence probe for the guest render path.
+
+Answers "does any guest state update every other frame?" — the
+compute-at-60/read-at-30 signature (an every-other-frame render consumer,
+the Mario Kart: Super Circuit affine-track shape, whose 60 fps mod exists
+precisely because that game renders its track every *other* frame) — plus
+the scheduler invariants of the render staging double buffer (symbols
+§ 23 / § 22): the frame_step parities must toggle every VBlank and
+gVblankCounter must advance one per step.
+
+The game is run headless on the --tcp debug surface, the pacer is paused,
+an optional savestate fixture is loaded, and the guest is then stepped
+EXACTLY one VBlank at a time (run_frames n=1) with a held keyinput,
+snapshotting the requested memory regions after every step. Per region it
+reports the per-address update-cadence histogram, every EVERY-OTHER-FRAME
+address (strictly alternating change steps — the real 30 Hz gate
+signature; a ~0.5 change ratio alone is not, since static-then-live
+transitions mimic it), and the parity/vblank rates. Alternation is judged
+per scope: on the PRESENTED surfaces (io/oam/pal/vram + the display-reg
+shadow, all fully rewritten every frame) it is a 30 Hz read gate and is
+gated; inside IWRAM staging it is the healthy double-buffer slot write
+(slot A on even steps, slot B on odd) and is only reported.
+
+Background: BRINGUP § 2026-10-12 (late 12) audited ffta's render path for
+that split and found none — parities toggle every VBlank, BG scroll moves
+0x12 px/frame monotonic during pans, and a full IWRAM/OAM/PAL/VRAM sweep
+found zero exact-half cadences. This tool keeps that verdict checkable.
+
+Usage:
+  tools/cadence_probe.py                       # gate: invariants + iwram/oam/pal
+  tools/cadence_probe.py --state game.state1 --keyinput right --frames 160
+  tools/cadence_probe.py --regions vram --frames 120
+  tools/cadence_probe.py --strict              # exact-half bytes FAIL the run
+  tools/cadence_probe.py --table --traces 8    # per-frame table + more traces
+  tools/cadence_probe.py --json /tmp/cad.json
+
+Exit: 0 pass, 1 cadence/invariant failure, 2 setup error.
+Gate rules: parities equal and toggling on >=95% of steps, gVblankCounter
++1 per step on >=95% of steps; with --strict, additionally zero
+every-other-frame addresses on the PRESENTED surfaces (io/oam/pal/vram +
+the display-reg shadow) — internal IWRAM staging alternation is the
+double-buffer slot write and is reported, not gated.
+"""
+import argparse
+import json
+import os
+import pathlib
+import shutil
+import socket
+import subprocess
+import sys
+import tempfile
+import time
+
+REPO = pathlib.Path(__file__).resolve().parent.parent
+EXE = REPO / "build/FFTARecomp"
+BIOS = REPO / "bios/emibios_gba_bios.bin"
+ROM = REPO / "game.gba"
+
+REGIONS = {
+    "iwram": (0x03000000, 32 * 1024, "read_iwram"),
+    "oam": (0x07000000, 1024, "read_oam"),
+    "pal": (0x05000000, 1024, "read_pal"),
+    "vram": (0x06000000, 96 * 1024, "read_vram"),
+    "io": (0x04000008, 0x4E, "read_io"),
+}
+# Presented surfaces: the hardware-visible output, fully rewritten every
+# frame (staging double buffers live in IWRAM and may legitimately
+# alternate slot writes; OAM/PAL/VRAM/IO do not). The IWRAM display-reg
+# shadow is presented-equivalent: DMA0 commits it verbatim per VBlank.
+PRESENTED = {"oam", "pal", "vram", "io"}
+SHADOW = (0x03000942, 0x03000942 + 0x4E)  # gDisplayRegShadow window
+PARITY_A = 0x03000028  # gOamStageParityA (symbols § 22)
+PARITY_B = 0x03002F58  # gOamStageParityB
+TICK = 0x03000E10      # vblank scheduler tick flag
+VBCOUNT = 0x03000EB4   # gVblankCounter (+1 per vblank_callback)
+
+# KEYINPUT is active-low; set_keyinput takes the raw register value.
+KEY_BITS = {"a": 0x001, "b": 0x002, "select": 0x004, "start": 0x008,
+            "right": 0x010, "left": 0x020, "up": 0x040, "down": 0x080,
+            "r": 0x100, "l": 0x200}
+
+
+def parse_keyinput(spec):
+    if not spec:
+        return 0x03FF
+    mask = 0
+    for tok in spec.split(","):
+        tok = tok.strip().lower()
+        if not tok:
+            continue
+        if tok in KEY_BITS:
+            mask |= KEY_BITS[tok]
+        else:
+            mask |= int(tok, 0) & 0x03FF
+    return 0x03FF & ~mask
+
+
+def find_free_port():
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()
+    return port
+
+
+def connect(port, deadline_s=45.0):
+    end = time.monotonic() + deadline_s
+    while time.monotonic() < end:
+        try:
+            s = socket.create_connection(("127.0.0.1", port), timeout=5)
+            s.settimeout(60)
+            return s
+        except OSError:
+            time.sleep(0.25)
+    raise SystemExit(2)
+
+
+def call(sock, cmd, **kw):
+    sock.sendall((json.dumps({"cmd": cmd, **kw}) + "\n").encode())
+    buf = b""
+    while b"\n" not in buf:
+        d = sock.recv(1 << 22)
+        if not d:
+            raise ConnectionError("peer closed")
+        buf += d
+    return json.loads(buf.split(b"\n")[0])
+
+
+def read_mem(sock, cmd, addr, ln):
+    r = call(sock, cmd, addr=addr, len=ln)
+    d = r.get("data") or "0x"
+    d = d[2:] if d.startswith("0x") else d
+    return bytes.fromhex(d)
+
+
+def clean_env():
+    return {k: v for k, v in os.environ.items()
+            if not k.startswith("GBARECOMP_")}
+
+
+def collect(sock, frames, keyinput, regions):
+    """Step one VBlank at a time; return per-step snapshots."""
+    out = []
+    for _ in range(frames):
+        fr = call(sock, "run_frames", n=1, keyinput=keyinput)
+        pa = read_mem(sock, "read_iwram", PARITY_A, 1)[0]
+        pb = read_mem(sock, "read_iwram", PARITY_B, 1)[0]
+        tick = int.from_bytes(read_mem(sock, "read_iwram", TICK, 2), "little")
+        vb = int.from_bytes(read_mem(sock, "read_iwram", VBCOUNT, 2), "little")
+        blobs = []
+        for name in regions:
+            base, size, cmd = REGIONS[name]
+            blobs.append(read_mem(sock, cmd, base, size))
+        out.append({"frame": fr.get("frame"), "pa": pa, "pb": pb,
+                    "tick": tick, "vb": vb, "blobs": blobs})
+    return out
+
+
+def analyze(regions, rows, trace_n):
+    """Per-region cadence stats + scheduler invariants.
+
+    The every-other-frame signature is STRICT ALTERNATION of change steps
+    (gaps of exactly 2 between consecutive change frames), not merely a
+    ~0.5 change ratio: a byte that is static for half the run and then
+    updates every frame also lands near 0.5 without being a 30 Hz gate.
+    """
+    n = len(rows) - 1
+    sched = {"steps": n, "parity_toggles": 0, "parity_disagreements": 0,
+             "vblank_steps": 0}
+    for a, b in zip(rows, rows[1:]):
+        sched["parity_toggles"] += int(a["pa"] != b["pa"])
+        sched["parity_disagreements"] += int(a["pa"] != a["pb"])
+        sched["vblank_steps"] += int(b["vb"] - a["vb"] == 1)
+    sched["parity_rate"] = sched["parity_toggles"] / max(1, n)
+    sched["vblank_rate"] = sched["vblank_steps"] / max(1, n)
+
+    out = {}
+    for ri, name in enumerate(regions):
+        base = REGIONS[name][0]
+        changed_at = {}
+        for si, (a, b) in enumerate(zip(rows, rows[1:])):
+            pa, pb = a["blobs"][ri], b["blobs"][ri]
+            if pa == pb:
+                continue
+            for off in range(len(pa)):
+                if pa[off] != pb[off]:
+                    changed_at.setdefault(off, []).append(si)
+        hist = {}
+        alt_steps = {}
+        near = []
+        for off, steps in changed_at.items():
+            cad = len(steps) / max(1, n)
+            hist[round(cad * 20) / 20] = hist.get(round(cad * 20) / 20, 0) + 1
+            gaps = [b - x for x, b in zip(steps, steps[1:])]
+            if len(steps) >= 4 and all(g == 2 for g in gaps):
+                alt_steps.setdefault(tuple(steps), []).append(base + off)
+            if abs(cad - 0.5) <= 0.1:
+                near.append((cad, base + off, ri, off))
+        # Every-other-frame signature = strictly alternating change steps
+        # (gaps of exactly 2). On a PRESENTED surface that is a 30 Hz gate;
+        # in IWRAM staging it is the normal double-buffer slot write (slot A
+        # written on even steps, slot B on odd ones) — report it, don't
+        # gate it.
+        alt = []
+        for steps, addrs in alt_steps.items():
+            for x in addrs:
+                alt.append((x, steps[0] % 2))
+        phases = {}
+        for _, ph in alt:
+            phases[ph] = phases.get(ph, 0) + 1
+
+        def presented(x):
+            return name in PRESENTED or (
+                name == "iwram" and SHADOW[0] <= x < SHADOW[1])
+
+        gate_addrs = sorted(f"{x:#010x}" for x, _ in alt if presented(x))
+        internal = sum(1 for x, _ in alt if not presented(x))
+        near.sort(key=lambda t: abs(t[0] - 0.5))
+        traces = []
+        for cad, addr, _, off in near[:trace_n]:
+            vals = [r["blobs"][ri][off] for r in rows[:80]]
+            traces.append({"addr": f"{addr:#010x}", "cadence": round(cad, 3),
+                           "values": [f"{v:02x}" for v in vals]})
+        out[name] = {"changed_bytes": len(changed_at),
+                     "histogram": {f"{k:.2f}": v for k, v in sorted(hist.items())},
+                     "alternating": gate_addrs,
+                     "internal_alternating": internal,
+                     "alternating_phases": {str(k): v for k, v in
+                                            sorted(phases.items())},
+                     "near_half": [{"addr": f"{a:#010x}", "cadence": round(c, 3)}
+                                   for c, a, _, _ in near[:20]],
+                     "traces": traces}
+    return sched, out
+
+
+def main():
+    ap = argparse.ArgumentParser(
+        description="guest render-path update-cadence probe "
+                    "(compute-at-60/read-at-30 detector)")
+    ap.add_argument("--frames", type=int, default=96,
+                    help="VBlanks to step and sample (default 96)")
+    ap.add_argument("--state", default="",
+                    help="savestate fixture to load first (e.g. game.state1); "
+                         "default: auto-use game.state1 when present")
+    ap.add_argument("--no-state", action="store_true",
+                    help="probe the boot path even if game.state1 exists")
+    ap.add_argument("--keyinput", default="",
+                    help="held buttons: names and/or hex mask, comma list "
+                         "(e.g. right, or right,a); default: none held")
+    ap.add_argument("--regions", default="io,iwram,oam,pal",
+                    help="comma list of " + ",".join(REGIONS) +
+                         " (vram is slow; opt in)")
+    ap.add_argument("--strict", action="store_true",
+                    help="every-other-frame addresses on the presented "
+                         "surfaces fail the run")
+    ap.add_argument("--table", action="store_true",
+                    help="print the per-frame scheduler/scroll table")
+    ap.add_argument("--traces", type=int, default=6,
+                    help="near-half value traces to print (default 6)")
+    ap.add_argument("--json", default="",
+                    help="also write the full report as JSON here")
+    ap.add_argument("--port", type=int, default=0,
+                    help="tcp debug port (default 0 = auto; fixed ports "
+                         "collide when check.py runs suites concurrently)")
+    a = ap.parse_args()
+
+    for p in (EXE, BIOS, ROM):
+        if not p.exists():
+            print(f"cadence_probe: missing {p.name} (build/ROM/BIOS required)")
+            return 2
+    regions = [r.strip() for r in a.regions.split(",") if r.strip()]
+    bad = [r for r in regions if r not in REGIONS]
+    if bad:
+        print(f"cadence_probe: unknown region(s): {', '.join(bad)}")
+        return 2
+    if a.frames < 8:
+        print("cadence_probe: --frames must be >= 8")
+        return 2
+
+    state = pathlib.Path(a.state) if a.state else (
+        REPO / "game.state1" if (REPO / "game.state1").exists() else None)
+    if a.no_state:
+        state = None
+    keyinput = parse_keyinput(a.keyinput)
+
+    tmp = pathlib.Path(tempfile.mkdtemp(prefix="ffta_cadence_"))
+    log = open(tmp / "run.log", "wb")
+    port = a.port or find_free_port()
+    proc = subprocess.Popen(
+        [str(EXE), "--bios", str(BIOS), "--rom", str(ROM),
+         "--save-path", str(tmp / "probe.sav"), "--tcp", str(port)],
+        cwd=str(REPO), env=clean_env(), stdout=log, stderr=subprocess.STDOUT,
+        start_new_session=True)
+    try:
+        try:
+            sock = connect(port)
+            call(sock, "pause")  # deterministic; the pacer must not run
+            call(sock, "run_frames", n=10)
+            loaded = "boot path"
+            if state is not None:
+                if not state.exists():
+                    print(f"cadence_probe: state fixture missing: {state}")
+                    return 2
+                r = call(sock, "savestate_load", path=str(state))
+                if not r.get("ok"):
+                    print(f"cadence_probe: savestate_load failed: {r}")
+                    return 2
+                loaded = state.name
+            call(sock, "run_frames", n=6, keyinput=keyinput)
+            rows = collect(sock, a.frames, keyinput, regions)
+            call(sock, "quit")
+        except (ConnectionError, OSError) as exc:
+            print(f"cadence_probe: tcp session failed ({exc}); "
+                  f"see {tmp / 'run.log'}")
+            return 2
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(5)
+        except Exception:
+            proc.kill()
+        log.close()
+
+    sched, stats = analyze(regions, rows, a.traces)
+
+    print(f"cadence_probe: {a.frames} steps on {loaded}, "
+          f"keyinput={a.keyinput or 'none'}, regions={','.join(regions)}")
+    if a.table:
+        print(f"{'frame':>6} {'pa':>2} {'pb':>2} {'vb':>6} {'dvb':>3}")
+        prev = None
+        for r in rows[:60]:
+            dvb = 0 if prev is None else r["vb"] - prev
+            print(f"{r['frame'] or 0:>6} {r['pa']:>2} {r['pb']:>2} "
+                  f"{r['vb']:>6} {dvb:>3}")
+            prev = r["vb"]
+    print(f"scheduler: parity toggle {sched['parity_rate']:.2f}/step, "
+          f"parity A==B disagreements {sched['parity_disagreements']}, "
+          f"vblank +1/step {sched['vblank_rate']:.2f}")
+    for name in regions:
+        s = stats[name]
+        print(f"== {name}: {s['changed_bytes']} bytes changed")
+        print("   histogram (cadence: bytes): "
+              + " ".join(f"{k}:{v}" for k, v in s["histogram"].items()))
+        if s["alternating"]:
+            print(f"   EVERY-OTHER-FRAME on presented surface: "
+                  f"{', '.join(s['alternating'])}")
+        else:
+            print("   every-other-frame on presented surface: none")
+        if s["internal_alternating"]:
+            print(f"   internal staging alternation (double buffer): "
+                  f"{s['internal_alternating']} bytes, phases "
+                  f"{s['alternating_phases']}")
+        for t in s["traces"]:
+            print(f"   trace {t['addr']} cad={t['cadence']:.2f}: "
+                  + " ".join(t["values"]))
+
+    if a.json:
+        pathlib.Path(a.json).write_text(json.dumps(
+            {"loaded": loaded, "frames": a.frames, "keyinput": a.keyinput,
+             "scheduler": sched, "regions": stats}, indent=2))
+
+    failures = []
+    if sched["parity_disagreements"]:
+        failures.append("parity A!=B on some step")
+    if sched["parity_rate"] < 0.95:
+        failures.append(f"parity toggles only {sched['parity_rate']:.2f}/step "
+                        "(frame_step not every VBlank?)")
+    if sched["vblank_rate"] < 0.95:
+        failures.append(f"vblank +1/step only {sched['vblank_rate']:.2f}")
+    if a.strict:
+        for name in regions:
+            if stats[name]["alternating"]:
+                failures.append(f"{name}: every-other-frame cadence at "
+                                + ", ".join(stats[name]["alternating"]))
+
+    if failures:
+        print("cadence_probe: FAIL — " + "; ".join(failures))
+        return 1
+    half = sum(len(stats[n]["alternating"]) for n in regions)
+    print(f"cadence_probe: PASS — scheduler 60 Hz, {half} every-other-frame "
+          f"address(es)" + ("" if a.strict else " (--strict gates them)"))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

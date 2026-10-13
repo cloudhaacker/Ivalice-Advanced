@@ -349,6 +349,21 @@ GBARECOMP_INPUT_REPLAY=logs/playthrough.csv ./build/FFTARecomp ...` — expect
   replays the same fixtures under LLE (the scrub passes that one var
   through) — all 24 frames must be pixel-identical to the HLE default run,
   which is how the HLE flip was validated on stable content.
+- **Render-path cadence gate:** `tools/cadence_probe.py` (suite `cadence`)
+  — the compute-at-60/read-at-30 detector. Pauses the pacer on a headless
+  `--tcp` session, loads the battle-overview pan fixture (`game.state1`,
+  local-only; exit 2 when missing), steps exactly one VBlank at a time with
+  Right held, and snapshots IO/IWRAM/OAM/PAL (+VRAM on request) per step.
+  Asserts the 60 Hz scheduler invariants (the frame_step staging parities
+  toggle every VBlank and stay equal, `gVblankCounter` +1/step) and that no
+  presented surface (io/oam/pal/vram + the display-reg shadow) has an
+  every-other-frame consumer (strictly alternating change steps). IWRAM
+  staging alternation is the double-buffer slot write — reported as the
+  two-phase signature, never gated. `--strict` gates the sweep;
+  `--regions`, `--traces`, `--json` for RE work. Verdict this guards:
+  BRINGUP § 2026-10-12 (late 12) — ffta's render path is 60 Hz end to end,
+  there is no every-other-frame read gate to patch (unlike MKSC's affine
+  track).
 - **Full gate:** `.venv/bin/python tools/check.py` — host unit tests
   (C++ + Python), patch validity, the device-free Android checks, the
   attract gate, the widescreen smoke,
