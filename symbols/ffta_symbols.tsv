@@ -2,8 +2,8 @@
 # Section 1: charlie-troy/ffta-decomp data/functions.json — 173 byte-matched
 # thumb functions; their repo pins our rom sha1 4ac05441... Names are facts
 # from that repo (attribution; no license there — reference only).
-0x08001CD0	thumb	sub_08001CD0
-0x08001CE0	thumb	sub_08001CE0
+0x08001CD0	thumb	oam_stage_parity_a_toggle
+0x08001CE0	thumb	oam_stage_parity_b_toggle
 0x080023D0	thumb	sub_080023D0
 0x0800395C	thumb	sub_0800395C
 0x08005BB0	thumb	sub_08005BB0
@@ -631,3 +631,34 @@
 0x080CA078	thumb	party_level_scan
 0x080CF7F4	thumb	clan_record_scan
 0x081426B8	thumb	signed_divide
+# Section 23: render-path staging + frame-parity audit (2026-10-12; the
+# compute-at-60/read-at-30 hunt — BRINGUP § 2026-10-12). The OAM staging
+# double buffer: composers write 8-byte entries into the parity-indexed
+# slots (accessor cluster 0x08001BBC-0x08001CC6), frame_step (0x08000460)
+# resets the slot and toggles BOTH parities, and the vblank side applies
+# the OPPOSITE slot (1^parity) into OAM. oam_stage_apply 0x080012BC:
+# fills 0x07000000 with 0x80 hidden-entry records (attr pattern
+# 0x00F800A8/0x00000000), then per composed entry kicks DMA0 (SAD = slot
+# entry, DAD = 0x07000000 + entry offset, CNT = 0x84000000|words, busy
+# poll). oam_stage_reset_a/b 0x08001194/0x08001244 (frame_step's first two
+# calls): fill count 8-byte hidden records from the parity slot base, zero
+# both family counts (0x03002C50/0x03000020 resp. 0x03002F60/0x03003168),
+# and call the fn ptr at ROM table 0x0836D4B8 through bx_r2_veneer
+# (0x0814224C, already named § 21) on the +0x20/+0x100 companion buffers —
+# mechanics verified, the interleave with the composers is unpinned.
+# vblank_task_service 0x08000438 (called from vblank_callback):
+# vblank_task_runner(0x03000880, 4) + (0x030027E0, 1). rng_next
+# (0x08002804, already named § 21) runs once per frame_step (call at
+# 0x08000476); body confirmed as the Phase-4 LGC: gRngState =
+# gRngState*0x41C64E6D + 12345, returns (state<<1)>>17. Cadence verdict
+# (live probe, game.state1 battle-overview pan, Right held, 1 vblank/step
+# + per-address sweep of IWRAM/OAM/PAL/VRAM): parities toggle 0.99/step,
+# BG2HOFS/BG3HOFS 0x12/frame monotonic, ZERO bytes at exact 0.5 cadence —
+# the render path is 60 Hz end to end; there is NO every-other-frame read
+# gate to patch (contrast MKSC, whose affine track is rendered every other
+# frame until its 60 fps patch). The parity toggles renamed the Section-1
+# sub_08001CD0/sub_08001CE0 rows in place.
+0x080012BC	thumb	oam_stage_apply
+0x08001194	thumb	oam_stage_reset_a
+0x08001244	thumb	oam_stage_reset_b
+0x08000438	thumb	vblank_task_service

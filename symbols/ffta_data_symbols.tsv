@@ -4,10 +4,10 @@
 0x020020D0	ewram	0x0	gUnk_020020D0
 0x02009000	ewram	0x0	gUnk_02009000
 0x020091A0	ewram	0x0	gUnk_020091A0
-0x03000028	iwram	0x0	gUnk_03000028
+0x03000028	iwram	0x1	gOamStageParityA
 0x03000890	iwram	0x0	gUnk_03000890
 0x03002710	iwram	0x0	gUnk_03002710
-0x03002F58	iwram	0x0	gUnk_03002F58
+0x03002F58	iwram	0x1	gOamStageParityB
 0x030034B0	iwram	0x0	gRngState
 0x030034B8	iwram	0x0	gUnk_030034B8
 0x0814BB24	rom	0x0	gMPlayTable
@@ -367,3 +367,32 @@
 0x08520080	rom	0x76C	gItemAbilitySets
 0x08526680	rom	0xBC4	gTextItemNames
 0x0854D1A0	rom	0x40B0	gBattleFormations
+# Section 22: render staging double buffers (2026-10-12; render-path
+# cadence audit — BRINGUP § 2026-10-12). Renames the Section-1 placeholders
+# gUnk_03000028/gUnk_03002F58 -> gOamStageParityA/B (rows updated in place;
+# u8, ldrb/strb). The parities index two buffer families per parity; sizes
+# are measured from the accessor strides (slot = base + parity*stride:
+# 3*<<7 = 0x180, <<0xa = 0x400, <<8 = 0x100, <<7 = 0x80 at 0x08001BBC-0x08001CC6)
+# and each count table is one word per parity. Staged entries are 8-byte OAM
+# records (the reset fill at 0x08001194 plants the hidden-entry pattern
+# 0x00F800A8/0x00000000); oam_stage_apply (0x080012BC) DMA-copies the
+# composed entries of the OPPOSITE slot (1^parity) into OAM. Which sprite
+# class maps to which family is unpinned. gVblankCounter: u16 +1 per
+# vblank_callback (strh at 0x080004E4-0x4F0); read at 0x0813AFA8. The
+# gBg*RegPtrs descriptors are {BGxCNT, BGxHOFS, BGxVOFS} pointers into
+# gDisplayRegShadow (init 0x0800323C: shadow+0/8/A for BG0, +4/0x10/0x12
+# for BG2); consumer semantics beyond the pointer triple unpinned; the
+# BG1/BG3 descriptors are unlocated (0x03000990, just past the shadow,
+# takes the BG3 triple at 0x08003282 but has ~300 other refs - role
+# ambiguous, deliberately unnamed).
+0x03002C50	iwram	0x8	gOamStageCountA0
+0x03002C58	iwram	0x300	gOamStageSlotA0
+0x03000020	iwram	0x8	gOamStageCountA1
+0x03000030	iwram	0x800	gOamStageSlotA1
+0x03002F60	iwram	0x8	gOamStageCountB0
+0x03002F68	iwram	0x200	gOamStageSlotB0
+0x03003168	iwram	0x8	gOamStageCountB1
+0x03003170	iwram	0x100	gOamStageSlotB1
+0x03000EB4	iwram	0x2	gVblankCounter
+0x03000E60	iwram	0x18	gBg0RegPtrs
+0x03000E80	iwram	0x18	gBg2RegPtrs

@@ -5797,3 +5797,85 @@ byte-identical, attract hash unchanged) as in the issue-#20 session.
 Landing: not upstreamed. `recomp-ui` upstream master is 39 commits ahead and
 still has no scroll handling, so the patch is not subsumed; the README
 records it as a `mstan/recomp-ui` PR candidate alongside the `gbarecomp` set.
+
+## 2026-10-12 (late 12) — Render-path cadence audit: NO compute-at-60/read-at-30 split (symbols § 23)
+
+Question (issue #9 follow-up, MKSC route): does ffta's render path have a
+compute-at-60/read-at-30 split — state computed at 60 Hz but only read into
+the presented frame every other frame (the MKSC shape: its track-60fps
+manifest says "Updates the affine-rendered track every frame instead of
+every other frame") — so that a ~15-byte ROM patch would unlock 60 fps
+presentation? **No. The render path is 60 Hz end to end; there is no
+every-other-frame read gate to patch.**
+
+Render path (disasm, all thumb, tools/disarm.py):
+
+- Scheduler: `crt0_frame_loop` 0x08000364 -> gate 0x08003A2 -> spin on the
+  tick flag 0x03000E10 (set unconditionally at the tail of `vblank_callback`
+  0x080004B0) -> `game tick` 0x08003F10 + `frame_step` 0x08000460. One
+  iteration per VBlank = 60 Hz.
+- OAM staging double buffer: composers write 8-byte entries into
+  parity-indexed slots (accessor cluster 0x08001BBC-0x08001CC6:
+  `table[parity]` get/set + `base + parity*stride` base getters; strides
+  0x180/0x400/0x100/0x80 -> the four gOamStage* families). `frame_step`
+  resets the slot (`oam_stage_reset_a/b` 0x08001194/0x08001244: plant
+  `count` hidden OAM records 0x00F800A8/0x00000000, zero the counts, thunk
+  call through `bx_r2_veneer`) and toggles BOTH parities
+  (0x08001CD0/0x08001CE0, eor #1). `oam_stage_apply` 0x080012BC (per
+  VBlank) fills 0x07000000 with 0x80 hidden records then DMA-copies the
+  composed entries of the OPPOSITE slot (1^parity) into OAM (SAD = slot
+  entry, DAD = OAM+off, CNT = 0x84000000|words, busy poll).
+- Display regs: the BG scroll is written straight into `gDisplayRegShadow`
+  0x03000942 through per-BG {cnt,hofs,vofs} pointer descriptors
+  (0x03000E60/0x03000E80, init 0x0800323C) and committed by
+  `display_regs_commit` 0x08000718 (Section 13) every VBlank — gated only
+  by `if tick != 0 -> skip` at 0x080004C8-0x080004D4 (lag guard; the OAM
+  apply right after it is unconditional).
+
+Evidence (live, `--tcp` run_frames n=1 + reads; game.state1 battle-overview
+pan with Right held; probe scripts /tmp/opencode/cadence_probe.py +
+cadence_sweep.py — candidate tools/ additions):
+
+- parities toggle 0.99/step and gVblankCounter 0x03000EB4 +1/step: every
+  stage runs once per VBlank.
+- BG2HOFS/BG3HOFS move 0x12 px per frame, MONOTONIC every frame (no
+  A,B,A,B double-write); BG0VOFS drifts on a sub-pixel accumulator
+  (1,2,2,2,1... steps = 60 Hz fixed-point animation).
+- Per-address update-cadence sweep of IWRAM+OAM+PAL (159 steps) and VRAM
+  (129 steps): ZERO bytes at exact 0.5 cadence. Near-0.5 hits are eased
+  motion with pauses (value traces show runs, not alternation).
+
+Conclusion for issue #9: option 3 (game-side render-rate decoupling) is
+moot — ffta already presents at 60 fps; interpolation/blending (options
+1/2) remain the levers. The only conditional on the present path is the
+lag guard above (cmp+bne, 4 bytes at 0x080004CC) — unconditional commit is
+a 4-byte NOP patch, only meaningful under main-loop lag, and it is NOT a
+30 Hz split.
+
+Symbols (names-only): ffta_symbols.tsv § 23 — `oam_stage_apply`,
+`oam_stage_reset_a/b`, `vblank_task_service` 0x08000438 (runs the priority
+4/1 queues: vblank_task_runner(0x03000880,4)+(0x030027E0,1)); the parity
+toggles renamed the § 1 `sub_08001CD0`/`sub_08001CE0` rows in place.
+ffta_data_symbols.tsv § 22 — gOamStageParityA/B (renames of the § 1
+gUnk_03000028/gUnk_03002F58 placeholders), the eight gOamStage* count/
+slot buffers (sizes measured from the accessor strides), gVblankCounter
+0x03000EB4 (u16, +1/vblank; read 0x0813AFA8), gBg0RegPtrs/gBg2RegPtrs
+(BG1/BG3 unlocated; 0x03000990 takes the BG3 triple at 0x08003282 but has
+~300 refs — deliberately unnamed). Suggested duplicates dropped:
+`rand_next`/`bx_r2_veneer` already exist as `rng_next`/`bx_r2_veneer` § 21
+(new facts folded into the § 23 note instead: rng_next runs once per
+frame_step at 0x08000476 and is the Phase-4 LGC 0x41C64E6D/12345 over
+gRngState). Pre-existing defect flagged, NOT touched: ffta_data_symbols.tsv
+lists 0x085680DC twice (gTextRandomUnitNames § 1 vs gNamePtrTableB § 21,
+likely the same table; from the 2026-10-12 TojiKitten import).
+
+Acceptance (names-only): `tools/cycle.py` PASS — regen discovered 63134 /
+emitted 63134 (corpus unchanged), dispatch sanity OK, build OK, attract
+gate PASS frames=1200 sha256 1EF4C118A8438CADE6E5847DC6716A7A800D157A568DECB272F2F7052EF321C1
+(byte-exact vs pin). `check.py` not re-run (names cannot change codegen;
+cycle covers regen+build+attract) — run with the next behavior-touching
+change. Unnamed leftovers from this audit, for a later pass: the composer
+0x08001CF0 (8-arg, parity-indexed writes; body unpinned), the game tick
+0x08003F10 (scene dispatcher; role partly pinned), and the seal/compose
+interleave question (the reset fill runs on the slot the composers write —
+order vs the compose call is unpinned).
