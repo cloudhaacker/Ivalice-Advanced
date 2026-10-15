@@ -5937,3 +5937,795 @@ PASS — regen 63134 discovered/emitted (corpus unchanged), dispatch
 sanity OK, build OK, attract gate PASS frames=1200 sha256
 1EF4C118A8438CADE6E5847DC6716A7A800D157A568DECB272F2F7052EF321C1.
 Commit after this entry.
+
+---
+
+## 2026-10-14 — Raylib backend: runtime test, CI headless, and one RAB layering fix
+
+Not a recompilation milestone: the recomp corpus, attract golden and all
+route fixtures are untouched (`1EF4C118A8438CADE6E5847DC6716A7A800D157A568DECB272F2F7052EF321C1`
+re-verified after every step below). Recorded because two changes reach outside the
+experimental tree: a new CI job, and a library split in `gbarecomp-raylib/`.
+
+### Finding 1 — a default launch would have opened an invisible window
+
+`RaylibBackend::open()` contained `if (!rp.linear_filter) SetWindowState(FLAG_WINDOW_HIDDEN);`.
+`linear_filter` **defaults to false** (`window_open_params.h`: `linear_filter && !sharp_filter`,
+default `false`) and the SDL backend has no equivalent. Nothing ever cleared the flag, so
+the default raylib window was hidden forever — every other signal reporting "running".
+`set_fullscreen(0)` ("windowed") had the same inversion: it set `FLAG_WINDOW_HIDDEN` instead of
+clearing `FLAG_FULLSCREEN_MODE`. Both fixed; both now pinned by an assertion.
+
+It compiled clean, passed the 48/48 completeness guard, and passed 20 unit tests. Only
+*running* it found this — which is the argument for the rest of this entry.
+
+### Finding 2 — the single-instance audio invariant is now observed end-to-end
+
+`audio_slot.h` (previous entry's work) makes the raylib callback's single-owner rule
+*enforced* rather than documented. The integration test closes the loop by calling `close()`
+then **reopening**: that succeeds only if `close()` released the slot, otherwise the second
+open would silently come back without audio.
+
+### Finding 3 — raylib 6 `LoadImageFromTexture` mislabels the stride
+
+For a texture created from `PIXELFORMAT_UNCOMPRESSED_R8G8B8`, raylib 6 returns
+`PIXELFORMAT_UNCOMPRESSED_R8G8B8A8` (4 bytes/px) while the buffer is **3** bytes/px.
+Measured: stride 4 → 114744 mismatches, stride 3 → 0. Trusting the format label reads the
+image as a skewed gradient with no error raised. Not live today (nothing reads back from the
+GPU — `copy_presented_frame()` serves the CPU staging buffer), but it is a landmine for the
+first thing that does. Pinned in the test, which tries both strides and requires an exact
+match on at least one so it survives raylib fixing the label.
+
+### Change 1 — RAB extracted from `host_window.cpp` into `gbarecomp_audio_drc`
+
+**Why:** the integration test could not run in CI. `generated/` is gitignored, so
+`GAME_GENERATED_SOURCES` globs to nothing on a fresh checkout and anything linking
+`gbarecomp_runtime` fails on undefined `kDispatchTable`. The test linked `gbarecomp_runtime`
+only to reach `host_make_backend()`. `nm` on `raylib_backend.cpp.o` showed the real
+dependency set is raylib + `rab_*` + pthread; the only thing pulling it into the runtime was
+that RAB's implementation was compiled *inside* `host_window.cpp` via
+`#define RECOMP_AUDIO_DRC_IMPL`.
+
+`recomp_audio_drc.h` documents itself as "define RECOMP_AUDIO_DRC_IMPL in exactly ONE
+translation unit" — that unit was the *windowing* file, which inverted the layering for a
+component that is pure DSP (resampler + ring buffer, zero SDL, zero raylib). Now
+`src/runtime/recomp_audio_drc.cpp` → `gbarecomp_audio_drc`, linked by both
+`gbarecomp_runtime` and `gbarecomp_raylib_backend`. `host_window.cpp` still includes the
+header, it just no longer implements it.
+
+The test now builds `RaylibBackend` directly and links raylib +
+`gbarecomp_raylib_backend` only (verified: no SDL in `ldd`, zero `kDispatchTable`
+references). Factory wiring stays covered by ctest `backend_select` in both app configs.
+
+### Change 2 — new `raylib-backend` CI job
+
+`ubuntu-latest` has no GPU, no `/dev/dri` and no X server. The gate
+(`tools/check.py --only raylib-compile`) now finds a display itself: real display preferred,
+else `xvfb-run -a` with `LIBGL_ALWAYS_SOFTWARE=1` / `GALLIUM_DRIVER=llvmpipe` /
+`MESA_GL_VERSION_OVERRIDE=4.5`, else skip. llvmpipe advertises GL 4.5/4.6 vs raylib's 3.3
+core requirement. The job installs `xvfb` + `libgl1-mesa-dri` and runs that gate.
+
+**Inert while `gbarecomp-raylib/` is untracked** — gate reports
+`skipped (no gbarecomp-raylib tree)`, exit 0, so it cannot redden the build before that tree
+is committed. raylib has no true windowless mode (discussion raysan5/raylib#4857 segfaults
+without `InitWindow`); a virtual X server is the cheapest context.
+
+### Acceptance
+
+`check.py --fast --only unit-cpp,unit-py,android-static,raylib-backend` 4/4 PASS;
+`check.py --only raylib-compile` PASS (real display) and correctly SKIPs with `DISPLAY`
+unset and no `xvfb-run`; `ctest` SDL 3/3, raylib 4/4; framework raylib-related 15/15;
+`tests/python/test_tools.py` 50 tests OK; attract golden unchanged. `patches` still fails
+pre-existing (untouched submodules). The 625 `host_window.cpp` errors in the standalone
+framework build are the known pre-existing `GBARECOMP_RUNTIME_UI`-off breakage — confirmed
+unrelated (all `TouchPoint`/`kTau`, zero `rab`/`audio_drc`).
+
+Validated locally on real AMD hardware **and** on llvmpipe software GL. Not reproducible
+here: Xvfb itself (no root), so whether a virtual X server satisfies GLFW is the one thing
+first exercised on CI.
+
+**Remaining:** `RaylibBackend::pump()` is still a stub (keys/gamepad/touch → `Events`), so
+"renders" is proven and "plays" is not.
+
+---
+
+## 2026-10-14 (late) — Raylib pump(): the last big stub is real input
+
+`RaylibBackend::pump()` returned `Events{}`. It now polls keyboard / gamepad /
+mouse gyro / lifecycle through the pure `input_translate.h` (snapshot in, Events
+out), with `raylib_keymap.h` porting the ini vocabulary to raylib KeyCodes.
+`load_input_config()` reads the same `keybinds.ini` / `config.ini` files as the
+SDL backend (including SDL-scancode-integer assist keys, converted). Touch reads
+as disabled until the pad is wired.
+
+New pure headers + tests: `input_translate.h` (47 assertions) and
+`raylib_keymap.h` (96 assertions), both display-free, both in the framework
+`ctest -R` set (now 17/17 with the rest). `raylib_backend.cpp` carries a
+`static_assert(kRayKey* == KEY_*)` per letter/digit/function key, so a raylib
+renumber breaks the build, not the player's controls. Integration test gains a
+live pump section (idle baseline, no re-fire on second pump, `pump_events`
+agreement, real-files config load incl. missing/null dirs).
+
+Two findings, both verified rather than assumed:
+
+1. **SDL gamepad path is inverted** (`host_window.cpp:3216`,
+   `keys &= ~gamepad_to_keyinput(pad)` where the callee returns active-low).
+   Pad connected + nothing pressed yields keyinput `0x0000` — every button
+   mashed. Never showed: attract uses no pad, playtesters use keyboard. The
+   raylib backend implements the corrected form; the SDL line is LEFT
+   UNTOUCHED pending a decision since fixing it changes shipped behaviour.
+   Negative control (introducing the inversion into the raylib backend) fails
+   the live baseline exactly as predicted, via this machine's phantom pads.
+
+2. **GLFW phantom pads**: keyboards' consumer-control interfaces, the ELAN
+   touchscreen and the Synaptics touchpad all present as raylib "gamepads"
+   (4 reported, no physical pad). The test asserts presence *agreement*, not
+   absence; the all-released baseline proves no phantom button reads held.
+
+Acceptance: framework 17/17, raylib-config ctest 4/4, SDL-config ctest 3/3,
+`check.py --fast` 4/4, `raylib-compile` PASS (real display), llvmpipe PASS,
+attract golden `1EF4C118A8438CADE6E5847DC6716A7A800D157A568DECB272F2F7052EF321C1`
+unchanged (SDL path untouched). `patches` still fails pre-existing.
+
+Remaining raylib stubs: touch-pad wiring, `interp_display_tick()`, host chrome
+(pad/FPS readout), sharp-prescale pre-pass.
+
+---
+
+## 2026-10-14 (evening) — Raylib stubs wrapped up: zero TODOs left
+
+`raylib_backend.cpp` had 8 `TODO(raylib)` markers; it now has none. Four
+slices, each validated before the next. The attract golden never moved
+(`1EF4C118A8438CADE6E5847DC6716A7A800D157A568DECB272F2F7052EF321C1`,
+re-verified at the end); the SDL backend's behaviour is unchanged except
+thin-wrapper rewiring onto shared headers (same code, new home).
+
+### Slice A — LUT, surfaces, foreground, FPS, haptics
+
+`color_lut.cpp` extracted to `gbarecomp_color_lut` and linked by both the
+runtime and the raylib backend (removed from runtime sources to avoid
+duplicate symbols). Grading proven both directions live (frontlit alters
+bytes, Raw identical). `set_surface_size` recreates the streaming texture
+(readback follows dims). `wait_for_foreground` is true-when-open on desktop.
+FPS readout ported with `GetTime()`. `haptic_pulse` rides the gamepad motors
+(no SDL_Haptic equivalent; no pad = documented no-op).
+
+### Slice B — interp pacing + sharp prescale
+
+`interp_display_tick` ports the SDL body against Impl state with the shared
+`interp_pacing.h` policy (vsync assumed from VSYNC_HINT, period probed +
+re-probed every 600 ticks). Sharp prescale via `RenderTexture2D` with the
+Y-flip the storage convention requires, falling back to direct on any
+failure; linear-clears-sharp mirrors SDL. Engagement verified arithmetically
+(700x500 -> factor 2, 480x320 -> 0) with the test resizing to exactly the
+engaging size.
+
+### Slice C — touch input (two more shared headers, one more lib)
+
+`touch_pad_layout.h` (geometry + predicates, extracted verbatim, SDL rewired
+via thin wrappers, 31 test assertions) and `touch_pad_draw.h` (draw functions
+as layout+held+density values, 11 assertions against a recording fake).
+`touch_input.cpp` extracted to `gbarecomp_touch_input` so the lean test links
+TouchHub without the ROM runtime. Pump polls raylib points + emulated-mouse
+finger through the SDL-identical pad/toggle/routed life cycle, with
+`[Touch]` rewrite semantics matching SDL (verified converging to one
+section). `open()` mirrors touch defaults + safe-insets env.
+
+### Slice D — chrome
+
+`RaylibOverlay` maps every `HostOverlay` primitive to raylib shapes
+(text unsupported, matching `SdlOverlay`; rounded-rect outline thickness and
+arc direction documented as approximate). `present()` gates hook+pad+toggle
+like `render_host_layers` minus the menu. The user overlay hook is proven by
+a counting overlay (once per present, silent after removal).
+
+### Deliberately not ported
+
+Engine long-press ring + settings menu (no runtime-UI plumbing yet; actions
+drained, never lost), frame blending (SDL-renderer-side), Android vibrator
+(desktop haptics use pad motors).
+
+### Acceptance
+
+Framework 22/22 (incl. 3 new suites), raylib-config ctest 4/4 (present suite
+now 73 assertions), SDL-config ctest 3/3, `check.py --fast` 4/4,
+`raylib-compile` PASS (real display), llvmpipe PASS, `test_tools.py` OK.
+`patches` still fails pre-existing. `gbarecomp-raylib/` still untracked, so
+the new CI job stays inertly green.
+
+---
+
+## 2026-10-14 (night) — Dead keyboard on first manual run: two causes, backend exonerated
+
+Symptom: raylib build boots, plays the intro, audio works, but no keyboard
+response. The backend was cleared first: a live probe driving the REAL
+`RaylibBackend` (open/pump/present) while ydotool held X at the uinput layer
+showed `IsKeyDown` true and `keyinput` clearing to `0x3FE` with a clean
+release — polling and translation both correct (user focused the window
+manually after xdotool was rejected in favour of ydotool).
+
+Real causes:
+
+1. **Spaced modifier names.** Default `keybinds.ini` ships
+   `select = Right Shift` (the file's own header documents SDL spellings).
+   `raylib_key_from_name()` accepted `rshift` but not `Right Shift`, so
+   Select was unbound for every default user. Fixed + pinned by whole-file
+   regression tests using the exact shipped lines (verified failing without
+   the fix). The ini appliers are now pure (`apply_keybinds_line` etc. in
+   `raylib_keymap.h`), `load_input_config()` only reads files.
+2. **Exe-anchored config.** `runtime.cpp` loads `keybinds.ini` from
+   `argv[0]`'s dir. The user's Start=D/Select=Q rebinds live in
+   `build/keybinds.ini`; `build-raylib-only/` had no ini files, so D/Q were
+   unbound there by construction. Copied `build/keybinds.ini` into
+   `build-raylib-only/` for the manual test. Not a code bug — documenting
+   the one-copy-per-build-dir rule instead.
+
+Acceptance: keymap suite green (incl. new whole-file + D/Q cases),
+`check.py --fast` 4/4, `raylib-compile` PASS, present suite 73/73.
+
+---
+
+## 2026-10-14 (night 2) — Manual run passes; plan updated; stub-build break fixed
+
+The user confirmed keyboard input works after the D/Q + spaced-names fixes,
+so the first manual desktop run is fully PASS (boot, intro, audio, input).
+`RAYLIB_PLAN.md` updated to record it: new progress-table row, validation
+counts corrected to the verified **22/22** framework suites (the file still
+said 15/15 with a stale suite list), a "First manual desktop run" subsection,
+a learned-habit entry, and the stale "remaining work is the backend itself"
+sentence replaced (remaining: menu plumbing + Android + two open decisions).
+
+The plan update's verification pass caught a REAL break: `raylib_backend.cpp`
+no longer compiled in the stub (SDL-config) build. Slice B/C helpers were
+declared inside `#if defined(GBARECOMP_USE_RAYLIB)` but called from
+unguarded setters, and pure `pad_layout_inputs` read guarded `last_layout`.
+Fixed by making declarations unconditional (all signatures raylib-free),
+guarding bodies internally, and moving plain-data members out of the guard.
+Both trees rebuild; ctest 3/3 + 4/4; attract golden unchanged.
+
+Acceptance: framework 22/22, ctest SDL 3/3 + raylib 4/4, `check.py --fast`
+4/4, `raylib-compile` PASS, attract
+`1EF4C118A8438CADE6E5847DC6716A7A800D157A568DECB272F2F7052EF321C1`.
+
+---
+
+## 2026-10-14 (night 3) — raylib-compile gate now builds the stub half too
+
+Closed the hole the plan update caught: `check_raylib_compile` configures a
+second dir (`build-raylib-stub/`, `-DGBARECOMP_USE_RAYLIB=OFF`, its own dir
+because a build dir caches its flag set) and builds `gbarecomp_raylib_backend`
+there. The stub half is offline-cheap (no raylib fetch with the flag off).
+
+Verified both directions: green on the fixed tree (24.1s cold with fresh stub
+configure, 2.8s cached), and FAIL with tonight's exact `no declaration
+matches` error when the `#if` guard is reintroduced around the declarations
+(5.1s), header byte-identical after restore. `build-raylib-stub/` is covered
+by the existing `build-*/` gitignore line.
+
+Acceptance: `check.py --only raylib-compile` ALL PASS (1/1) with the new
+`backend compiles (ON+OFF)` message.
+
+---
+
+## 2026-10-14 (night 4) — SDL gamepad inversion fixed
+
+One-line fix in `host_window.cpp`: `keys &= ~gamepad_to_keyinput(pad)` became
+`keys &= gamepad_to_keyinput(pad)`. The helper returns active-low; the `~`
+double-inverted, so a connected-but-idle pad produced keyinput `0x0000`
+(everything mashed). Comment at the site explains the polarity and why the
+touch line below keeps its `~` (active-high bits — correct). The stale
+"left untouched pending a decision" NOTE in `raylib_backend.cpp` updated to
+past tense. No other call sites use the helper, so this was the only instance.
+
+Why it hid, verified live: an SDL probe on this machine finds exactly one
+joystick (Keychron System Control) with `SDL_IsGameController` false, so the
+branch never executes here — it needs a real standard-mapped pad. No live
+behavioral verification possible; verified by helper contract + arithmetic +
+symmetry with the keyboard merge and raylib usage instead.
+
+Acceptance: SDL-tree + raylib-tree FFTARecomp build clean, attract golden
+unchanged (`1EF4C118...F321C1` — expected, attract uses no pad), gamepad_map
++ assist_pad tests pass, `check.py --fast` 4/4, `raylib-compile` (ON+OFF)
+PASS. No behavior change for keyboard players; pad players go from
+everything-mashed to working input.
+
+---
+
+## 2026-10-14 (night 5) — Gamepad fix verified live; two corrections to the story
+
+`keyprobe.py` over the TCP debug surface, 8BitDo Lite 2 in X-input mode,
+fixed SDL build: idle `0x3ff`, pad A `0x3fe`, A+Right `0x3ee`, release back
+to `0x3ff` with no stuck bits. Buttons, combinations, and release all exact
+— the inversion fix is proven against real hardware.
+
+Two corrections to the night-4 entry. First, the pinned `gbarecomp/` tree
+has different, older gamepad code with no `gamepad_to_keyinput` call at all
+(grep confirms): the bug lived ONLY in the raylib tree's refactored helper
+path, and an early before/after run against the pinned build was discarded
+as an invalid comparison. Second, the pad's wrong mode pegs its stick hard
+up-left at rest (raw SDL: constant -32768/-32768 on both axes, zero buttons)
+— correctly reported as Left+Up, not a backend fault; X-input mode is clean.
+A surprise benefit of that wrong mode: the invented "SDL-style inversion"
+negative control would have failed the live baseline even harder there.
+
+Also learned this session: `pkill -f` with a bracket trick still matches your
+own shell when the literal text contains the unbracketed substring elsewhere
+(`./build-raylib/FFTARecomp` matched `[F]FTARecomp`). Record game PIDs via
+`$!` to a file and kill that instead. And: keyprobe prints only on CHANGE,
+so a quiet 60s window means no input, not a dead monitor. And SDL builds go
+native Wayland here while raylib/GLFW picks X11 — force `SDL_VIDEODRIVER=x11`
+when both windows must appear in the same place.
+
+---
+
+## 2026-10-14 (night 6) — Raylib pad selection + mapping quirk, both proven live
+
+First live gamepad test on the raylib build was dead while the same pad
+worked on SDL minutes earlier. Two stacked causes, both diagnosed by probe
+before any code changed:
+
+1. **Slot cap.** raylib caps MAX_GAMEPADS at 4; GLFW enumerates every evdev
+   joystick, so phantoms (Keychron consumer-control, 2x ELAN, Synaptics)
+   take raylib slots 0-3 while the real 8BitDo sits at GLFW slot 4,
+   unreachable through any raylib call. Fixed by selecting through GLFW's
+   standard-mapping layer (first present standard pad of 16 slots, read via
+   glfwGetGamepadState), desktop-only, reached via forward declarations.
+   Rumble uses the selected pad's raylib slot when visible, else skips.
+2. **DB disagreement.** Same physical pad: SDL maps `a:b0` (positional),
+   GLFW maps `a:b1` (Nintendo labels) — both strings read live. Fixed by a
+   GUID-scoped A/B+X/Y quirk (`glfw_pad_quirks.h`, pure, unit-tested with
+   synthetic indices); SDL backend stays the reference.
+
+Live proof over TCP keyprobe: SOUTH `0x3fe` (A, matching SDL), EAST `0x3fd`
+(B), Start works, clean releases, game exited gracefully
+(FULLY_STATIC, 2430 frames). A wrong-mode stick peg (constant -32768 both
+axes) is correctly reported as held Left+Up, not masked — X-input mode reads
+clean. Docs: plan gained "Pad selection" + "Pad mapping" sections and got
+its eaten "Found live" header restored; quirk rule documented (exact GUID +
+both strings + live two-stack probe, or it doesn't go in).
+
+Acceptance: framework 22/22, ctest raylib 4/4 + SDL 3/3, `check.py --fast`
+4/4, `raylib-compile` (ON+OFF) PASS, attract golden unchanged. Present suite
+73/73 (gamepad agreement check now asserts against the GLFW standard layer,
+passing padless in CI and with the 8BitDo here).
+
+## 2026-10-14 (night 7) — First real shader: LCD subpixel grid on raylib
+
+The spin-off goal ("what SDL2 could not do") gets its first working proof:
+a screen-space LCD shader on the raylib backend, ported from Shadertoy
+"LCD Post Effect" (ldBfDd, via its Godot port — Shadertoy itself 403s all
+fetches). RGB subpixel mask, period 3 screen pixels (blue/red/green column
+order kept verbatim), even rows flattened dark, levels pb=0.4 / sclV=0.25.
+
+Design (seam untouched, still 48/48 both backends):
+
+1. **Pure helper** `gbarecomp-raylib/src/runtime/lcd_shader.h` (22nd):
+   `lcd_pixel_mask()` CPU mirror (floor-mod, negative coords wrap),
+   env/config resolution, and the GLSL330 source as `kLcdShaderFragment330`.
+   Pinned by `lcd_shader_tests` (new CMake target, same pattern as the rest).
+2. **Backend methods are non-virtual** `RaylibBackend::set_lcd_shader()` /
+   `lcd_shader_enabled()` — SDL has no equivalent, so no seam widening and
+   the completeness guard never sees them. `set_` returns path liveness
+   (compiled + ready), which is what the integration test asserts.
+3. **Enablement**: `GBARECOMP_LCD_SHADER` env (set wins incl. "0", same
+   convention as touch) over `config.ini [video] lcd_shader`. Default off,
+   so attract/verify never see it. Env read at `open()`; config at
+   `load_input_config()` (skipped when env overrode).
+4. **Present placement**: only the final screen blit runs under
+   `BeginShaderMode` — never the sharp prescale pass, never the overlay.
+   `LoadShaderFromMemory(nullptr, frag)` takes raylib's default vertex
+   shader. Effect is GPU-side only: `copy_presented_frame()` serves the
+   pre-shader staging buffer, so readback is exact with the shader on.
+5. **Android**: logged skip (GLSL330 has no GLES spelling yet), stays off.
+
+Two implementation traps, both the known kind: file-local load/unload
+helpers naming the private `Impl` (same error the sharp-target helpers
+taught us — made them private statics), and open() initially persisting a
+stale flag across reopen (now resets to off when env is unset; config
+re-enables at load).
+
+Proof: pure tests PASS; `raylib_present` 73 → 89 (shaded presents exact,
+program reused, config enables, env beats config both ways, guarded by
+`unsetenv` for hermeticity); stub (OFF) build compiles; guard 48/48;
+`check.py --fast` 4/4 + `raylib-compile` PASS. Windowed game boot with
+`GBARECOMP_LCD_SHADER=1`: `Fragment shader compiled successfully` +
+`LCD shader enabled`, no errors. Try it: `GBARECOMP_LCD_SHADER=1
+tools/play.sh`. Public-repo note: the GLSL is an original ~15-line port of
+the reference's documented logic (attributed above), not verbatim third-party
+text.
+
+## 2026-10-14 (night 7, cont.) — LCD brightness: gain rejected, floors lifted
+
+Live feedback: the faithful reference levels read as dim, and the first fix
+(pre-mask boost 1.5x) blew out the image. Mechanism: the full-strength
+subpixel multiplies the texel by 1.0, so any gain clips every texel channel
+above 1/gain into flat white — large clipped areas, detail gone. Reverted to
+unity gain (the uniform + `[video] lcd_boost` tuning stay, default 1.0) and
+lifted the mask floors instead: base 0.4 -> 0.6, dark row 0.25 -> 0.5
+(~0.62x throughput, grid contrast intact). Highlights are identical to
+unshaded by construction — nothing in the path can exceed the source. Lesson
+recorded in `lcd_shader.h`: gain clips, floors do not. Pure suite stays 50
+assertions (values updated), present suite 89/89, live boot compiles clean.
+
+## 2026-10-14 (night 7, cont. 2) — LCD research: luma-scaled grid adopted
+
+Researched the community's LCD shaders (libretro handheld set, Retro Game
+Corps guidance) for anything genuinely smarter than the Shadertoy triad.
+Verdict: one adoption, three honest rejections.
+
+Adopted — **luma-scaled grid** from simpletex_lcd's GRID_BIAS (jdgleaver, via
+zfast_lcd lineage): `mask = mix(vec3(1.0), mask, luma)`. A uniform grid
+darkens everything equally, which is the root of the dim complaint; scaling
+by luminosity keeps black black, uncrushes shadows, and keeps the full grid
+on whites. Two GLSL lines, pure mirror `lcd_bias_mask()` + 6 new assertions
+(suite now 56). Live boot compiles clean.
+
+Rejected: (1) `gba-color` 3x3 correction matrix — our CPU color-LUT grading
+already owns panel color; applying both would double-correct. (2)
+motionblur/interframe blending — needs previous-frame history, i.e. the
+deferred frame-blend track, not a shader tweak. (3) The polynomial
+rounded-cell grid (`y = 48*(x^4 - 8/3*x^6)`) — prettier cells, but a bigger
+look change needing a source-size uniform, and it drops the RGB triads the
+user already approved. Concept credited in `lcd_shader.h`; no code taken, so
+no license surface (simpletex/zfast are GPL — noted here so a future port
+knows to check).
+
+## 2026-10-14 (night 7, cont. 3) — Luma bias reverted: wrong for RGB triads
+
+Live feedback (saturated colors look wrong) killed the GRID_BIAS adoption the
+same session it landed. Mechanism, now understood: mixing the mask toward
+white by luminosity unmasks hues differentially — pure red (luma 0.30) loses
+70% of its grid, pure blue (0.11) loses ~90% — while white keeps all of it,
+so primaries render flat and bright against fully-gridded whites. The
+technique is sound for the monochrome cell grids it was designed for
+(simpletex_lcd/zfast); applied to a chromatic triad mask it becomes a
+hue-dependent desaturation. Lesson recorded in the plan: luma tricks assume
+an achromatic mask. Reverted to the uniform mask + lifted floors (0.6/0.5);
+helper, GLSL lines and 6 assertions removed (suite back to 50), present
+89/89, live boot clean. No stacking issue on the CPU side — game.toml already
+runs `screen = "raw"` passthrough, verified before touching anything.
+
+## 2026-10-14 (night 8) — Frame blending on raylib: reuse, not rewrite
+
+Option #1 built: the raylib backend blends CPU-side with the SAME
+`recomp_frame_blend.c` the SDL backend compiles in — no new math, no new
+seam methods, no menu work (the Graphics/LCD ghosting toggle drives the
+pre-existing flag). The old "stays SDL-renderer-side" deferral misread the
+primitive: it needs cached memory, never a renderer, and present() already
+holds the frame on the CPU.
+
+Wiring: `GBARECOMP_HAVE_FRAME_BLEND` CMake gate on the backend target
+(absent in the framework standalone build → flag recorded, never applied);
+grade → blend → upload mirrored verbatim incl. fresh/hold/reset/close
+lifecycle. One documented divergence: raylib honors the flags without
+GBARECOMP_RUNTIME_UI (its existing interp convention); both agree wherever
+the menu exists. Readback serves blended bytes like SDL — correcting an
+earlier pre-blend suggestion that would have split the backends' observable
+behavior.
+
+Proof: upstream `frame_blend_test.c` covers the primitive (not duplicated);
+`raylib_present` 89 → 101 with exact per-byte averages from the documented
+formula (advance, interp-reset, hold-against-unchanged-history, explicit
+reset, off-uploads-raw); ON+OFF builds compile, guard 48/48.
+
+## 2026-10-14 (night 9) — Bayer dither for BGR555 banding
+
+Background gradients contour because the source is BGR555 (32 levels/channel)
+and no later stage can un-bake that. Added Bayer-4 ordered dither pre-mask in
+screen space (±½ LSB at strength 1.0): position-based, no texture or history,
+feeding the framebuffer's own 8-bit quantization. `uniform float dither` +
+`[video] lcd_dither` (0–2, default on), same pattern as boost. Pure suite
+50 → 66 (16-permutation proven by the exact -0.5 cell sum, which confirms the
+compact `fract(x·0.5 + y²·0.75)` form is a true Bayer-16); present 101/101;
+live boot compiles clean. Two asserts were fixed on paper before running
+(cell (0,0) steps down, the 16-level mean is 7.5/16 not 0.5) — caught by working the math first.
+
+## 2026-10-14 (night 10) — LCD settings like the frame options (54-method seam)
+
+The non-virtual LCD design held exactly until it met its first real consumer
+— and settings are one: flags/menu drive through HostWindow, which only
+speaks the seam. So the six LCD methods joined the interface (48 → 54, both
+backends enforced, SDL explicit no-ops), with the render path staying fully
+backend-private as before. The "don't widen" rule was always scoped to
+test-only methods; a settings surface is the bar it named.
+
+Surface: `--lcd-shader 0|1`, `--lcd-boost 1.0..3.0`, `--lcd-dither 0.0..2.0`
+(validated fail-loud, registered in kCliValueFlags). Precedence, pinned and
+documented: set GBARECOMP_LCD_SHADER pins on/off above all callers (in-tree
+env-beats-CLI convention, cf. GBARECOMP_SCREEN); otherwise CLI (tracked via
+given-bools, applied after load_input_config) beats config.ini [video],
+which beats defaults. Menu rows deferred to the rlImGui work — but the six
+methods they will drive already exist, and rows showing on SDL would be
+no-ops, so gating belongs with that phase too.
+
+Along the way the dither split landed (standalone pass, grid-independent —
+each knob now works alone) and one void/bool seam mismatch was caught by the
+compiler on first build. Proof: pure 68, present 105 (incl. dither-only and
+combined passes), backend seam + closed-window tests extended, ON+OFF+stub
+builds compile, guard 54/54, live boot via FLAGS (no env):
+both programs compiled, both enabled. Gates re-run at the end.
+
+## 2026-10-14 (night 11) — Dither amplitude: match the source step, not the display
+
+Live report (dither 0 vs 2 indistinguishable) diagnosed as wrong amplitude,
+not broken plumbing (the pass compiled and ran — boot log proved it).
+Textbook Bayer amplitude (±½ display LSB) assumes gradients quantized at
+display depth; BGR555 bands are ~8 LSB apart, so ±1 LSB of noise cannot move
+them. Strength 1.0 now means ±4 LSB (half a source step): bands re-average
+into intermediate tones, flat fields pay visible grain — the inherent 15-bit
+trade, tunable 0..2. Lesson recorded at the site. Pure + present suites
+green, no plumbing changes needed.
+
+## 2026-10-14 (night 12) — Deband via visual regression, not eyeballing
+
+Built the vertical adaptive deband (own program, own `--lcd-deband` 0..16
+setting default off, seam 54 → 56) and proved it with screenshot measurement
+on a synthetic gradient card through the real backend (new /tmp harness,
+TakeScreenshot-free synchronous readback — ImageMagick `import` cannot
+capture under XWayland; raylib's own screenshot path can).
+
+Findings, all measured: dither confirmed running (diff std 4.6, max exactly
+±8); the LCD dark rows stripe mid-grey by 30 LSB (the likely "horizontal
+banding" — softened to 0.7 separately); ±1 deband taps net zero across edge
+neighborhoods (identical big-row numbers exposed the metric, not the code —
+wider-window energy showed the truth); ±2 melts 22% with patch boundaries
+bit-identical, so ±2 shipped. Also caught pre-run: a post-target
+double-release thrash in the A→B chain ordering, and a void/bool seam
+mismatch the compiler found first. Lesson repeated twice tonight: measure
+pixels, not previews (downscaled screenshots alias fine stripes into wide
+bands that do not exist).
+
+## 2026-10-14 (night 12) — Raylib backend runs on Android (rungs 1–2)
+
+Rung 1: `gbarecomp_raylib_backend` cross-compiles standalone for arm64-v8a
+(API 34, NDK 28.2) against real raylib-Android (PLATFORM=Android, GLES2) —
+all `__ANDROID__` guards hold, only third-party sign-compare warnings.
+
+Rung 2: minimal NativeActivity spike APK (`/tmp/opencode/raytest-android/`,
+uncommitted) drives the real backend on the Poco X3 Pro: open → present →
+pump → close, **12/12 PASS** over logcat. Drawable 480x320 live, CPU readback
+exact, idle pump all-released with no re-fire, `gamepad_connected=0` (no pad
+attached — correct). One FAIL on first run was a wrong test expectation, not
+a backend bug: `lcd_shader_enabled()` reports request-intent (pinned by
+desktop tests), so it reads true on Android while present's `flag && ready`
+gate keeps the frame unshaded — the exact frame after requesting all three
+shaders is the real decline proof. Gradle notes: needs CMake ≥3.25 (SDK's
+3.30.3), Java 21 for Gradle 8.11 (system Java 27 breaks it), `sdk.dir` via
+local.properties. Next rungs: audio (RAB over OpenSL ES), GLES shader
+variants, then the full-game APK shell (NativeActivity, not SDLActivity).
+
+## 2026-10-14 (night 12) — Touch fast-forward pill (hold-to-run)
+
+The touch pad had no fast-forward: Tab / right-trigger hold had no touch
+equivalent. Added an FF pill left of Select in the shared geometry
+(`touch_pad_layout.h`: `PadLayout::ff` + `pad_ff_at`, both orientations),
+teal-at-rest/gold-while-held drawing (`touch_pad_draw.h`), and hold tracking
+in both backends' touch paths (down inside opens an ff track, move
+re-queries so sliding off releases, up erases; `ev.fast_forward` ORs the
+held flag). First cut was tap-to-toggle — wrong: FF is level-triggered
+("held = uncap") everywhere else (Tab, Assist trigger), so the pill holds
+too. No seam change (all internal); pure layout/draw asserts; both app
+builds compile, present/closed suites pass, attract golden unchanged.
+
+## 2026-10-14 (night 12) — Android audio flows; reopen doesn't (platform law)
+
+Rung 3 PASS: with audio enabled, the spike opened the real device (AAudio
+stream OK, routed `audio-ull-playback` to speaker at 48 kHz), pushed 440 Hz
+sine at emu cadence for 600 frames (~10 s, progress in logcat), stayed
+alive, and closed cleanly ("Window closed successfully").
+
+The reopen probe then hung inside the second InitWindow — root-caused in
+raylib's `rcore_android.c`, not the backend: `InitPlatform()` blocks in
+`while (!CORE.Window.ready)` for `APP_CMD_INIT_WINDOW`, and the OS never
+re-sends it because the activity's window was never destroyed. `ClosePlatform`
+only resets global state when `destroyRequested != 0` (process death). So
+Close→Init in one activity is unsupported by raylib itself; desktop reopen
+works because GLFW re-creates real windows. Design consequence for the
+full-game APK: on Android the window is OS-owned — backgrounding must go
+through the TERM_WINDOW/INIT_WINDOW rebind path (which raylib handles
+internally), never `CloseWindow`; that is the `wait_for_foreground`
+suspend/resume seam's job. Underrun tuning still awaits a human listener.
+
+## 2026-10-14 (night 12) — GLSL ES shaders engage on device (rung 4)
+
+Wrote `#version 100` twins of all three passes (same formulas; highp, not
+mediump — the Bayer hash squares gl_FragCoord, overflowing mediump's 65504),
+selected per-platform, and dropped the Android decline stubs. Pure asserts
+pin the dialect markers + selector; desktop behavior unchanged (330 served,
+all suites green, 56/56).
+
+Device proof needed a calibration first: the first screenshot round looked
+impossible (LCD brighter than off). Tags settled it — one combo tag per
+capture (B channel 10/20/30) proved each shot holds its own combo, and the
+a/b pairs are bit-identical: off is clean (alt-row 0.53), LCD shows the
+triad signature (blue 20→15 through the mask, rows 2.45), all-passes adds
+dither see-saw (rows 3.89). The early confusion was Adreno triple-buffering:
+captures lag ~2 presents, so 2 settles read pre-combo pixels and 4 read the
+right ones. Spike 15/15, CPU readback exact throughout. Lesson for the
+device gate: tag every capture and settle ≥4.
+
+## 2026-10-14 — raylib-Android intro lag (visuals + audio)
+
+- Symptom (device, Poco X3 Pro): severe lag in the intro, picture and music.
+- Isolations: `--lcd-dither 0` via debug-args changed nothing (dither
+  fullscreen pass ruled out); gfxinfo is blind to NativeActivity surfaces
+  (0 frames reported) so it can't measure this app.
+- Device facts: 120Hz panel, 1440x3200 drawable. Present path stacked three
+  clocks: GBA frame pacer (59.7Hz, owns timing on SDL) + raylib
+  `SetTargetFPS(60)` + vsync block in `EndDrawing`, plus `FLAG_MSAA_4X_HINT`
+  (pure resolve cost at 1440p — we blit textured quads, nothing to AA).
+- Fix (raylib backend only, Android-scoped): no MSAA on Android, no
+  `SetTargetFPS` on Android (pacer owns timing, as on SDL); vsync stays
+  (tearing guard + caps uncapped presents). Desktop untouched.
+- Measurement: permanent quiet Android present-rate log (1 line/~10s,
+  same precedent as the interp-tick log) — rate≈59-60 = pacing fixed,
+  rate<55 = look at GPU/emulation next. Awaiting device numbers.
+
+- Present-rate with MSAA/target-limiter removed (dither still off): 52-57/s
+  vs 59.7 target, wandering per 10s window — a beat pattern, not a steady
+  offset. Root cause identified: SDL runs vsync-OFF by default (pacer owns
+  timing, `SDL_RENDERER_PRESENTVSYNC` only with `GBARECOMP_VSYNC=1`), while
+  raylib-Android forced `FLAG_VSYNC_HINT` on — every present stacked up to
+  one 120Hz period onto the pacer wait. Fix: no VSYNC hint on Android
+  (pacer-only, tearing exposure = SDL default). Rebuilding to verify.
+
+- Vsync-off verification: pacer-only presents run 58-59.5/s (target 59.7)
+  with occasional 53-56 dips under intro load, vs 52-57 wandering before.
+  User confirms intro feels much better (visuals + audio together, as
+  predicted — one clock fixed both). Residual dips are next only if they
+  bother: candidates are intro-content spikes or GPU headroom with dither
+  re-enabled (debug-args still carries `--lcd-dither 0` from the isolation
+  test — restore default and re-check rate before calling this done).
+
+## 2026-10-14 — intro-lag fix validation + test locks (nightcap)
+
+- Full ctest sweep in build-raylib-only: 100% (66/66). Excluded:
+  bios_smoke (pre-existing link break — undefined ImFontAtlas symbol from
+  imgui_impl_sdlrenderer2, untouched by tonight's diff; fails identically
+  without it).
+- New locks, both in gbarecomp-raylib/tests (the raylib tree):
+  - idle_elision_tests (tests/recompile/idle_elision_test.cpp): synthetic
+    Thumb ROM; branchy vblank-spin shape nominates its back-edge probe,
+    call-in-body does not, straight-line still does. Negative-controlled:
+    reverted classifier fails the branchy case (exit 1), restored passes.
+  - audio_drc_tests += DC wraparound: 8000-level signal lapped 4x past ring
+    capacity holds level (worst-dev/mean-dev bounds, zero underruns) —
+    locks the mask==modulo ring-index change.
+- Fix placement (raylib-version requirement): classifier + RAB live in both
+  copies in sync (submodule side re-exported to
+  tools/patches/gbarecomp-local.patch, replay matches); pacer phase-lock,
+  -Bsymbolic-functions, swap-interval/MSAA/limiter are raylib-side-only
+  (Android-gated or backend code — no submodule counterpart). Desktop-only
+  gates all green (attract golden bit-identical 1EF4C11...,
+  check.py 17/18 with only the pre-existing patches-suite items red).
+- Device state: intro "seems better" per user with phase-lock; widescreen
+  (--view-width 384) + full shader stack verified on-device by screenshot
+  (LCD/deband/dither all compile on Adreno; W3 wrap visible on title as
+  designed). Remaining device thread on next session: tick/yield fast paths
+  if residual hitches still bother (profile-ranked, behavior-identical
+  candidates), else bank the win.
+
+## 2026-10-14 — Window-backend V2 Phase 0: baseline, S1 headless proof, S2 inventory
+
+- Plan: `.opencode/WINDOW_BACKEND_V2_PLAN.md` (agent-executable; the freeze is
+  the next, sign-off-gated step). No production code changed; the S1 harness
+  lives outside the port tree at `spike-s1/` (untracked).
+- Baseline gates recorded (all four build dirs; exact invocations now in the
+  plan §0):
+  - builds: `build`, `build-raylib`, `build-raylib-only`, `build-raylib-stub`
+    all EXIT 0 (FFTARecomp / `gbarecomp_raylib_backend`).
+  - ctest: `build-raylib-only` 66/66; `build-raylib` 65/65 **after** building
+    the framework test binaries by name — they are `EXCLUDE_FROM_ALL` (the
+    FFTA tree adds the engine with `EXCLUDE_FROM_ALL`), so a plain
+    `cmake --build` never produces them and ctest reports "Not Run".
+  - attract golden byte-identical in both configs:
+    `1EF4C118A8438CADE6E5847DC6716A7A800D157A568DECB272F2F7052EF321C1`.
+  - `check.py --fast` green; `ws_check` green; completeness guard 56/56 both
+    backends; `raylib-compile` green.
+  - `patches` suite red (expected pre-freeze — replays local patches against
+    worktree-modified submodules). `bios_smoke` link break confirmed
+    pre-existing in both port-tree configs (ImGui/ImFontAtlas symbols).
+  - `build/` cache still points at the `gbarecomp/` submodule (stale vs the
+    tree's auto-preference): its port-era tests cannot compile there
+    (`test_host_window_closed.cpp` includes `host_backend_factory.h`, which
+    only exists in the port tree). Recorded, not chased; Phase 4/7 retires
+    that config.
+- **Spike S1 (headless) — PASS.** Route found: raylib 6's CMake already
+  supports it — `-DPLATFORM=Memory` (`cmake/LibraryConfigurations.cmake` maps
+  it to `PLATFORM_MEMORY` + `GRAPHICS_API_OPENGL_SOFTWARE`, exported PUBLIC
+  by `CompileDefinitions.cmake`). No injected defines, no second build tree.
+  Harness `spike-s1/` compiles the real `RaylibBackend` + its four tree
+  sources (+ a truthful no-gamepad GLFW stub — Memory has no input system)
+  and runs `open → present → readback → close → reopen` with `DISPLAY` and
+  `WAYLAND_DISPLAY` unset: **16/16 assertions, exit 0**. The red state it
+  closes: `ffta_raylib_present_tests` prints `SKIP (no DISPLAY/...)`.
+  Findings: `LoadImageFromScreen()` returns 480x320 RGBA top-down frames that
+  change with the presented frame; `swGetColorBuffer()` returns **BGRA**
+  (`SW_FRAMEBUFFER_OUTPUT_BGRA`) — use LoadImageFromScreen in tests; shader
+  loads fail softly under rlsw ("dither shader failed to compile", no crash —
+  matches plan §4.1); audio still initialized via PulseAudio here (runners
+  without a sound server must tolerate no-audio); monitor-refresh queries warn
+  (interp falls back to 16.67ms). GLFW gamepad calls are the one link
+  dependency Memory cannot satisfy — concrete input for Phase 2's `RaylibApi`
+  seam.
+- **Spike S2 (SDL footprint) — done.** `host_window.cpp` 3,774 lines: SDL
+  region 46-3232 (≈84.4%, delete), shared `HostWindow` delegation 3233-3774
+  (≈542 lines, survive) — after deletion ~550-600 lines. Three shared globals
+  live inside the SDL block (`g_haptic_window`, `g_settings_menu_requested`;
+  already duplicated for non-SDL). Deletion checklist includes CMake discovery
+  (62-167), `GBARECOMP_STATIC_RELEASE` SDL FATAL_ERROR, `SDL2.dll` staging,
+  the factory branch, and `service_events`'s lone `SDL_PumpEvents`
+  (3653-3654). Largest non-mechanical loss: runtime-UI/settings menu
+  (ImGui-SDL renderer) — Phase 3's generic menu is the replacement.
+- **Patch roll-in verified (Appendix C):** no MISSING rows. `arm-recomp-core`
+  live diff +14/−2, sha1 `ed2557660d21276945ea5e1b373a89eda505eff2`, 2 hunks,
+  reverse-applies clean, byte-identical to the recorded patch. Corrections:
+  `gbarecomp-local.patch` has 28 diff headers (plan said 27); recomp-ui
+  staleness is 8 dirty files (plan said 6; patch touches 4);
+  `bios_dispatch_table.cpp` lives at `src/runtime/generated_bios/` (5333
+  `{0x` rows, sha1 `5d272a8555540aced7557fd83ced6549076b9f8f`, identical to
+  the dev tree). Gotcha: the global git config (`diff.external=difft`)
+  corrupts bare `git diff` — freeze tooling must pass `--no-ext-diff
+  --no-color`.
+- Carry-forward findings (not Phase 0 blockers): `ffta_host_window_tests` and
+  the framework `host_window_closed_test.cpp` call `w.resize_driven_view()`,
+  which no header declares — Release builds compile because `NDEBUG` erases
+  `assert(...)`, so that test is vacuous in Release (give it explicit
+  `check()`s when ported); `host_gamepad_supports_rumble()` is declared but
+  never defined (latent link break); raylib `gamepad_supports_rumble()`
+  returns false while `gamepad_rumble()` works (V2 `Caps` fixes);
+  `pump_events`/`pump` base defaults disagree.
+- Next: freeze (rename → `gbarecompx/`, submodule re-materialization, CI
+  workflow in the first commit, `git init` + push) — **awaits explicit
+  sign-off** per the plan's stop list.
+
+## 2026-10-14 — Phase 0 freeze executed: gbarecompx is its own repo
+
+- Tree renamed `gbarecomp-raylib/` → `gbarecompx/`; FFTA references updated
+  (root CMakeLists auto-preference, `tools/check.py`,
+  `tools/check_raylib_backend_complete.py`, `.github/workflows/ci.yml`,
+  `tests/README.md`, `spike-s1/`, in-tree `gbarecompx:` message prefixes).
+  `gbarecompx/` is gitignored here until the Phase 7 repoint.
+- Submodules re-materialized as independent clones from the public upstreams
+  at the pinned SHAs (they previously resolved into FFTA's module store via
+  gitfiles): arm-recomp-core `15fc7b7` (+ local patch), rbengine `2a03e73`,
+  recomp-net `c58f125`, SDL `8e28503` (transitional; retired in Phase 4f).
+  The arm-recomp-core diff (+14/−2, sha1 `ed2557…`) was captured
+  byte-identical to the recorded patch into
+  `tools/patches/arm-recomp-core-local.patch`; `ignore = dirty` keeps it out
+  of status; a configure-time guard fails loudly with the exact apply
+  command (red-first: verified failing with the patch stripped, passing
+  restored).
+- Screenshots deleted (15 webp + README embed blocks — no game pixels in the
+  history); freeze commit `4cc306b` (482 files, 4 gitlinks) pushed to
+  `git@github.com:james2doyle/gbarecompx.git`.
+- Three findings surfaced by the freeze's own verification, fixed in
+  follow-up commits:
+  1. `617e9e6` — CI red on the first push: `**/generated/*` swallowed the
+     monolith-guard fixture
+     (`tests/cmake/runtime_monolith_guard/generated/recompiled.cpp`), so
+     fresh clones had an empty fixture. Negation added + fixture committed.
+  2. `dd99353` — the fresh-clone proof found `host_window.cpp` failing to
+     compile with SDL2 present and recomp-ui absent (a plain dev machine):
+     `interp_display_tick`'s closing brace sat inside
+     `#if GBARECOMP_RUNTIME_UI`. Fixed to the file's guard shape (`#else`
+     no-op, brace outside); the CI stub job now installs `libsdl2-dev` so
+     the SDL region is compiled on every push (the runner had no SDL2, which
+     is why CI missed it).
+  3. `10aa5c2` — hygiene audit: upstream's `F:\Projects` machine paths
+     (inherited verbatim; one a functional default in `oracle/gba_cosim.py`)
+     genericized to `C:\`; `1f3b5fe` — README's R.A.I.D. badge committed
+     (upstream parity; the `*.png` rule had hidden it).
+- Post-freeze gate (FFTA side): three configs reconfigure/build green;
+  `build-raylib` 65/65, `build-raylib-only` 66/66; attract golden
+  byte-identical in both (`1EF4C118…`); `check.py --fast`, `raylib-compile`,
+  `ws_check`, completeness guard green; `bios_smoke` link break unchanged
+  (pre-existing, FFTA-side recomp-ui config, not a registered test). Two
+  stale-cache artifacts of the rename were fixed during the gate:
+  `GBARECOMP_GENERATED_BIOS_DIR` (cached old path → BIOS output "absent" →
+  strict attract abort) and the monolith fixture's cached source path.
+- Fresh-clone proof (delegated): clone → submodules pinned exactly → patch
+  applies → standalone stub build 231/231 with SDL2 present → ctest 61/61 →
+  guard red-state reproduced. CI on `10aa5c2`: all three jobs green (stub
+  2m35s incl. SDL2 coverage, raylib 3m18s, guard).
+- Next: Phase 1 (V2 types and interfaces, additive — no behavior change).

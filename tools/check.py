@@ -394,6 +394,148 @@ def check_hangrepro():
     return r.returncode == 0, line or f"exit {r.returncode}"
 
 
+def check_raylib_compile():
+    """Compile the RaylibBackend against real raylib 6 (opt-in).
+
+    Nothing else builds the raylib path, so it could silently stop compiling
+    while every other gate stays green. This configures a SEPARATE build dir
+    (switching the main build would trade a working SDL app for an incomplete
+    one) and builds just the backend target -- not raylib itself, not the game.
+
+    It ALSO compiles the backend with the flag OFF (stub build, second build
+    dir). The backend file must compile in both configurations: Slice B/C
+    helpers were once declared inside `#if defined(GBARECOMP_USE_RAYLIB)` but
+    called from unguarded setters, which broke the SDL-config build while the
+    raylib tree stayed green -- and no gate built that configuration, so it
+    survived several sessions. This is the gate that closes that class.
+
+    Opt-in rather than default: the first configure fetches and builds raylib,
+    which is minutes. Once cached in build-raylib-only/ it is a few seconds.
+    The stub dir needs no raylib at all (flag OFF skips the fetch), so it is
+    cheap and offline from the first run.
+
+    Needs network on first run (raylib is fetched by SHA). Skips cleanly when
+    the experimental tree is absent."""
+    if not (REPO / "gbarecompx/src/runtime/raylib_backend.cpp").exists():
+        return True, "skipped (no gbarecompx tree)"
+
+    # Configure from the ROOT project: that is how build-raylib-only is created,
+    # and it wires GBARECOMP_ROOT / mods / the app target the runtime needs.
+    # A build dir caches its source directory, so pointing a -S at the framework
+    # subdir against the same dir is rejected by CMake.
+    build = REPO / "build-raylib-only"
+    src = REPO
+    # NB: cmake, not sys.executable -- "-S" is also a Python flag and would be
+    # silently swallowed as one, turning this into `python -S <dir>`.
+    cfg = ["cmake", "-S", str(src), "-B", str(build), "-G", "Ninja",
+           "-DCMAKE_BUILD_TYPE=Release", "-DGBARECOMP_USE_RAYLIB=ON"]
+    r = run(cfg, timeout=900)
+    if r.returncode != 0:
+        return False, f"configure failed (raylib fetched by SHA; needs network)"
+
+    r = run(["cmake", "--build", str(build), "--target",
+             "gbarecomp_raylib_backend", "--parallel", "4"], timeout=900)
+    if r.returncode != 0:
+        errs = [ln for ln in (r.stdout + r.stderr).splitlines()
+                if "error:" in ln]
+        return False, (errs[0].strip() if errs else "raylib backend build failed")
+
+    # The OFF half: same file must compile as a stub. Uses its own build dir
+    # (a dir caches its source AND its flag set -- reconfiguring
+    # build-raylib-only OFF and back would thrash the cached raylib build).
+    # Explicit OFF rather than relying on the default, so a default flip can
+    # never silently drop this half. No raylib fetch happens with the flag
+    # off, so this half is offline-cheap.
+    stub = REPO / "build-raylib-stub"
+    r = run(["cmake", "-S", str(src), "-B", str(stub), "-G", "Ninja",
+             "-DCMAKE_BUILD_TYPE=Release", "-DGBARECOMP_USE_RAYLIB=OFF"],
+            timeout=900)
+    if r.returncode != 0:
+        return False, "stub configure failed"
+    r = run(["cmake", "--build", str(stub), "--target",
+             "gbarecomp_raylib_backend", "--parallel", "4"], timeout=900)
+    if r.returncode != 0:
+        errs = [ln for ln in (r.stdout + r.stderr).splitlines()
+                if "error:" in ln]
+        return False, ("stub (USE_RAYLIB=OFF) backend build failed: " +
+                       (errs[0].strip() if errs
+                        else "raylib_backend.cpp does not compile as a stub"))
+
+    # Compiling is not running. Build and run the integration test too: it opens
+    # a real GL context, uploads frames and closes, which is the only thing that
+    # catches a raylib call that typechecks but misbehaves. (This already earned
+    # its keep: it found that open() hid the window whenever linear filtering was
+    # off -- the default -- so a default launch was invisible.)
+    r = run(["cmake", "--build", str(build), "--target",
+             "ffta_raylib_present_tests", "--parallel", "4"], timeout=900)
+    if r.returncode != 0:
+        errs = [ln for ln in (r.stdout + r.stderr).splitlines()
+                if "error:" in ln]
+        return False, (errs[0].strip() if errs else "raylib present test build failed")
+
+    exe = build / "ffta_raylib_present_tests"
+    if not exe.exists():
+        return True, "backend compiles (ON+OFF; raylib present test not built)"
+
+    # Finding a display is part of the gate. A real one is the strongest signal,
+    # so prefer it; otherwise fall back to Xvfb with Mesa's software rasterizer
+    # (llvmpipe), which is the standard headless recipe for GL on a CI runner
+    # that has no GPU and no /dev/dri. Only if neither exists do we skip.
+    env = clean_env()
+    cmd = [str(exe)]
+    how = "real display"
+    if not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
+        if shutil.which("xvfb-run") is None:
+            return True, ("backend compiles; present test SKIPPED "
+                          "(no display and no xvfb-run)")
+        cmd = ["xvfb-run", "-a", "--server-args=-screen 0 1280x800x24",
+               str(exe)]
+        # No GPU here, so ask Mesa for the software rasterizer explicitly
+        # instead of relying on driver autodetection. GL 4.5 covers raylib's
+        # 3.3 core requirement; the override is belt-and-braces for older Mesa.
+        env["LIBGL_ALWAYS_SOFTWARE"] = "1"
+        env["GALLIUM_DRIVER"] = "llvmpipe"
+        env["MESA_GL_VERSION_OVERRIDE"] = "4.5"
+        how = "Xvfb + llvmpipe"
+
+    r = run(cmd, env=env, timeout=300)
+    tail = (r.stdout + r.stderr).strip().splitlines() or [""]
+    if r.returncode != 0:
+        bad = [ln.strip() for ln in tail if "FAIL" in ln]
+        return False, (bad[0] if bad else tail[-1].strip() or "present test failed")
+    ran = "running against a real GL context" in (r.stdout + r.stderr)
+    if not ran:
+        return True, f"backend compiles (ON+OFF); present test SKIPPED (no {how})"
+    return True, f"backend compiles (ON+OFF); present test PASSED ({how})"
+
+
+def check_raylib_backend():
+    """RaylibBackend completeness + guard self-test.
+
+    The WindowBackend seam only pays off if every platform backend implements the
+    WHOLE interface. `override` catches signature drift but NOT a newly-added
+    virtual the backend fails to override -- that silently inherits the default.
+    tools/check_raylib_backend_complete.py closes that gap; its self-test covers
+    the parser cases that have bitten us (function-pointer args, pointer spacing,
+    overloads).
+
+    Runs in both worktrees: on the experimental raylib tree it enforces the 56/56
+    contract, and elsewhere it skips (the pinned gbarecomp/ has no raylib backend).
+    Cheap -- pure Python, no build."""
+    if not (REPO / "gbarecompx/src/runtime/raylib_backend.h").exists():
+        return True, "skipped (no gbarecompx tree)"
+
+    r = run([sys.executable, "tools/tests/test_check_raylib_backend_complete.py"],
+            timeout=120)
+    if r.returncode != 0:
+        line = (r.stdout.strip().splitlines() or [""])[-1]
+        return False, f"guard self-test failed: {line}"
+
+    r = run([sys.executable, "tools/check_raylib_backend_complete.py"], timeout=120)
+    line = (r.stdout.strip().splitlines() or [""])[-1]
+    return r.returncode == 0, line or f"exit {r.returncode}"
+
+
 def check_android_static():
     """Device-free Android checks (tools/android_static_check.py): identity
     pin consistency, the mods payload contract, tracked-file hygiene, and a
@@ -431,6 +573,8 @@ CHECKS = {
     "savecheck": check_savecheck,
     "patches": check_patches,
     "android-static": check_android_static,
+    "raylib-backend": check_raylib_backend,
+    "raylib-compile": check_raylib_compile,
     "hangrepro": check_hangrepro,
     "desktop-accept": check_desktop_accept,
     "desktop-accept-window": check_desktop_accept_window,
@@ -448,12 +592,16 @@ CHECKS = {
                                           REG / "battle_move.sav", 5600),
 }
 FAST = ["unit-cpp", "unit-py", "ui-tests", "savecheck", "patches",
-        "android-static", "attract"]
+        "android-static", "raylib-backend", "attract"]
 # Opt-in suites, left out of the default run (they need local artifacts a
 # desktop-only worktree may not have); --only NAME runs them explicitly.
 # release: the zip packager — needs a built tree (no ROM), and its output
 # is a public artifact contract, so it runs explicit, never by default.
-OPTIONAL = {"android-apk", "release"}
+# raylib-compile is opt-in locally (its first run fetches + builds raylib, minutes)
+# but IS run by CI: the raylib-backend job in .github/workflows/ci.yml needs no ROM
+# and no display, so it is cheap enough to gate every push. It skips cleanly while
+# gbarecompx/ is untracked.
+OPTIONAL = {"android-apk", "release", "raylib-compile"}
 # Checks that execute the game binary (require it to exist); the others run
 # on a fresh clone without the ROM (CI tier 1: unit-cpp, unit-py, ui-tests,
 # patches).

@@ -5,8 +5,16 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-set(GBARECOMP_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/gbarecomp"
+# Prefer the in-tree raylib experiment copy when present; otherwise fall back
+# to the pinned SDL2 submodule so the normal build keeps working.
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/gbarecompx/CMakeLists.txt")
+    set(_gbarecomp_default "${CMAKE_CURRENT_SOURCE_DIR}/gbarecompx")
+else()
+    set(_gbarecomp_default "${CMAKE_CURRENT_SOURCE_DIR}/gbarecomp")
+endif()
+set(GBARECOMP_ROOT "${_gbarecomp_default}"
     CACHE PATH "Path to this game's gbarecomp worktree")
+unset(_gbarecomp_default)
 if(NOT EXISTS "${GBARECOMP_ROOT}/CMakeLists.txt")
     message(FATAL_ERROR
         "GBARECOMP_ROOT is not a gbarecomp checkout: ${GBARECOMP_ROOT}")
@@ -44,6 +52,33 @@ if(ANDROID)
         ${FFTA_HOST_SOURCES}
         ${GAME_GENERATED_SOURCES})
     set(FFTA_TARGET main)
+    # Bind internal calls locally: without this every cross-TU call inside
+    # the 138MB .so goes through the PLT (measured 3.8% + BTB/I-cache
+    # pressure on device, 2026-10-14 simpleperf). Entry points
+    # (android_main/JNI) stay exported and loadable; only intra-lib
+    # references bind locally. Audio/guest state untouched.
+    target_link_options(main PRIVATE "LINKER:-Bsymbolic-functions")
+    # Raylib (NativeActivity) entry: android_main lives in OUR .so —
+    # NativeActivity loads it per the manifest's android.app.lib_name.
+    # The backend define does not propagate through the runtime's PRIVATE
+    # link, so the entry-point selection in src/main.cpp gets it explicitly.
+    if(GBARECOMP_RAYLIB_ENABLED)
+        # Vendored glue (platform/android/native_app_glue) sizes the app
+        # thread for the corpus; the NDK copy is the fallback when absent.
+        set(GBARECOMP_GLUE_DIR "${GBARECOMP_ROOT}/platform/android/native_app_glue")
+        if(NOT EXISTS "${GBARECOMP_GLUE_DIR}/android_native_app_glue.c")
+            message(WARNING "ffta: vendored glue absent; NDK glue fallback (1 MiB stack)")
+            set(GBARECOMP_GLUE_DIR "${ANDROID_NDK}/sources/android/native_app_glue")
+        endif()
+        target_sources(main PRIVATE
+            ${GBARECOMP_GLUE_DIR}/android_native_app_glue.c)
+        target_include_directories(main PRIVATE
+            ${GBARECOMP_GLUE_DIR})
+        target_compile_definitions(main PRIVATE GBARECOMP_USE_RAYLIB=1)
+        # raylib's own system deps are PRIVATE to its static archive, so the
+        # final shared link names them (same set as the backend spike).
+        target_link_libraries(main PRIVATE log android EGL GLESv2 OpenSLES m z)
+    endif()
 else()
     add_executable(FFTARecomp
         ${FFTA_HOST_SOURCES}
@@ -89,12 +124,23 @@ if(ANDROID)
 else()
     set(FFTA_DEFAULT_GAME_CONFIG "game.toml")
 endif()
+if(GBAGAME_BUNDLED_ROM)
+    target_compile_definitions(${FFTA_TARGET} PRIVATE GBAGAME_BUNDLED_ROM=1)
+endif()
 target_compile_definitions(${FFTA_TARGET} PRIVATE
     GBARECOMP_DEFAULT_DEBUG_PORT=19888
     GBARECOMP_WINDOW_TITLE="FFTARecomp"
     GBARECOMP_DEFAULT_GAME_CONFIG="${FFTA_DEFAULT_GAME_CONFIG}")
 
 option(GBAGAME_RECOMP_UI "Build the recomp-ui pre-boot launcher" ON)
+option(GBAGAME_BUNDLED_ROM "Private build: ROM is staged/bundled, setup UI may be skipped" OFF)
+# Raylib Android has no SDL/ImGui-SDL backend yet (rlImGui is a separate
+# TODO): the launcher cannot build there. Mobile args carry --no-launcher
+# anyway, so nothing is lost on device.
+if(GBARECOMP_RAYLIB_ENABLED AND ANDROID)
+    set(GBAGAME_RECOMP_UI OFF)
+    message(STATUS "ffta: launcher off (raylib Android; rlImGui pending)")
+endif()
 if(GBAGAME_RECOMP_UI)
     include(${RECOMP_UI_ROOT}/recomp_ui.cmake)
     add_library(game_launcher_ui STATIC src/game_launcher_boot.cpp)
@@ -208,4 +254,75 @@ if(FFTA_BUILD_TESTS AND NOT ANDROID)
                        "test compiles to a skip")
     endif()
     add_test(NAME ram_dispatch COMMAND ffta_unit_tests)
+
+    # HostWindow closed-state contract: every guard clause must return its
+    # documented fallback on a never-opened window. Lives here rather than in
+    # the framework test tree because gbarecomp's standalone configuration
+    # cannot compile host_window.cpp (GBARECOMP_RUNTIME_UI off, already broken
+    # on the pinned submodule). Builds with the same flags as the app.
+    add_executable(ffta_host_window_tests
+        tests/unit/test_host_window_closed.cpp
+        # gbarecomp_runtime's ARM core references the generated dispatch table.
+        ${GAME_GENERATED_SOURCES})
+    target_include_directories(ffta_host_window_tests PRIVATE
+        "${GBARECOMP_ROOT}/src/runtime" src)
+    # game_launcher_ui carries the ImGui + runtime-UI symbols host_window.cpp
+    # references when GBARECOMP_RUNTIME_UI is on.
+    target_link_libraries(ffta_host_window_tests PRIVATE
+        "-Wl,--start-group"
+        gbarecomp_runtime
+        gbarecomp_debug
+        gbarecomp_gba
+        gbarecomp_armv4t
+        game_launcher_ui
+        "-Wl,--end-group")
+    add_test(NAME host_window_closed COMMAND ffta_host_window_tests)
+
+    # Backend-selection predicate. Built in BOTH app configurations so
+    # host_using_raylib_backend() is exercised where it returns true, not only
+    # where it returns false. Linking gbarecomp_runtime transitively brings
+    # gbarecomp_raylib_backend (and its GBARECOMP_USE_RAYLIB define) when raylib
+    # was fetched.
+    add_executable(ffta_backend_select_tests
+        tests/unit/test_backend_select.cpp
+        # gbarecomp_runtime's ARM core references the generated dispatch table.
+        ${GAME_GENERATED_SOURCES})
+    target_include_directories(ffta_backend_select_tests PRIVATE
+        "${GBARECOMP_ROOT}/src/runtime" src)
+    # Same recipe as ffta_host_window_tests (the factory calls
+    # host_make_sdl_backend(), which is defined in host_window.cpp, so the
+    # runtime is needed), plus the raylib backend explicitly. The raylib backend
+    # references rab_*, whose implementation is compiled inside host_window.cpp,
+    # so listing it inside the same --start-group keeps the resolver happy.
+    target_link_libraries(ffta_backend_select_tests PRIVATE
+        "-Wl,--start-group"
+        gbarecomp_runtime
+        gbarecomp_raylib_backend
+        gbarecomp_debug
+        gbarecomp_gba
+        gbarecomp_armv4t
+        game_launcher_ui
+        "-Wl,--end-group")
+    add_test(NAME backend_select COMMAND ffta_backend_select_tests)
+
+    # Raylib integration test: opens a real GL context, uploads frames and
+    # closes, so the raylib path gets runtime coverage rather than only
+    # compiling. Guarded on the framework's EFFECTIVE raylib flag (a failed
+    # fetch leaves the backend stub-only, and this needs real raylib.h).
+    # Skips itself cleanly when no display is attached -- see the test source.
+    if(GBARECOMP_RAYLIB_ENABLED)
+        add_executable(ffta_raylib_present_tests
+            tests/unit/test_raylib_present.cpp)
+        target_include_directories(ffta_raylib_present_tests PRIVATE
+            "${GBARECOMP_ROOT}/src/runtime" src)
+        # Deliberately lean: gbarecomp_raylib_backend (+ raylib) is enough.
+        # gbarecomp_runtime would drag in the ROM-derived dispatch table, which
+        # is never committed, so this test could not link on a fresh CI
+        # checkout. Keep it that way -- if it starts needing the runtime, the
+        # test has outgrown its job and should be split instead.
+        target_link_libraries(ffta_raylib_present_tests PRIVATE
+            gbarecomp_raylib_backend)
+        add_test(NAME raylib_present COMMAND ffta_raylib_present_tests)
+        set_tests_properties(raylib_present PROPERTIES TIMEOUT 120)
+    endif()
 endif()

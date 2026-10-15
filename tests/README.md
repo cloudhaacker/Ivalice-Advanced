@@ -489,6 +489,17 @@ Two tiers, split by what may leave your machine:
   (a PR job on a runner that can read the ROM is an exfiltration path).
   The sha pins (regress save + the ws fixtures) fail loudly if the
   runner's fixtures drift.
+- The **`raylib-backend` job** (`.github/workflows/ci.yml`) is a second,
+  independent tier-1 job for the experimental raylib backend
+  (`gbarecompx/`, opt-in via `-DGBARECOMP_USE_RAYLIB=ON`). It runs
+  `tools/check.py --only raylib-compile`, which fetches raylib 6 by SHA, builds
+  the backend, and then **builds and runs** the integration test — on a
+  GitHub-hosted runner with no GPU, no `/dev/dri` and no X server, via
+  `xvfb-run -a` with Mesa's llvmpipe software rasterizer. No ROM needed: the
+  test links only raylib + `gbarecomp_raylib_backend`, deliberately kept lean
+  because `generated/` is gitignored and anything linking `gbarecomp_runtime`
+  cannot link on a fresh checkout. It reports which display it used, and skips
+  cleanly while `gbarecompx/` is untracked.
 - The **Android device gate** (`tools/validate_android.sh`) is device-bound
   and manual — no phone in CI — so it is not part of either tier. The
   **APK content guard** is device-free but needs a Gradle build (SDK/NDK),

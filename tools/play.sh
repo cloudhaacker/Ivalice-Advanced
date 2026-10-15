@@ -12,6 +12,12 @@
 #
 # Controls: arrows = D-pad, X = A, Z = B, Enter = Start, Backspace = Select,
 #           C = L, V = R. Close the window (or Ctrl-C the terminal) to quit.
+#           (Or your keybinds.ini rebinds — config is read from the exe's
+#           directory, so each build dir has its own copy.)
+#
+# Backend: raylib (`build-raylib-only/FFTARecomp`) while it is under active
+# validation. Pass --sdl to run the SDL build (`build/FFTARecomp`) instead;
+# --sdl is consumed here, everything else passes through to the game.
 #
 # Extras:  tools/play.sh --fullscreen            windowed fullscreen
 #          tools/play.sh --tcp-observe 19850     window + live debug port;
@@ -41,8 +47,29 @@ done
 # unclean closes) and rewritten with final counts on a clean exit — archive
 # it too, so back-to-back sessions can't clobber the previous proposals.
 [ -f logs/playtest_misses.frag ] && cp logs/playtest_misses.frag "saves/frag_prev_${ts}.frag" || true
+# Backend selection: raylib by default (see header), --sdl for the SDL build.
+# The flag is filtered out before "$@" reaches the game.
+EXE=./build-raylib-only/FFTARecomp
+ARGS=()
+for a in "$@"; do
+  if [ "$a" = "--sdl" ]; then
+    EXE=./build/FFTARecomp
+  else
+    ARGS+=("$a")
+  fi
+done
+if [ ! -x "$EXE" ]; then
+  echo "play.sh: $EXE missing. Build it first:" >&2
+  if [ "$EXE" = "./build-raylib-only/FFTARecomp" ]; then
+    echo "  cmake -S . -B build-raylib-only -G Ninja -DCMAKE_BUILD_TYPE=Release -DGBARECOMP_USE_RAYLIB=ON" >&2
+    echo "  cmake --build build-raylib-only --target FFTARecomp --parallel 8" >&2
+  else
+    echo "  cmake --build build --target FFTARecomp --parallel 8" >&2
+  fi
+  exit 1
+fi
 exec env -u GBARECOMP_STRICT_STATIC \
   GBARECOMP_INPUT_RECORD="$PWD/logs/playthrough.csv" \
   GBARECOMP_MISS_FRAG="$PWD/logs/playtest_misses.frag" \
-  ./build/FFTARecomp --bios bios/emibios_gba_bios.bin --rom game.gba \
-  --save-path saves/playtest.sav "$@"
+  "$EXE" --bios bios/emibios_gba_bios.bin --rom game.gba \
+  --save-path saves/playtest.sav "${ARGS[@]}"

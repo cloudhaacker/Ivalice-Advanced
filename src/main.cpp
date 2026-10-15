@@ -1,6 +1,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -14,7 +15,9 @@
 #include "mobile_platform.h"
 
 #if defined(__ANDROID__)
+#if !defined(GBARECOMP_USE_RAYLIB)
 #include <SDL_system.h>  // SDL_AndroidGetExternalStoragePath (user-visible saves)
+#endif
 #include <filesystem>
 #include <system_error>
 #endif
@@ -159,6 +162,29 @@ int ffta_ws_bg_x_provider(int bg, int x, int y, int* hw_x) {
 // update.
 namespace {
 
+// User-visible external app directory (.../Android/data/<pkg>/files/).
+// SDL builds ask SDL; raylib (NativeActivity) builds have nothing to ask
+// yet (real port: JNI getExternalFilesDir) — nullptr keeps the app-private
+// files/ fallback in both redirect helpers below.
+const char* ffta_external_storage_path() {
+#if defined(__ANDROID__) && !defined(GBARECOMP_USE_RAYLIB)
+    return SDL_AndroidGetExternalStoragePath();
+#elif defined(__ANDROID__) && defined(GBARECOMP_ANDROID_PACKAGE)
+// App-specific external dir: needs no permission, is MTP-visible over USB,
+// and /sdcard tracks the current user. Same value SDL returns on SDL builds
+// (the real port may upgrade this to JNI getExternalFilesDir).
+#define FFTA__STR(x) #x
+#define FFTA__XSTR(x) FFTA__STR(x)
+    static const char kExt[] = "/sdcard/Android/data/" FFTA__XSTR(
+                                   GBARECOMP_ANDROID_PACKAGE) "/files";
+#undef FFTA__XSTR
+#undef FFTA__STR
+    return kExt;
+#else
+    return nullptr;
+#endif
+}
+
 void ffta_migrate_file(const std::filesystem::path& from,
                        const std::filesystem::path& to) {
     std::error_code ec;
@@ -188,7 +214,7 @@ void ffta_migrate_file(const std::filesystem::path& from,
 // Appends --save-path/--state-dir (CLI wins over the staged TOML). No-op
 // when external storage is unavailable: the TOML's internal paths stand.
 void ffta_redirect_player_data(std::vector<std::string>& args) {
-    const char* ext = SDL_AndroidGetExternalStoragePath();
+    const char* ext = ffta_external_storage_path();
     if (!ext || !*ext) {
         std::fprintf(stderr, "[ffta] saves: external storage unavailable, "
                              "keeping app-private files/\n");
@@ -223,7 +249,7 @@ void ffta_redirect_player_data(std::vector<std::string>& args) {
 // log path for MobileProcessOptions.log_file. Empty when external storage is
 // unavailable: the engine's app-private defaults stand.
 std::string ffta_redirect_diagnostics() {
-    const char* ext = SDL_AndroidGetExternalStoragePath();
+    const char* ext = ffta_external_storage_path();
     if (!ext || !*ext) {
         std::fprintf(stderr, "[ffta] logs: external storage unavailable, "
                              "keeping app-private files/\n");
@@ -292,6 +318,22 @@ int ffta_main(int argc, char** argv) {
     // Manifest after the redirect: stderr now flows to the log file, so
     // these are its first lines.
     if (on_mobile) ffta_log_manifest(external_log);
+#endif
+#if defined(__ANDROID__) && !defined(GBAGAME_RECOMP_UI)
+#if defined(GBAGAME_BUNDLED_ROM)
+    // Private build with the ROM staged: drop the vacuous flag and boot.
+    // (Public builds stop at the #else below — skipping setup is only valid
+    // with a bundled ROM.)
+    args.erase(std::remove(args.begin(), args.end(), "--no-launcher"),
+               args.end());
+#else
+    // No setup UI in this build and no bundled ROM: refuse to boot without a
+    // staged ROM rather than failing cryptically deeper in the runtime.
+    std::fprintf(stderr,
+                 "[ffta] no setup UI and no bundled ROM "
+                 "(GBAGAME_BUNDLED_ROM=OFF): stage a ROM first\n");
+    return 1;
+#endif
 #endif
 
     gbarecomp::RunOptions opts;
@@ -383,10 +425,21 @@ int ffta_main(int argc, char** argv) {
     return gbarecomp::run_game(static_cast<int>(av.size()), av.data(), opts);
 }
 
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) && !defined(GBARECOMP_USE_RAYLIB)
 extern "C" int SDL_main(int argc, char** argv) {
     // Desktop-sized host stack for the recompiled corpus (mobile_platform.h).
     return gbarecomp::mobile_run_with_stack(ffta_main, argc, argv);
+}
+#elif defined(__ANDROID__)
+// Raylib (NativeActivity) entry: android_native_app_glue calls main() on the
+// glue thread, and raylib is glue-thread-bound (its ALooper polling fails on
+// any other thread). So the game runs HERE, not on mobile_run_with_stack's
+// pthread — the vendored glue (platform/android/native_app_glue) sizes this
+// thread to kMobileGameStackBytes. Arm the stack guard for it directly (same
+// 32 MiB margin run_stacked keeps).
+int main(int argc, char** argv) {
+    gbarecomp::host_stack_guard_arm_current(32u * 1024u * 1024u);
+    return ffta_main(argc, argv);
 }
 #else
 int main(int argc, char** argv) {

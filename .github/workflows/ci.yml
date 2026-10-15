@@ -53,3 +53,46 @@ jobs:
 
       - name: Gate (unit-cpp, unit-py, ui-tests, patches, android-static)
         run: python3 tools/check.py --only unit-cpp,unit-py,ui-tests,patches,android-static
+
+  raylib-backend:
+    # Compiles the experimental raylib backend and RUNS it headless.
+    #
+    # GitHub's ubuntu runners have no GPU, no /dev/dri and no X server, so this
+    # is where the raylib path gets its first real signal from something other
+    # than a developer's desktop: Xvfb supplies a virtual X server and
+    # LIBGL_ALWAYS_SOFTWARE=1 puts Mesa's llvmpipe rasterizer underneath, which
+    # satisfies raylib's OpenGL 3.3 core requirement with no hardware. The gate
+    # picks that up automatically when there is no DISPLAY.
+    #
+    # Skips cleanly (exit 0, "no gbarecompx tree") while gbarecompx/
+    # is untracked, so this job is inert until that tree is committed rather than
+    # a red build.
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Pinned submodules
+        run: |
+          git submodule update --init --recursive
+          git submodule update --checkout --recursive
+
+      - name: System packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build pkg-config git ca-certificates \
+            libgl-dev libx11-dev libxrandr-dev libxinerama-dev \
+            libxcursor-dev libxi-dev libxkbcommon-dev \
+            libfreetype-dev libharfbuzz-dev libsdl2-dev \
+            xvfb libgl1-mesa-dri
+
+      # Configures build-raylib-only with -DGBARECOMP_USE_RAYLIB=ON, builds
+      # gbarecomp_raylib_backend, then builds and runs ffta_raylib_present_tests.
+      # Deliberately builds nothing that needs the ROM: generated/ is
+      # gitignored, and the integration test is kept link-lean (raylib +
+      # gbarecomp_raylib_backend only) precisely so it works on a fresh
+      # checkout.
+      - name: "Gate (raylib-compile: build + run headless under Xvfb)"
+        run: python3 tools/check.py --only raylib-compile
