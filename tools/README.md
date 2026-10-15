@@ -30,6 +30,7 @@ entry, not the play entry. For when-to-run-what (workflows, gates, CI), see
 | `cadence_probe.py` | Render-path update-cadence gate (the compute-at-60/read-at-30 detector): pauses the pacer on `--tcp`, steps exactly one VBlank at a time, asserts the 60 Hz scheduler invariants (frame_step parities, `gVblankCounter`) and no every-other-frame consumer on the presented surfaces (io/oam/pal/vram + display-reg shadow; IWRAM staging alternation is the double-buffer slot write and only reported). `--strict`, `--regions`, `--json`; `check.py --only cadence` |
 | `ringscan.py` | Instruction-ring query (`--file`, `--pc`, `--reg-range`) |
 | `keyprobe.py` | Live debug-port inspector |
+| `audio_session.py` | Live audio-fault triage around a play session: samples `audio_state`+`frame` (20 Hz) and `audio_trace` (4 Hz; launch the game with `GBARECOMP_AUDIO_FIFO_TRACE=1`), records the sink monitor, then prints a report (producer rate vs 65536 Hz, frame cadence, FIFO fill/empty events, broadband-transient + 0.3-5 Hz modulation scan). Use with `play.sh --tcp-observe PORT`; `--max-seconds`, `--no-record`, `--sink` |
 | `trace_split.py` | Split mid-session reload traces |
 | `disarm.py` | ROM disassembler — the evidence source behind every address claim in the project |
 | `m4a_detect.py` | m4a audio-engine detection (Bregalad lineage) |

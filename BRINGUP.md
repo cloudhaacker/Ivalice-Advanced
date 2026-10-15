@@ -7265,3 +7265,45 @@ device gate: tag every capture and settle ≥4.
   both configs (interp off by default; the fix only changes the menu stash
   lifetime).
 
+
+## 2026-10-15 — audio "ticking" report triaged: path healthy, tool added
+
+- Report (user, playtest): metronomic ticking in the audio, ~1-2/s, "always,
+  regardless of settings"; suspected new sound effects. Follow-up: "seems
+  new, but we never ran the game after the audio changes were done" — the
+  exact shape of a real regression, so it got a full triage.
+- Ruled out by inspection: **zero sound-effect calls in the runtime** (no
+  PlaySound/LoadSound anywhere in `gbarecompx/src/`), and no recent commit
+  touches audio (the flicker fix is one draw function; Phase 3d is the
+  trigger/cue; the intro-lag audio work was Android-gated, "desktop
+  untouched").
+- Live triage (two ~40 s attract sessions + one 25 s validation run, raylib
+  build, TCP sampler at 20 Hz + FIFO trace at 4 Hz + sink-monitor
+  recording):
+  - producer 65544 Hz vs 65536 nominal (**+0.013%**; -0.03..-0.17% on
+    short/boot-inclusive windows);
+  - frames 59.71/s, no guest stalls (largest poll gap = the 50 ms poll);
+  - **0 broadband transients** in ~75 s of recording (strongest modulation
+    2.8 Hz = the attract music's beat, present in every run);
+  - FIFO-empty sample events (`count==0 && remaining==0`, where the
+    emulation emits silence) only during boot silence and in small bursts
+    every ~5 s — the attract's music gaps at scene changes, **not**
+    starvation; DMA refill level cycles 0-7 words exactly as designed
+    (`fifo_needs_dma` = `count < 4`).
+- Conclusion: no emulation- or host-side tick pattern. The user's tick
+  vanished and correlated with another video sharing the audio sink —
+  external to the game. Recorded anyway: "seems new + never ran since the
+  audio changes" is how a real regression presents, so the method (and its
+  numbers) are now a baseline.
+- Tool added: `tools/audio_session.py` — one command around a play session:
+  live sampler + monitor recording + end-of-session report (pure Python, no
+  numpy). Validated live end-to-end (two runs). Complements
+  `GBARECOMP_AUDIO_PROBE=1` (SDL path only) and the TCP
+  `audio_state`/`audio_trace` commands; listed in `tools/README.md`.
+- Tooling note (verified, small debt): TCP `quit` ends only the debug
+  connection — in a windowed `--tcp-observe` session the server runs in a
+  side thread and `want_quit` is local to its connection loop, so the game
+  keeps running (observed alive 5 s after `{"cmd":"quit"}`); `host_quit` is
+  fed by window events only. `quit.py`'s clean close therefore applies to
+  the headless `--tcp` path (where the server *is* the run loop); the
+  practical stop for observe sessions is closing the window / SIGTERM.
