@@ -36,7 +36,8 @@ int main() {
     assert(w.lcd_dither() == 1.0f);
     assert(w.lcd_deband() == 0.0f);
     assert(!w.audio_enabled());
-    assert(!w.resize_driven_view());
+    // (no resize_driven_view getter exists by design; its setter's
+    // closed-window no-op is exercised with the other mutators below)
     assert(!w.touch_pad_visible());
     assert(!w.fps_readout());
     assert(w.assist_tools_enabled());          // enhancement defaults ON

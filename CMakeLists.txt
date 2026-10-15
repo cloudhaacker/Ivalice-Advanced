@@ -225,6 +225,10 @@ if(FFTA_BUILD_TESTS AND NOT ANDROID)
     if(WIN32 AND NOT MSVC)
         target_link_libraries(ffta_unit_tests PRIVATE winmm)
     endif()
+    # Assertions stay live in tests: Release's -DNDEBUG silently erases
+    # assert() (the vacuous-assert trap; same treatment as the framework's
+    # test targets in gbarecompx/CMakeLists.txt).
+    target_compile_options(ffta_unit_tests PRIVATE -UNDEBUG)
     if(HOST_STACK_GUARD_API)
         target_compile_definitions(ffta_unit_tests PRIVATE HOST_STACK_GUARD_API=1)
     endif()
@@ -276,6 +280,7 @@ if(FFTA_BUILD_TESTS AND NOT ANDROID)
         gbarecomp_armv4t
         game_launcher_ui
         "-Wl,--end-group")
+    target_compile_options(ffta_host_window_tests PRIVATE -UNDEBUG)
     add_test(NAME host_window_closed COMMAND ffta_host_window_tests)
 
     # Backend-selection predicate. Built in BOTH app configurations so
@@ -303,6 +308,7 @@ if(FFTA_BUILD_TESTS AND NOT ANDROID)
         gbarecomp_armv4t
         game_launcher_ui
         "-Wl,--end-group")
+    target_compile_options(ffta_backend_select_tests PRIVATE -UNDEBUG)
     add_test(NAME backend_select COMMAND ffta_backend_select_tests)
 
     # Raylib integration test: opens a real GL context, uploads frames and
@@ -322,6 +328,7 @@ if(FFTA_BUILD_TESTS AND NOT ANDROID)
         # test has outgrown its job and should be split instead.
         target_link_libraries(ffta_raylib_present_tests PRIVATE
             gbarecomp_raylib_backend)
+        target_compile_options(ffta_raylib_present_tests PRIVATE -UNDEBUG)
         add_test(NAME raylib_present COMMAND ffta_raylib_present_tests)
         set_tests_properties(raylib_present PROPERTIES TIMEOUT 120)
     endif()

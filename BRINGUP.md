@@ -6761,3 +6761,58 @@ device gate: tag every capture and settle ≥4.
   raylib-backend` green; CI on the phase commit (see run for `b2713bf`).
 - Next: Phase 2 (raylib backend conversion, concern by concern — Video →
   Audio → Input → Fx → Overlay → lifecycle; `Clock` + `RaylibApi` seam).
+
+## 2026-10-14 — asserts live in tests: the vacuous-assert trap closed
+
+- Found by the Phase 1 audit + confirmed by spike: Release's `-DNDEBUG`
+  erased every bare `assert()` in the assert-based suites — 21/31
+  `tests/runtime` files (and FFTA's `test_host_window_closed` with 39
+  asserts) were passing vacuously, in the gates and in CI alike.
+- Fix: `-UNDEBUG` appended after the build-type flags. `remove_definitions
+  (-DNDEBUG)` does NOT work: NDEBUG comes from `CMAKE_CXX_FLAGS_RELEASE`
+  (a flags string), not `add_definitions()`. Framework: one
+  `add_compile_options(-UNDEBUG)` at the tests banner (verified: test TUs
+  get it; `gbarecomp_runtime` / `gba_recompile` do not). FFTA: per-target
+  on `ffta_unit_tests` / `ffta_host_window_tests` /
+  `ffta_backend_select_tests` / `ffta_raylib_present_tests`.
+- Spike with asserts live: the framework suite went 57/62 → five real
+  failures, each triaged to a root cause:
+  1. `gamepad_map_test:61` — test-side operator-precedence bug (`==` binds
+     tighter than `&`, so the expression was always false). Parenthesized.
+  2. `assist_pad_binding_test` — expectations used the wrong polarity
+     convention (even = positive); upstream encodes odd = positive on both
+     encode and decode (verified against the pristine `gbarecomp`
+     submodule: `100 + code*2 + (positive?1:0)` / `(encoded & 1)`).
+     Corrected to 109/111/101/100/103 — config compat unchanged.
+  3. `interp_pacing_test` — two inverted `should_hold` expectations vs the
+     helper's documented contract (fixed), which unmasked a third: the
+     helper's `interp_advance_tick_ns` diverged from upstream's do-while in
+     the cursor-ahead case (kept the cursor; upstream advances one period).
+     Restored upstream semantics — the helper is the shared policy BOTH
+     backends use, so it must reproduce the SDL reference; the deadline
+     clamp governs the sleep either way. Bounded loop retained.
+  4. `raylib_backend_test` — asserted the touch pad could show with
+     `touch_controls` off; the gate is intentional ("must not claim a pad it
+     cannot deliver"). The test now exercises the gate, then configures
+     touch emulation and asserts the round-trip. That unmasked two more in
+     the same file's window section (never reachable before): it opened two
+     `RaylibBackend` instances at once (raylib has ONE global window — the
+     second `InitWindow` re-initialized it under the first, heap corruption,
+     `double free`), and it had no display guard (CI's raylib job runs
+     headless). Fixed: one live instance at a time; the window section
+     self-skips without DISPLAY/WAYLAND_DISPLAY (stub builds always run it).
+  5. `window_backend_virtual_dispatch_test` — `is_open()` omitted its hit
+     count (the carry-forward finding). Fixed.
+- `test_host_window_closed.cpp`: `assert(!w.resize_driven_view())` called a
+  getter that was never declared anywhere — the assertion is gone (the
+  setter's closed-window no-op is exercised with the other mutators);
+  widening the seam for a test is against the plan's §7 traps.
+- Verified: standalone stub ctest 62/62 with asserts live; FFTA
+  `build-raylib` 66/66 and `build-raylib-only` 67/67 (framework test targets
+  rebuilt for real); the raylib-ON test self-skips headless (exit 0);
+  attract golden byte-identical in both configs (production behavior
+  unchanged); `check-fast` green (incl. `unit-cpp` against the pinned
+  submodule).
+- Policy: new tests keep using the always-active `CHECK` macro; `-UNDEBUG`
+  is the belt-and-braces for the legacy assert-based files (the Phase 4
+  rewrites migrate them).
