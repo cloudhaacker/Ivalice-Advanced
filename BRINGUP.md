@@ -7668,11 +7668,12 @@ device gate: tag every capture and settle ≥4.
   authored-margin bypass) — the engine's window-controlled sampling stands,
   which is the behavior the feature-off desktop always had and which the move
   state renders correctly (the ring wins the compositing). Kept: the
-  world-map pillarbox (W3) and the sprite clip, refined to a sprite-level
-  parked test (gba_ppu.cpp: a sprite whose extent lies entirely outside the
-  native span is skipped; one anchored inside may extend into the margins —
-  user-confirmed: edge characters the original 3:2 viewport clips are
-  revealed wide, parked OBJ stay hidden).
+  world-map pillarbox (W3). The sprite clip's parked test was refined to an
+  origin rule (gba_ppu.cpp: parked = the origin off the native 240 span,
+  `sx < 0 || sx >= 240`; an in-view sprite may extend into the margins) and
+  then withdrawn for FFTA in the pan follow-up below. The framework spec
+  stays asserted by ppu_smoke (gbarecompx 69b07b6; the extent-overlap
+  variant leaked parked sprites — CI failure on 5dc8e86).
 - Verification: the skip-withdrawn build passes ws_check 6 cases x 3 widths
   (ring scenes 100% margins, pillar scenes flat, stale guard 81-96%) — the
   engine's window-controlled sampling fills the ring scenes on its own. The
@@ -7681,6 +7682,9 @@ device gate: tag every capture and settle ≥4.
   build passes it unchanged. Android APK rebuilt + installed (device log:
   policy + sprite clip installed, 356x160 margins 58/58); the install
   cold-boots the app — player saves/states persist.
+- Mods packaging: the widescreen package bumped 1.0.0 -> 1.0.1 (manifest +
+  both state.tomls + payloadVersion 6) so installed payloads re-stage; the
+  version chain is load-bearing (strict lookup in mod_runtime.cpp).
 - Pan follow-up (user: "the wide view is not revealing them though ... when the
   camera moves and pans, those characters are clipped out even though the
   level and background are still drawn"): the sprite-level clip hid sprites
@@ -7689,10 +7693,12 @@ device gate: tag every capture and settle ≥4.
   OBJ clip is therefore withdrawn too (`g_ws_obj_native_clip` stays 0).
   Result (user): no artifacts or odd rendering in the margins — the clip
   stays gone. The off-viewport units are nevertheless still clipped with the
-  clip off; an OAM probe of the pan session (deterministic replay, per-frame
-  `read_oam`) determines whether the guest itself culls them (no OAM entry at
-  the margin positions → a game-side culling widening is the fix) or the PPU
-  drops them (an engine fix). Pending.
-- Open: device move-state acceptance by the user; View menu row (Native /
-  Adaptive / 16:9) still pending; desktop now runs the feature enabled
-  (build/mods/state.toml).
+  clip off; the OAM probe of the pan session (deterministic replay, per-frame
+  `read_oam`) answers it: the guest itself culls — it parks a sprite run at
+  exactly x=248 (off the native span) for the whole session and never emits
+  an OAM entry at a margin position. A game-side culling widening is the
+  fix; tracked as issue #26 (discovery + tips), not implemented.
+- Open: View menu row (Native / Adaptive / 16:9) still pending; desktop runs
+  the feature enabled (build/mods/state.toml); device move state renders
+  true ring margins on the final build (screenshot check, clip off +
+  mods 1.0.1).
