@@ -174,6 +174,8 @@ game installs margin hooks from the trusted activation plugin
 (`ffta.widescreen`, W3 m3 — this replaced the original
 `RunOptions::extended_view_init` install, which no longer exists):
 
+- **Withdrawn 2026-10-15** (see the correction at the bottom of this file):
+  the two opt-ins below are no longer set by the FFTA plugin.
 - `g_ws_authored_margin_layers = 1` — margin columns render from the guest's
   own BGs (the 512-wide field rings) instead of the pillarbox policy black;
   savestate loads then keep the pillarbox policy off.
@@ -306,3 +308,32 @@ landed as milestone 3 at the end of this file.)
 - Writer/caller chain: `GBARECOMP_ABORT_ON_MEM_WRITE_ADDR` (+
   `GBARECOMP_RUNTIME_TRACE=1`) — works for RAM/VRAM, NOT for IO registers.
 - Guest DMA attribution: `GBARECOMP_DMA_WATCH_ADDR`.
+
+## Correction (2026-10-15): the margin layer skip and the OBJ clip are withdrawn
+
+FFTA swaps BG layer roles per scene: the battle move state moves the 512-px
+field ring onto BG2/BG3 (the 256-px strip/UI layers onto BG0/BG1), and the
+Totema summon runs its effect layers at 256 px. Any fixed margin layer skip
+therefore loses real content in some scene — the original "BG2/BG3 = UI"
+skip showed the 256-px alias seam in the move state (user-reported: "the
+widescreen is somehow turned off while the character is in the move state");
+an interim tilemap-width skip fixed that but cut the summon's effect layers.
+`g_ws_authored_margin_layers` and the BG margin provider are therefore no
+longer set by the FFTA plugin: the engine's window-controlled sampling
+stands (the behavior the feature-off desktop always had, which renders the
+move state correctly — the ring wins the compositing). The W3 world-map
+pillarbox stays.
+
+The OBJ clip (`g_ws_obj_native_clip`) is likewise no longer set: a camera
+pan puts real units in the margin columns (user-reported: "those characters
+are clipped out even though the level and background are still drawn"), and
+the per-pixel/sprite-level clip hid them. The sprite-level parked test added
+in gbarecompx 5dc8e86 remains in gba_ppu.cpp as dormant opt-in code (the W2
+parked-sprite concern); the clip-off build's pan replay plus the live pan
+test found no parked-sprite garbage in the margins so far — if one surfaces,
+re-enable the clip for the affected game with a narrower parked test.
+
+Verification: ws_check PASS 6 cases x 3 widths with the skip withdrawn;
+deterministic state1 + input-trace replays (the summon window is
+pixel-identical with the feature enabled or disabled — the visible
+"clipping" was presentation-side).

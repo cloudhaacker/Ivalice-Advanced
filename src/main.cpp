@@ -77,7 +77,13 @@ extern "C" int (*g_ws_bg_x_provider)(int, int, int, int*);
 extern "C" unsigned g_ws_bg_x_provider_layers;
 std::uint32_t g_ws_frame_left = 0;
 std::uint32_t g_ws_frame_right = 0;
-int ffta_ws_bg_x_provider(int bg, int x, int y, int* hw_x);
+// The BG margin columns are deliberately left to the engine's
+// window-controlled sampling: FFTA swaps layer roles per scene (the move
+// overlay moves the field ring to BG2/BG3; the Totema summon runs its
+// effect layers at 256 px), so any fixed layer skip loses real content —
+// the original "BG2/BG3 = UI" skip showed the alias seam in the move state,
+// and a tilemap-width skip cut the summon. The policy below keeps the
+// world-map pillarbox; the sprite clip keeps parked OBJ out of the margins.
 // Reset callback: fires in every activation pass (after the engine's
 // disable-all of entry hooks), so it re-arms the correctness guard and
 // clears our presentation state; the activation plugin opts back in below.
@@ -97,11 +103,13 @@ static void ffta_mod_reset() {
 // authored-margin hooks after the runner's game-owned cleanup; a disabled
 // feature simply leaves the engine-default margin policy in place.
 static void ffta_ws_activate() {
-    g_ws_authored_margin_layers = 1;
-    g_ws_obj_native_clip = 1;
-    g_ws_bg_x_provider = ffta_ws_bg_x_provider;
-    g_ws_bg_x_provider_layers = (1u << 2) | (1u << 3);  // BG2/BG3 (UI)
-    std::fprintf(stderr, "[ffta] ws: margin hooks installed (ffta.widescreen)\n");
+    // The engine's window-controlled margin sampling stands (the behavior the
+    // wide-view validation accepted); see the note above the frame policy.
+    // No OBJ clip either: the wide view must reveal the units the camera has
+    // panned past (user-reported: sprites vanished in the margins while the
+    // level/BG stayed drawn). The parked-sprite question is tracked
+    // separately — see the BRINGUP entry.
+    std::fprintf(stderr, "[ffta] ws: margin policy installed (ffta.widescreen)\n");
 }
 
 GBA_MOD_CONSTRUCTOR(register_ffta_mod_plugins) {
@@ -130,18 +138,10 @@ void ffta_ws_margin_policy(const gbarecomp::ExtendedViewFrameInfo* frame) {
     g_ws_pillarbox = world_map_tilemaps ? 1 : 0;
 }
 
-// UI layers must not paint into margin columns: BG2/BG3 are 256-wide screens
-// (menus, funds, dialogue panels) and would show wrapped edge fragments.
-// Skip those layers wherever the output x is outside the native 240 span.
-int ffta_ws_bg_x_provider(int bg, int x, int y, int* hw_x) {
-    (void)y;
-    (void)hw_x;
-    if (bg >= 2) {
-        const int left = static_cast<int>(g_ws_frame_left);
-        if (x < left || x >= left + 240) return -1;  // handled: no pixel
-    }
-    return 0;
-}
+// (The BG margin provider is intentionally gone: no fixed layer skip can be
+// right across FFTA's per-scene layer-role swaps. The engine's window control
+// gates the margin columns; the world-map pillarbox above handles the one
+// scene whose 256-px tilemaps alias there.)
 
 #if defined(__ANDROID__)
 // Issue #6: battery saves and save states live in the user-visible external
@@ -160,16 +160,14 @@ int ffta_ws_bg_x_provider(int bg, int x, int y, int* hw_x) {
 namespace {
 
 // User-visible external app directory (.../Android/data/<pkg>/files/).
-// SDL builds ask SDL; raylib (NativeActivity) builds have nothing to ask
-// yet (real port: JNI getExternalFilesDir) — nullptr keeps the app-private
-// files/ fallback in both redirect helpers below.
+// The Android base is the raylib/NativeActivity scaffold (Phase 4f): the path
+// is derived from the baked applicationId (mobile_platform.h); nullptr keeps
+// the app-private files/ fallback in both redirect helpers below.
 const char* ffta_external_storage_path() {
-#if defined(__ANDROID__) && !defined(GBARECOMP_USE_RAYLIB)
-    return SDL_AndroidGetExternalStoragePath();
-#elif defined(__ANDROID__) && defined(GBARECOMP_ANDROID_PACKAGE)
+#if defined(__ANDROID__) && defined(GBARECOMP_ANDROID_PACKAGE)
 // App-specific external dir: needs no permission, is MTP-visible over USB,
-// and /sdcard tracks the current user. Same value SDL returns on SDL builds
-// (the real port may upgrade this to JNI getExternalFilesDir).
+// and /sdcard tracks the current user (the real port may upgrade this to JNI
+// getExternalFilesDir).
 #define FFTA__STR(x) #x
 #define FFTA__XSTR(x) FFTA__STR(x)
     static const char kExt[] = "/sdcard/Android/data/" FFTA__XSTR(

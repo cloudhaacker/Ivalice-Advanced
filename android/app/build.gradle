@@ -40,7 +40,7 @@ ext.gbaGame = [
     saveFile      : "ffta_us.sav",
     saveSize      : 65536,
     orientation   : "landscape",
-    payloadVersion: "5",
+    payloadVersion: "6",
     setupNote     : "Landscape tactics: use the on-screen pad and buttons; " +
                     "long-press or three-finger tap for the runtime settings menu.",
     variant       : "final_fantasy_tactics_advance",

@@ -1,0 +1,24 @@
+format_version = 1
+id = "ffta.enhancement.widescreen"
+version = "1.0.1"
+name = "FFTA Widescreen Field Margins"
+author = "ffta-recompiled"
+description = "Reveal the field rings in the margins of wide views. Margins use the engine's window-controlled sampling (no fixed layer skip: FFTA swaps BG roles per scene); the world map pillarboxes and menus stay inside the native span; the default view remains faithful 240."
+license = "PolyForm-Noncommercial-1.0.0"
+resolver = "declarative"
+save_compatibility = "shared"
+
+[[target]]
+game_id = "ffta-us"
+rom_sha1 = "4ac05441f4de70a4ec3dd932116346c61b8783d9"
+
+[[feature]]
+id = "widescreen"
+name = "Widescreen Field Margins"
+description = "Fill the margin columns from the guest's own world through the engine's window-controlled sampling. Enabled by default; the view stays 240-wide unless one is requested with --view-width (up to 448) or --resize-view."
+group = "Presentation"
+default_enabled = true
+
+[[plugin]]
+feature = "widescreen"
+id = "ffta.widescreen"

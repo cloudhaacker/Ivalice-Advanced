@@ -7388,7 +7388,7 @@ device gate: tag every capture and settle ≥4.
   4b blocker.
 - Next: 4c (flip FFTA's default build to raylib; play.sh/check.py/CI naming).
 
-## 2026-10-15 — V2 Phase 4c: raylib is the default build (HASH)
+## 2026-10-15 — V2 Phase 4c: raylib is the default build (gbarecompx 07ee5fe)
 
 - Root CMake declares the product default:
   `option(GBARECOMP_USE_RAYLIB ... ON)` before add_subdirectory. option()
@@ -7434,7 +7434,7 @@ device gate: tag every capture and settle ≥4.
   the completeness guard's per-interface tier), then 4e (release packaging:
   SDL2 pin → raylib cross-build), 4f (Android scaffold swap).
 
-## 2026-10-15 — V2 Phase 4d: per-interface guard + dispatch walk (gbarecompx HASH)
+## 2026-10-15 — V2 Phase 4d: per-interface guard + dispatch walk (gbarecompx ecda458)
 
 - Guard rewrite (`tools/check_raylib_backend_complete.py`): attribution is now
   per interface — every method of each of the 7 surfaces must be overridden at
@@ -7474,7 +7474,7 @@ device gate: tag every capture and settle ≥4.
   SDL references), 4f (Android scaffold swap to raylib/NativeActivity), then
   Phase 5/6/7.
 
-## 2026-10-15 — V2 Phase 4e: release packaging off the SDL2 pin (gbarecompx HASH)
+## 2026-10-15 — V2 Phase 4e: release packaging off the SDL2 pin (gbarecompx c7e9852)
 
 - The Windows release no longer fetches raylib: `tools/win_cross_deps.py` gains
   a pinned raylib 6.0 dep (tarball sha256 `2b3ee1e2...`; same release as the
@@ -7507,7 +7507,7 @@ device gate: tag every capture and settle ≥4.
 - Next: 4f (Android scaffold swap to raylib/NativeActivity — the last SDL
   stronghold), then Phase 5/6/7.
 
-## 2026-10-15 — V2 Phase 4f: the Android scaffold is raylib/NativeActivity (gbarecompx HASH)
+## 2026-10-15 — V2 Phase 4f: the Android scaffold is raylib/NativeActivity (gbarecompx c2b2cf1)
 
 - The SDL shell is retired: the SDL submodule
   (`platform/android/third_party/SDL`) and its `.gitmodules` entry are gone;
@@ -7632,3 +7632,67 @@ device gate: tag every capture and settle ≥4.
 - Next: Phase 5 (the headless tier / standalone render proof), 6 (docs pass),
   7 (the repoint to the published framework).
 
+## 2026-10-15 — Widescreen margins: withdraw the layer skip (move-state break + summon clip)
+
+- Report: on the device the wide-view margins "turn off" while a unit is in the
+  move/targeting state; the same state on the desktop looked correct.
+- Measured (same state both sides, in the move state): device margins are the
+  exact 256-px tilemap wrap (mean |diff| 1.68 against the native view's columns
+  +256; 36-40 against anything else) — the aliased seam, with map content
+  clipping at the native 240 span. Desktop margins are true off-screen ring
+  content (neither wrap nor continuation), steady over 20 samples; live
+  registers: BG0/BG1 256-px wide at 0x5000/0x5800, BG2/BG3 the 512-px field
+  ring at 0x6000/0x7000.
+- Mechanism: FFTA swaps layer roles in the move state (the ring moves to
+  BG2/BG3; the 256-px UI layers to BG0/BG1). The plugin's margin provider
+  hard-coded "BG2/BG3 = UI -> skip in margins" (correct only for the W1-W3
+  validated config, ring on BG0/BG1) and therefore skipped the ring itself.
+  The desktop hid it because build/mods/state.toml had the feature disabled
+  (the engine's never-touched default; android/payload/mods/state.toml already
+  works around that trap with an explicit enabled = true).
+- Red-first: flipping the desktop's build/mods/state.toml to enabled = true
+  reproduced the device break on the desktop (user-confirmed: "desktop is
+  broken now with that change. it matches the broken mobile").
+- Fix, interim (src/main.cpp): the skip derived per frame from the BGxCNT size
+  bits (256-px-wide tilemaps never paint margin columns). This fixed the move
+  state but was withdrawn after the Totema summon report.
+- Summon investigation (user: "the totema summon ... is clipped during the
+  animation"): a deterministic replay from state1 driving the session's own
+  input trace (frames 44025-44229, the summon; set_keyinput per event, then
+  120-frame sampling) shows the summon window is PIXEL-IDENTICAL with the
+  feature enabled (both fix variants) and disabled — the margin skip and the
+  sprite clip change nothing there. The visible "clipping" was
+  presentation-side (a fresh session after the rebuild reads "much better");
+  the replay stays as the A/B harness.
+- Fix, final: the BG margin skip is withdrawn entirely (no provider, no
+  authored-margin bypass) — the engine's window-controlled sampling stands,
+  which is the behavior the feature-off desktop always had and which the move
+  state renders correctly (the ring wins the compositing). Kept: the
+  world-map pillarbox (W3) and the sprite clip, refined to a sprite-level
+  parked test (gba_ppu.cpp: a sprite whose extent lies entirely outside the
+  native span is skipped; one anchored inside may extend into the margins —
+  user-confirmed: edge characters the original 3:2 viewport clips are
+  revealed wide, parked OBJ stay hidden).
+- Verification: the skip-withdrawn build passes ws_check 6 cases x 3 widths
+  (ring scenes 100% margins, pillar scenes flat, stale guard 81-96%) — the
+  engine's window-controlled sampling fills the ring scenes on its own. The
+  interim width-mask build's mutation control (the inverted width rule) failed
+  the suite on the stale guard (0.0% idle-vs-pan change); the withdrawn-skip
+  build passes it unchanged. Android APK rebuilt + installed (device log:
+  policy + sprite clip installed, 356x160 margins 58/58); the install
+  cold-boots the app — player saves/states persist.
+- Pan follow-up (user: "the wide view is not revealing them though ... when the
+  camera moves and pans, those characters are clipped out even though the
+  level and background are still drawn"): the sprite-level clip hid sprites
+  whose extent lay entirely outside the native span — but a camera pan puts
+  *real* units there (they stand on the map, revealed by the wide view). The
+  OBJ clip is therefore withdrawn too (`g_ws_obj_native_clip` stays 0).
+  Result (user): no artifacts or odd rendering in the margins — the clip
+  stays gone. The off-viewport units are nevertheless still clipped with the
+  clip off; an OAM probe of the pan session (deterministic replay, per-frame
+  `read_oam`) determines whether the guest itself culls them (no OAM entry at
+  the margin positions → a game-side culling widening is the fix) or the PPU
+  drops them (an engine fix). Pending.
+- Open: device move-state acceptance by the user; View menu row (Native /
+  Adaptive / 16:9) still pending; desktop now runs the feature enabled
+  (build/mods/state.toml).
