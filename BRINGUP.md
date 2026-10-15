@@ -6876,3 +6876,31 @@ device gate: tag every capture and settle ≥4.
   is compiling the same tree.
 - Next: Audio (claim/release + push/volume/enabled), then Input, Fx,
   Overlay, lifecycle/facade.
+
+## 2026-10-15 — V2 Phase 2, Audio concern (gbarecompx 71ac038)
+
+- `RaylibBackend::AudioImpl` (nested, same pattern as VideoImpl):
+  `claim()` refuses when the device did not come up at open ("audio device
+  unavailable") or when a claim is already held ("audio already claimed") —
+  Err::AudioDevice with static-lifetime detail, per plan §3.3; `release()`
+  clears it (single owner). Reset by open() and close(). The device
+  lifecycle itself is unchanged (still open()/close()); claim is a
+  handshake, not a second init path, and `push()` keeps the flat behavior
+  (no claim gate), so existing callers are unaffected.
+- push/set_volume/volume/set_enabled/enabled moved verbatim; the five flat
+  methods (push_audio_samples, set_volume, volume_percent, set_audio_enabled,
+  audio_enabled) forward.
+- `audio_ready`/`audio_dev_open`/`bridge_ready` moved out of the raylib
+  guard in Impl (plain-data rule) — claim() is unguarded and must refuse
+  identically in the stub build.
+- Red-first: audio contract tests added to raylib_backend_v2_test.cpp
+  (compile-red "no member named 'audio'"); negative control: volume clamp
+  100→99 mutation observed failing the exact CHECK. (First mutation attempt
+  ran a stale binary because the build had failed — re-ran after the fix.)
+- Verified: stub 63/63; FFTA build-raylib 67/67, build-raylib-only 68/68;
+  attract golden byte-identical in both configs. Audit of the Video step
+  (independent subagent): no blocking/notable findings; its two nits
+  (refresh_hz sanity range, test coverage both directions) landed in
+  6c62fc6.
+- Next: Input (read/load_config/bindings/gamepad/rumble/haptic), then Fx,
+  Overlay, lifecycle/facade.
