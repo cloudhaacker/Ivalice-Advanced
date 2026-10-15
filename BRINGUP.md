@@ -6904,3 +6904,38 @@ device gate: tag every capture and settle ≥4.
   6c62fc6.
 - Next: Input (read/load_config/bindings/gamepad/rumble/haptic), then Fx,
   Overlay, lifecycle/facade.
+
+## 2026-10-15 — V2 Phase 2, Input concern (gbarecompx 0778f84)
+
+- `RaylibBackend::InputImpl`: read() is the snapshot fill (levels only) that
+  used to sit at the top of pump(); it resets the snapshot (and the FF flag)
+  when the window is not ready, and records `touch_ff_held` in Impl for the
+  pump's post-translate overlay. The flat pump is now the §3.2 composition —
+  `translate_input(read(s), bindings(), edges)` — plus that overlay, exactly
+  the shape the SDL sibling uses for its touch FF pill. Behavior note: the
+  old pump early-returned Events{} when not ready; the composition
+  translates an empty snapshot against edges that reset on open/close, so
+  reachable states are identical (the transient open-but-not-ready case
+  emits at most release edges for keys held across the transition —
+  unreachable in practice, noted for the record).
+- load_input_config splits: the input half (assist/ff seeding, bindings
+  reseed, keybinds/keymap/Launcher scans) is InputImpl::load_config; the
+  [video] LCD block stays in the flat method (env/dir guard restructured)
+  until the Fx step. bindings() returns the live table;
+  assist_tools/fast_forward_multiplier move as one-liners;
+  gamepad_connected/rumble/haptic_pulse move verbatim.
+- Caught by the raylib-ON build only (stub build passed): the moved read()
+  called the flat member `set_touch_pad_visible` — impossible from a nested
+  class with no backend object. Extracted the body to the private static
+  `apply_touch_pad_visible(Impl*, bool)` (the save_touch_config pattern);
+  the flat setter forwards to it. **Lesson:** the per-concern accept MUST
+  include the ON build — raylib-guarded bodies are not compiled in the stub
+  config, and a token-faithful move can still be context-invalid.
+- Red-first: input contract tests (compile-red "no member named 'input'";
+  also caught kRayKeyX's namespace qualification). Negative control:
+  ff-clamp 10→9 mutation observed failing the exact CHECK.
+- Verification: stub 63/63; FFTA build-raylib 67/67, build-raylib-only
+  68/68; attract golden byte-identical in both configs; body-move
+  token-verified (pump→read 10,764 tokens; the split's call census exact).
+- Next: Fx (settings/apply + the LCD config block), then Overlay, then
+  lifecycle/facade.
