@@ -7240,3 +7240,28 @@ device gate: tag every capture and settle ≥4.
   covered by a recording fake; FFTA's raylib build opens and applies the
   display menu; attract golden unchanged (menu closed by default).
 - Next: Phase 4 (the switch: V2 live, SDL deleted) — needs human sign-off.
+
+## 2026-10-15 — V2 fix: menu flicker under frame interpolation (gbarecompx e14eefc)
+
+- Playtest finding (user): "when LCD shader is enabled, the menu is
+  flickering" — follow-up narrowed it to **frame interpolation** (the LCD
+  association was coincidental).
+- Root cause: the decoupled display clock (issue #9 3a) subdivides a guest
+  frame's wait into extra display-paced presents — `interp_display_tick`
+  calls the full `present()`. The menu draw was stashed once per pump and
+  consumed by the first present ("one-shot"), so the extra interp ticks in
+  that wait rendered the game WITHOUT the menu → the flicker.
+- Fix: `draw_pending_menu()` no longer clears the stash; it lives until the
+  next `menu().present()` (which clears and re-sets it at its start), so
+  every present of the frame carries the menu. `close()` clears it with the
+  rest of the derived menu state.
+- Observation lesson (recorded): window pixel probes via `import` on this
+  compositor race the GL buffer swap — ~1-3% of grabs return near-black or
+  partial buffers (mean 0.002) at a rate that scales with the present rate,
+  masquerading as menu-less frames (the interp correlation was an artifact
+  of that). Minimum discipline for this class: recapture immediately to
+  classify; the playtest is the real acceptance.
+- Verification: stub 68/68; FFTA 72/72 + 73/73; attract byte-identical in
+  both configs (interp off by default; the fix only changes the menu stash
+  lifetime).
+
