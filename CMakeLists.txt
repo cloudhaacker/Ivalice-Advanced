@@ -31,6 +31,16 @@ set(GBARECOMP_ENABLE_MODS ON CACHE BOOL
 set(GBARECOMP_RUNTIME_UI_ROOT "${RECOMP_UI_ROOT}"
     CACHE PATH "recomp-ui root used by the live GBA runtime adapter")
 
+# raylib Android: no launcher and no in-game runtime UI — recomp-ui's UI is
+# not ported to the raylib path (the generic menu is the in-game surface), and
+# the runtime-UI symbols are carried by the launcher target, which is off
+# there. Clearing the root before the framework's add_subdirectory keeps it
+# from defining GBARECOMP_RUNTIME_UI; with the launcher off the link would
+# otherwise fail on recomp_runtime_ui_* (observed).
+if(ANDROID AND GBARECOMP_USE_RAYLIB)
+    set(GBARECOMP_RUNTIME_UI_ROOT "")
+endif()
+
 # ── Window backend (Phase 4c) ────────────────────────────────────────────────
 # raylib is the product backend. Declared here so a plain
 # `cmake -S . -B build` selects it; -DGBARECOMP_USE_RAYLIB=OFF builds the
@@ -131,15 +141,9 @@ target_link_libraries(${FFTA_TARGET} PRIVATE
     gbarecomp_armv4t
     "-Wl,--end-group")
 
-if(ANDROID)
-    # src/main.cpp uses SDL_AndroidGetExternalStoragePath() (issue #6) for
-    # the user-visible save/state directories. The engine template builds
-    # SDL2 shared before this project, so the target exists; the guard keeps
-    # exotic standalone configures working.
-    if(TARGET SDL2::SDL2)
-        target_link_libraries(${FFTA_TARGET} PRIVATE SDL2::SDL2)
-    endif()
-endif()
+# Phase 4f: the Android base is the raylib/NativeActivity scaffold; the
+# user-visible save/state dir comes from the baked applicationId in
+# src/main.cpp (no SDL link).
 
 if(ANDROID)
     set(FFTA_DEFAULT_GAME_CONFIG "variants/final_fantasy_tactics_advance/game.toml")

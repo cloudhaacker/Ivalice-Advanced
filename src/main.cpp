@@ -15,9 +15,6 @@
 #include "mobile_platform.h"
 
 #if defined(__ANDROID__)
-#if !defined(GBARECOMP_USE_RAYLIB)
-#include <SDL_system.h>  // SDL_AndroidGetExternalStoragePath (user-visible saves)
-#endif
 #include <filesystem>
 #include <system_error>
 #endif
@@ -327,12 +324,19 @@ int ffta_main(int argc, char** argv) {
     args.erase(std::remove(args.begin(), args.end(), "--no-launcher"),
                args.end());
 #else
-    // No setup UI in this build and no bundled ROM: refuse to boot without a
-    // staged ROM rather than failing cryptically deeper in the runtime.
-    std::fprintf(stderr,
-                 "[ffta] no setup UI and no bundled ROM "
-                 "(GBAGAME_BUNDLED_ROM=OFF): stage a ROM first\n");
-    return 1;
+    // Public build: the ROM arrives through the setup flow (SAF import).
+    // Boot only when the staged ROM is actually there (cwd is the app files
+    // dir; the TOML's ../../roms/<file> resolves beside it) rather than
+    // refusing outright — the pre-4f shell never hit this path (its
+    // compiled-in launcher made this whole block unreachable), and a public
+    // raylib build must boot after an import exactly like it always did.
+    std::error_code rom_ec;
+    if (!std::filesystem::is_regular_file("roms/ffta_usa.gba", rom_ec)) {
+        std::fprintf(stderr,
+                     "[ffta] no staged ROM: import one through the setup "
+                     "screen (roms/ffta_usa.gba missing)\n");
+        return 1;
+    }
 #endif
 #endif
 
@@ -425,12 +429,7 @@ int ffta_main(int argc, char** argv) {
     return gbarecomp::run_game(static_cast<int>(av.size()), av.data(), opts);
 }
 
-#if defined(__ANDROID__) && !defined(GBARECOMP_USE_RAYLIB)
-extern "C" int SDL_main(int argc, char** argv) {
-    // Desktop-sized host stack for the recompiled corpus (mobile_platform.h).
-    return gbarecomp::mobile_run_with_stack(ffta_main, argc, argv);
-}
-#elif defined(__ANDROID__)
+#if defined(__ANDROID__)
 // Raylib (NativeActivity) entry: android_native_app_glue calls main() on the
 // glue thread, and raylib is glue-thread-bound (its ALooper polling fails on
 // any other thread). So the game runs HERE, not on mobile_run_with_stack's

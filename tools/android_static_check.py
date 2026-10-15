@@ -11,6 +11,10 @@ build, and self-tests the device gate script against a fake `adb`:
             enabled (the second-launch fix) and matches the preloaded catalog
   hygiene   no ROM/save/APK/binary artifacts tracked; android build outputs
             stay gitignored
+  scaffold  the Android base is the raylib/NativeActivity scaffold: no SDL
+            submodule entry/gitlink, no SDLActivity, no SDL CMake subproject,
+            no sdlRoot in the Gradle plugin (Phase 4f). The desktop launcher's
+            SDL2 (Track L) is out of scope.
   gate      tools/validate_android.sh passes a clean fake-device run (evidence
             pulled) and fails SELF-HEAL / missing-log / crash-buffer /
             setup-still-resumed runs; usage errors exit 2
@@ -422,7 +426,9 @@ def check_save_external_wiring():
          "game_android.toml [save].path must keep the app-private fallback "
          "saves/ffta_us.sav, found %r" % android["save"]["path"])
     main = read_text("src/main.cpp")
-    need("SDL_AndroidGetExternalStoragePath" in main,
+    # The lookup is the baked applicationId (the raylib/NativeActivity base
+    # since Phase 4f; the pre-4f shell asked its own storage API instead).
+    need("GBARECOMP_ANDROID_PACKAGE" in main and "/sdcard/Android/data/" in main,
          "src/main.cpp lost the external-storage lookup (issue #6)")
     for token in ("--save-path", "--state-dir", "saves/ffta_us.sav",
                   "ffta_usa.state", "ffta_usa.suspend.state",
@@ -578,6 +584,7 @@ def check_tracked_artifacts():
 def check_ignored_outputs():
     paths = [
         "android/artifacts/last-run/screenshot.png",
+        "android/.fetchcontent/arm64-v8a/raylib-subbuild/CMakeCache.txt",
         "android/app/build/outputs/apk/debug/app-debug.apk",
         "android/local.properties",
         "android/signing.local.properties",
@@ -592,6 +599,49 @@ def check_ignored_outputs():
         if completed.returncode != 0:
             missing.append(rel)
     need(not missing, "path(s) no longer gitignored: %s" % ", ".join(missing))
+
+
+def check_scaffold_sdl_free():
+    """The Android base is the raylib/NativeActivity scaffold (Phase 4f).
+
+    Scans the framework's platform/android scaffold and the game's android/
+    project for SDL: submodule entry/gitlink, SDLActivity, the SDL CMake
+    subproject, sdlRoot. Build outputs, artifacts and the framework's
+    third_party tree are excluded; the desktop launcher's SDL2 (Track L,
+    recomp-ui) is out of scope."""
+    engine = REPO / "gbarecompx"
+    if not (engine / "platform/android").is_dir():
+        return  # the raylib tree is absent (CI before Phase 7): nothing to scan
+    offenders = []
+
+    gitmodules = engine / ".gitmodules"
+    if gitmodules.is_file() and "third_party/SDL" in gitmodules.read_text():
+        offenders.append("gbarecompx/.gitmodules still lists the SDL submodule")
+    if (engine / "platform/android/third_party/SDL").exists():
+        offenders.append("platform/android/third_party/SDL still exists")
+
+    token = re.compile(r"sdl", re.IGNORECASE)
+    skip_parts = {"third_party", ".cxx", ".fetchcontent", "build", ".gradle",
+                  "artifacts"}
+    exts = {".gradle", ".java", ".xml", ".txt", ".md", ".ps1", ".c", ".h",
+            ".cmake", ".toml", ".properties"}
+    for root in (engine / "platform/android", REPO / "android"):
+        for path in sorted(root.rglob("*")):
+            if not path.is_file() or path.suffix not in exts:
+                continue
+            if any(part in skip_parts for part in path.parts):
+                continue
+            try:
+                text = path.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            for line_no, line in enumerate(text.splitlines(), 1):
+                if token.search(line):
+                    offenders.append(
+                        "%s:%d: %s" % (path.relative_to(REPO), line_no,
+                                       line.strip()[:80]))
+    need(not offenders, "SDL references in the Android scaffold:\n    " +
+         "\n    ".join(offenders[:12]))
 
 
 # ---------------------------------------------------------------------------
@@ -818,6 +868,8 @@ CHECKS = [
     ("payload: resize_view opt-in present", check_resize_view),
     ("hygiene: no ROM/save/APK/bin artifacts tracked", check_tracked_artifacts),
     ("hygiene: android outputs stay gitignored", check_ignored_outputs),
+    ("scaffold: the Android base is SDL-free (raylib/NativeActivity)",
+     check_scaffold_sdl_free),
     ("gate: clean fake-device run passes and pulls evidence", check_gate_clean),
     ("gate: SELF-HEAL runtime log fails the gate", check_gate_selfheal),
     ("gate: missing runtime log fails the gate", check_gate_missing_log),

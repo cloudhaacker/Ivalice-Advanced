@@ -76,6 +76,7 @@ int main() {
     w.set_host_overlay(nullptr);
     w.set_touch_pad_visible(true);
     w.configure_touch(true, 0xFFu, 1, true, 30);
+    w.set_touch_pad_scale(0.85f);
     w.set_touch_config_dir("/tmp/does-not-exist");
     w.load_input_config("/tmp/does-not-exist", true, 4);
     w.present(nullptr, true);

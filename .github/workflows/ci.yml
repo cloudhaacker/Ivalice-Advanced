@@ -100,5 +100,14 @@ jobs:
       # gitignored, and the integration test is kept link-lean (raylib +
       # gbarecomp_raylib_backend only) precisely so it works on a fresh
       # checkout.
+      # Pre-Phase-7 this job skips (no gbarecompx tree); once the framework is
+      # tracked, the suite configures build/ and fetches raylib — cache the
+      # clone + build so runs reuse it.
+      - name: Cache raylib FetchContent (clone + build)
+        uses: actions/cache@v4
+        with:
+          path: build/_deps
+          key: ffta-raylib-deps-${{ runner.os }}-${{ hashFiles('gbarecompx/CMakeLists.txt') }}
+
       - name: "Gate (raylib-compile: build + run headless under Xvfb)"
         run: python3 tools/check.py --only raylib-compile

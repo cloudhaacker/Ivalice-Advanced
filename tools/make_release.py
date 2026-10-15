@@ -591,8 +591,9 @@ def stage_apk(version):
 
     Gradle without -PprivateRom embeds no ROM: the app boots into the SAF
     setup flow (issue #3 "bring your own ROM"). Reuses build_apk.py's
-    preflight (JDK/SDK/NDK discovery + SDL submodule + dump verification —
-    the release runner carries the ROM for the bootstrap anyway), but its
+    preflight (JDK/SDK/NDK discovery + the raylib Android scaffold + dump
+    verification — the release runner carries the ROM for the bootstrap
+    anyway), but its
     own gradle call: build_apk.step_gradle bakes in -PprivateRom.
 
     The artifact passes tools/android_apk_check.py --expect public (the
@@ -634,7 +635,7 @@ def stage_apk(version):
     if r.returncode != 0:
         die("gradle assembleDebug (public) failed",
             hint="android/README.md § Build — JDK 21, SDK platform 35, NDK, "
-                 "SDL submodule are the usual suspects")
+                 "and the gbarecompx scaffold are the usual suspects")
     # AGP's debug output path; the engine's *-PRIVATE-rom-included rename
     # only applies to private builds, and build_apk.newest_apk() globs that
     # PRIVATE marker only — a public build is always right here.

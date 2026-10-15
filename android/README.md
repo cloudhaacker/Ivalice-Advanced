@@ -20,13 +20,15 @@ debugging recipe.
 ## How the port is structured
 
 The **app shell lives in the engine**, not this repo:
-`gbarecomp/platform/android/` (present at the pinned engine revision) carries
-the shared Gradle template (`gbarecomp-app.gradle`), the Java activities
-(`org.gbarecomp.GbaSetupActivity` — SAF file picker with size/SHA-1
-verification → app-private storage; `org.gbarecomp.GbaGameActivity`), the
-vendored SDLActivity sources, and the CMake root that builds SDL2 and then
-the game project. The game project must define a **SHARED target named
-`main`** (`libmain.so`, loaded by SDLActivity).
+`gbarecompx/platform/android/` (the raylib framework; the pinned submodule
+still carries the retired shell) carries the shared Gradle template
+(`gbarecomp-app.gradle`), the Java activities (`org.gbarecomp.GbaSetupActivity`
+— SAF file picker with size/SHA-1 verification → app-private storage;
+`org.gbarecomp.GbaGameActivity`, a `NativeActivity` subclass since Phase 4f),
+and the CMake root that builds the game project. The game project must define
+a **SHARED target named `main`** (`libmain.so`; the manifest's
+`android.app.lib_name` loads it, and the vendored `native_app_glue` runs
+`android_main` on its 256 MiB thread).
 
 This repo therefore adds only a thin surface:
 
@@ -37,8 +39,8 @@ This repo therefore adds only a thin surface:
 | `android/payload/mods/state.toml` | Default mod selection for fresh installs (widescreen on — see "Mods state" below) |
 | `android/{build,settings}.gradle`, `gradle.properties`, wrapper | Gradle 8.11.1 / AGP 8.10.1 project |
 | `android/app/src/main/res/…` | `app_name`, original vector launcher icon (no third-party art) |
-| `CMakeLists.txt` (`if(ANDROID)`) | Target `main` instead of `FFTARecomp`; forced mods; SDL/UI guards |
-| `src/main.cpp` | `mobile_prepare_process` preflight, phone run options, `SDL_main` via a 256 MiB pthread |
+| `CMakeLists.txt` (`if(ANDROID)`) | Target `main` instead of `FFTARecomp`; forced mods; raylib entry guards |
+| `src/main.cpp` | `mobile_prepare_process` preflight, phone run options, the NativeActivity `main` on the glue thread |
 | `tools/validate_android.sh` | Device acceptance gate (assertions + evidence pull) |
 | `tools/android_press_test.py` | On-device press acceptance over the observe TCP (savestate load → `set_keyinput` A press → frames/anomaly/crash assertions) |
 | `tools/android_lifecycle_test.py` | On-device suspend/kill/relaunch lifecycle gate (15 assertions: flush, marker survival, auto-resume, reconnect) |
@@ -120,9 +122,10 @@ follows.
 
 Prerequisites (this machine): JDK 21 (`/usr/lib/jvm/java-21-openjdk` — the
 default JDK 27 is too new for Gradle 8.11.1), Android SDK at
-`/opt/android-sdk` (platform 35, build-tools 35, cmake 3.22.1, NDK
-27.1.12297006), `adb`, and the engine's SDL submodule initialized
-(`git -C gbarecomp submodule update --init platform/android/third_party/SDL`).
+`/opt/android-sdk` (platform 35, build-tools 35, cmake 3.30.3, NDK
+28.2.13676358), `adb`, and the `gbarecompx` framework checkout (the Android
+scaffold base since Phase 4f; the Gradle project picks it up automatically
+when the directory exists).
 
 ```sh
 cd android
@@ -153,6 +156,15 @@ the junk class the APK guard's packaging-sanity check rejects), then the
 [`tools/android_apk_check.py`](tools/android_apk_check.py) gate with
 `--expect public` before staging `release-stage/FFTARecomp-<version>-android-arm64-v8a.apk`
 (debug-signed; the release-key decision is tracked on issue #3).
+
+**APK archive (device A/B comparisons)**: outgoing builds are kept under
+`android/artifacts/apk-archive/` (gitignored, like every APK output — private
+builds embed the ROM and are never committed) with a `MANIFEST.txt` and
+`SHA256SUMS.txt` naming each build's base; public release baselines live in
+`release-stage/`. Archive the outgoing build before a base swap (the Phase 4f
+raylib/NativeActivity move keeps the pre-4f build there), so device behavior
+can be compared side by side. All builds share the debug key, so
+`adb install -r` swaps them in place with saves preserved.
 
 ## Run + verify on device
 
@@ -338,7 +350,8 @@ same rule). The one-time outward migration never overwrites an existing
 external copy, so an imported file is safe from it.
 
 How it works: `src/main.cpp` (Android only) resolves the external directory
-via `SDL_AndroidGetExternalStoragePath()`, one-time migrates any existing
+from the baked applicationId (`/sdcard/Android/data/<pkg>/files`), one-time
+migrates any existing
 app-private files outward (copy + size-verify + remove original, only when
 the external copy is absent — a player-imported file is never overwritten;
 the `.suspend.pending` marker is deliberately not migrated), then appends

@@ -116,6 +116,8 @@ android/.gradle/
 android/local.properties
 .cxx/
 android/artifacts/
+# Shared raylib FetchContent base for Android builds (one checkout per ABI)
+android/.fetchcontent/
 android/signing.local.properties
 *.apk
 *.aab

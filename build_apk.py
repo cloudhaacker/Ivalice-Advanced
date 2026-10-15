@@ -9,8 +9,8 @@ practical path is the **private test build** (ROM embedded, debug-signed),
 which this script drives:
 
   1. preflight     JDK 21 on PATH or JAVA_HOME (Gradle 8.11.1 rejects 27),
-                   ANDROID SDK platform+build-tools+NDK, engine SDL submodule
-                   checked out (the Gradle CMake needs it), `generated/`
+                   ANDROID SDK platform+build-tools+NDK, the raylib Android
+                   scaffold (gbarecompx/platform/android), `generated/`
                    corpus present and fresh (regenerate with build.py /
                    tools/cycle.py on desktop — an Android build cannot)
   2. gradle        ./gradlew :app:assembleDebug -PgbaAbis=<abi>
@@ -51,7 +51,7 @@ BIOS_SHA1 = "0c0d404d16c6b55b3071aba714f82077da132f14"
 ROM_SIZE = 16777216
 BIOS_SIZE = 16384
 GRADLE_MIN_JDK = (21, 21)  # Gradle 8.11.1: JDK 21 works; JDK 27 is too new
-SDL_SUBMODULE = REPO / "gbarecomp/platform/android/third_party/SDL/Android.mk"
+ANDROID_SCAFFOLD = REPO / "gbarecompx/platform/android/cpp/CMakeLists.txt"
 APK_DIR = ANDROID / "app/build/outputs/apk/debug"
 PRIVATE_MARKER = "-PRIVATE-rom-included.apk"
 # Sources the accepted APK must not be older than: if Gradle calls the build
@@ -179,15 +179,14 @@ def step_preflight():
         details.append(f"SDK {sdk} (exported ANDROID_HOME)")
     else:
         details.append(f"SDK {sdk}")
-    # engine SDL submodule (Gradle's CMake needs its sources)
-    if not SDL_SUBMODULE.exists():
-        r = run(["git", "-C", REPO / "gbarecomp", "submodule", "update",
-                 "--init", "platform/android/third_party/SDL"])
-        if r.returncode != 0 or not SDL_SUBMODULE.exists():
-            die("gbarecomp SDL submodule not checked out",
-                hint="git -C gbarecomp submodule update --init "
-                     "platform/android/third_party/SDL")
-    details.append("SDL submodule ok")
+    # The raylib Android scaffold (the Gradle CMake root; Phase 4f retired
+    # the shell submodule the old preflight pulled). The release always
+    # builds the raylib/NativeActivity base.
+    if not ANDROID_SCAFFOLD.is_file():
+        die("raylib Android scaffold missing (gbarecompx/platform/android)",
+            hint="the release builds the raylib/NativeActivity base; check "
+                 "out the gbarecompx framework tree")
+    details.append("Android scaffold ok (gbarecompx)")
     # dumps (re-checked by Gradle too, but fail early and clear): the ROM is
     # the user-supplied dump embedded by the private build; the BIOS is the
     # committed clean-room emibios staged into the payload (issue #17).
@@ -237,7 +236,7 @@ def step_gradle(abi, jobs):
     if r.returncode != 0:
         die("gradle assembleDebug failed (see output above)",
             hint="android/README.md § Build — JDK 21, SDK platform 35, "
-                 "NDK, and the SDL submodule are the usual suspects")
+                 "NDK, and the gbarecompx scaffold are the usual suspects")
     # An up-to-date Gradle build does not rewrite the APK; presence is enough,
     # but the artifact must not predate its sources (a bogus UP-TO-DATE
     # would otherwise ship silently stale output).

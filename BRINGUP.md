@@ -7506,3 +7506,129 @@ device gate: tag every capture and settle ≥4.
   configure takes the prefix; no FetchContent line).
 - Next: 4f (Android scaffold swap to raylib/NativeActivity — the last SDL
   stronghold), then Phase 5/6/7.
+
+## 2026-10-15 — V2 Phase 4f: the Android scaffold is raylib/NativeActivity (gbarecompx HASH)
+
+- The SDL shell is retired: the SDL submodule
+  (`platform/android/third_party/SDL`) and its `.gitmodules` entry are gone;
+  the native root (`platform/android/cpp`) builds the game project directly
+  (`PLATFORM=Android`; raylib via the framework's FetchContent — the same pin
+  as desktop); `GbaGameActivity` moved off SDLActivity onto
+  `android.app.NativeActivity` (the manifest carries `android.app.lib_name =
+  main`; the vendored `native_app_glue` runs `android_main` on its 256 MiB
+  thread); `GbaSetupActivity`/`GbaNative` stay. The Gradle plugin lost
+  sdlRoot/the SDL Java srcDir and pins the proven NDK 28.2.13676358. The
+  raylib spike was promoted and deleted (its material is the scaffold now).
+- FFTA: the Android Gradle project prefers `gbarecompx` (mirroring the
+  desktop CMake); `src/main.cpp`'s SDL branches (the storage lookup +
+  `SDL_main`) are gone — the user-visible dir comes from the baked
+  applicationId; the root CMake dropped the SDL2 link block; the README was
+  rewritten for the new base.
+- Red-first: the new `android-static` scaffold check (no SDL submodule
+  entry/gitlink, no SDLActivity, no SDL CMake subproject, no sdlRoot, no SDL
+  tokens in the scaffold's code/docs) — observed failing with the full
+  offender list pre-4f and green after (24/24 checks). The save-external
+  check now asserts the baked-applicationId mechanism (it encoded the SDL
+  call).
+- Catch on the first APK build: raylib 6 requires CMake >= 3.25; the scaffold
+  pinned the SDK's 3.22.1 (the pre-4f shell's version), so the Gradle
+  configure failed ("CMake 3.25 or higher is required"). The pin moved to
+  3.30.3 — the version the on-device spike used.
+- Verification: cycle.py PASS (cold regen 63,134 emitted units, build, attract
+  byte-identical `1EF4C118...`); ctest 71/71 (build/) + 65/65 (framework
+  stub); check.py --fast 8/9 (only the pre-existing patches-suite items red);
+  ws_check PASS; android-static PASS (24/24); runtime SDL refs 0; the NDK
+  clang syntax pre-check green.
+- Platform law (BRINGUP night 12): raylib-Android cannot close→reopen in one
+  activity; the port pauses/rebinds and never calls `CloseWindow`
+  (`caps.reopen` encodes it).
+- Device debugging (first divergence, root-caused): the first private build
+  installed and launched, but the game exited immediately. Root cause: the
+  NativeActivity storage path needs `GBARECOMP_ANDROID_PACKAGE`
+  (mobile_platform.h) and the scaffold never passed it — the pre-4f shell got
+  the path from its own accessor, so nothing had ever needed the define.
+  Without it `mobile_internal_storage_path()` is null → no chdir → the
+  engine's log open fails (native stderr stays on /dev/null) → the relative
+  ROM path never resolves → the runtime exits silently (no crash entry). Fix:
+  the Gradle template passes `-DGBARECOMP_ANDROID_PACKAGE=<applicationId>`
+  (PUBLIC on gbarecomp_runtime, so both the framework's chdir and the game's
+  baked external dir resolve).
+- Second device finding: the Java shell's JNI bridge
+  (`GbaNative.setSafeInsets`/`setDisplayDpi`) lived in the retired shell's SDL
+  region, so the NativeActivity build exported nothing ("No implementation
+  found"). Ported into `mobile_platform.cpp` (an atomics store — JNI calls
+  arrive on the UI thread, the runtime reads on the glue thread) and consumed
+  live by the raylib backend (insets per frame; the panel density through the
+  same 4..60 px/mm sanity window the SDL path used). This also fixes
+  `px_per_mm`, which had been stuck at the desktop 96/25.4 constant on
+  Android.
+- Third device finding: with the launcher off for raylib Android
+  (`GBAGAME_RECOMP_UI`), the game's bundled-ROM check became reachable — the
+  pre-4f shell compiled it out (launcher on), so nothing had ever passed
+  `GBAGAME_BUNDLED_ROM`. The template now maps `-PprivateRom` to
+  `-DGBAGAME_BUNDLED_ROM=ON` (private builds boot; the ROM is staged in the
+  payload). The check's public arm also refused outright, which would have
+  broken the public APK's post-import boot: it is now a ROM-presence check
+  (`roms/ffta_usa.gba` beside the app files dir), restoring public parity
+  with the old builds.
+- Fourth device finding (link): `recomp_runtime_ui_*` was undefined — the
+  framework defines `GBARECOMP_RUNTIME_UI` whenever the recomp-ui tree
+  exists, and the runtime-UI symbols are carried by the launcher target,
+  which is off for raylib Android. Matches the plan's own statement that
+  recomp-ui's UI is not ported to the raylib path: the FFTA root now clears
+  `GBARECOMP_RUNTIME_UI_ROOT` for raylib Android (before the framework's
+  add_subdirectory), so the define and the dead references both go.
+- FetchContent guard lesson: the module CACHES its default base dir on the
+  first configure, so the initial `if(NOT DEFINED ...)` guard never fired for
+  existing config dirs (the cache still held the `.cxx` path). The scaffold
+  now replaces only the default value and respects an explicit
+  `-DFETCHCONTENT_BASE_DIR`.
+- Widescreen regression (user-reported: "worked in the SDL version"): the
+  shell rendered fullscreen (the drawable = the display), so the Android
+  TOML's `resize_view = true` expanded the view. The raylib window opened at
+  the scaled request (720x480), which raylib letterboxes into the surface —
+  the resize-driven view then saw a 3:2 drawable, its width resolved to 240,
+  and the height-growth branch clamped at `max_resize_view_height` (default
+  160) left the geometry unchanged. Fix: the Java shell writes the display's
+  real size to `files/display.ini` before `super.onCreate` (the native thread
+  starts there) and the backend opens the window at that size — screen ==
+  render == display, matching the old shell. Also added a one-line
+  resize-view decision record (`resize_view/opts/max/window`) and un-gated the
+  applied-geometry line, so a silent 240 view is diagnosable on device.
+- The JNI port alone wasn't enough (user-reported: the touch controls shrank
+  after the widescreen fix — the pad is sized in millimetres from px_per_mm):
+  NativeActivity loads libmain.so in its own linker namespace, which the
+  native-method lookup does not search, so the calls failed with "No
+  implementation found ... is the library loaded, e.g. System.loadLibrary?"
+  (the Java catch hid it; the *symbols* were exported — verified with
+  `nm -D`). The retired shell's SDLActivity did an explicit
+  `System.loadLibrary("main")`, which registers the library with the
+  classloader. GbaNative now does the same in a static block. Effect:
+  px_per_mm 3.78 (desktop default) -> the device's real ~20.3 px/mm (SDL
+  logged 22.05), so the touch pad returns to its SDL-era physical size, and
+  the real cutout insets arrive.
+- Touch pad size knob (user: "a bit large now. is there a step down?"): the
+  millimetre layout had no scale input. Added `TouchConfig::pad_scale` (the
+  seam), `HostWindow::set_touch_pad_scale` (additive; applied by the next
+  `configure_touch`), `--touch-pad-scale` / `[touch] pad_scale` (0.5..1.5),
+  applied at the pad consumers only (layout inputs, pad/ring drawing, the
+  presentation's `drawable_px_per_mm`, gesture thresholds) — the seam's
+  `Video::px_per_mm()` still reports the physical panel density. The Android
+  TOML ships `pad_scale = 0.85` (payloadVersion 5); `debug-args.txt` gives
+  live tuning on device.
+- Follow-up (same round): the generic menu lost the retired recomp-ui UI's
+  view-mode control — no View row, and on Android the TOML was the only
+  lever. Adding a View choice row (Native / Adaptive / 16:9).
+- Lesson (Android-only code): the desktop and stub builds compile the
+  Android-gated blocks out, so an Android-only compile error slips past both
+  (observed: the JNI-refresh helper named the private `Impl` from a free
+  function — it needed to be a private static member like its siblings).
+  Cheap pre-check before the ~8-minute Gradle build: a syntax-only NDK clang
+  invocation of the touched TUs with the same flags (seconds).
+- Device gate: 5/5 (GbaGameActivity resumed, cpu_backend=static-recompiled,
+  crash buffer clean) + user acceptance 2026-10-15 (widescreen correct in the
+  move state after the margin fix; the touch pad at the real panel density
+  with the 0.85 step; saves/states/suspend live).
+- Next: Phase 5 (the headless tier / standalone render proof), 6 (docs pass),
+  7 (the repoint to the published framework).
+
