@@ -7194,3 +7194,49 @@ device gate: tag every capture and settle ≥4.
   shell; use `ps -eo pid,args | awk` filters).
 - Next: 3d (the open trigger + cue: the engine long-press ring moves
   host-side) closes Phase 3; then Phase 4 (the switch) with human sign-off.
+
+## 2026-10-15 — V2 Phase 3d: the open trigger + cue + FFTA wiring (gbarecompx f6b4dee)
+
+- `long_press_ring.h` (pure): the engine long-press cue —
+  `collect_long_press_rings` (held/unmoved/not-fired pointers; hidden for the
+  first 150 ms; progress = elapsed/long_press_ms clamped; wrap-safe
+  arithmetic) + `draw_long_press_ring` (7 mm radius, 1.2 mm stroke,
+  {80,210,255,200}, clockwise from 12 o'clock, drawable space) — the exact
+  semantics of the SDL `draw_engine_long_press`. Suite:
+  `long_press_ring_test.cpp` (recording overlay + collector rules).
+- RaylibBackend: the chrome block draws the ring (same gating as SDL: touch
+  enabled, unclaimed long-press, hidden while the V2 menu is open); the
+  backend no longer drains TouchHub host actions (the host policy consumes
+  them). The v2 test asserts a submitted ThreeFingerTap survives
+  `input().read()` with touch enabled (the drain sits behind that gate — the
+  first version of the test passed pre-fix because touch was off).
+- `HostWindow::backend_v2()` (dynamic_cast; nullptr on SDL) + the runtime.cpp
+  host policy: per pump, drain TouchHub host actions — any engine action
+  opens the generic menu (and `cancel_all` stops the triggering finger), Back
+  closes it; a PointerState from the first hub point drives row taps;
+  `host_menu.frame()` presents; the opening frame masks `ev.keyinput` too.
+  Persistence deliberately unwired (the legacy menu did not persist either;
+  the apply hook is the seam).
+- E2E acceptance (windowed, `--touch-emulation`, TCP-driven; no xdotool —
+  window discovery via xprop, input via the product's own TCP touch surface):
+  long-press → ring visible (cyan delta ~490 px) → panel drawn (35602 px of
+  exact panel color; 0 before, 183 after) → Back closes; then touch-driven
+  navigation (drill into Display, select Show FPS, activate) → the window
+  title gains " — 59.8 fps" (the applied Video setting), sticky after close.
+  Script: `/tmp/opencode/e2e_3d.py` (recreatable, not committed). Lessons
+  from the E2E: raw pixel diffs are polluted by the pad/pill appearing on
+  touch activity — detect the panel by its exact fill color instead; the
+  center-luma check is scene-dependent (the attract scene varies at pause).
+- Verification: stub ctest 68/68; FFTA 72/72 + 73/73; attract byte-identical
+  in both configs; 6 mutation controls (5 ring + the drain). Recorded debt:
+  the ring-draw call site in present() and the runtime.cpp host policy are
+  E2E-covered only (no unit test).
+- Note: the `build/` tree is configured against the **gbarecomp submodule**
+  (`GBARECOMP_ROOT=…/gbarecomp`), not the fork — its test targets cannot
+  build fork-only files (`host_backend_factory.h`) and its bios_smoke ImGui
+  link failure is the submodule's. The fork configs are `build-raylib` /
+  `build-raylib-only` (+ the framework standalone build).
+- **Phase 3 accept complete:** model suite green headless; presentation
+  covered by a recording fake; FFTA's raylib build opens and applies the
+  display menu; attract golden unchanged (menu closed by default).
+- Next: Phase 4 (the switch: V2 live, SDL deleted) — needs human sign-off.
