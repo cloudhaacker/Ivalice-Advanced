@@ -7146,3 +7146,51 @@ device gate: tag every capture and settle ≥4.
 - Next: 3c (host wiring: build the model from settings on open, apply
   MenuResult to Fx/Audio/Video, persist, derive suppress_game_input; the
   host-loop test on the Phase 2-tail fakes), 3d (the open trigger).
+
+## 2026-10-15 — V2 Phase 3c: host wiring + the host-loop suite (gbarecompx 384dac2)
+
+- `src/runtime/host_menu.{h,cpp}` (`gbarecomp_host_menu`): the §3.4/3c host
+  wiring. Owns the MenuModel; build() seeds the default rows from the
+  backend's current settings (Display: Fullscreen/Window scale/Linear
+  filter/Show FPS; Graphics: LCD ghosting, Frame interpolation, the LCD
+  shader group when caps.shaders; Audio: Audio/Volume; System: Resume game —
+  labels mirror recomp-ui's standard catalog); open()/toggle() rebuild then
+  open; frame() maps newly-pressed keyinput edges to menu_navigate plus the
+  backend.menu().present() call; apply() maps changed_row through a per-row
+  Bind table to Fx/Audio/Video with read-back reseeding (backend clamps
+  win); Resume game is framework-owned; set_rebuild_hook lets games
+  re-append rows on every build; set_apply_hook carries persistence and
+  game-owned rows/actions; suppress_game_input() derives from model.open.
+- **The B1 flaw the first audit caught (and the fake suite could not):** the
+  backend masks Events::keyinput while the menu is open (its
+  suppress_game_input derives from the presented model), so a host menu
+  navigating from keyinput freezes on the first open frame — the delivered
+  wiring and the delivered suppression were mutually exclusive. Fix:
+  `Events::menu_keyinput` (the pre-suppression levels, set by
+  translate_input next to the masked keyinput) + a pump-path regression
+  test (scripted suppress_game_input: the game sees 0x03FF, the menu still
+  navigates). Lesson (same family as the raylib-ON-only catches): the
+  integration seam the fakes never exercise (pump) is where the contract
+  breaks; the host-loop suite now goes through pump().
+- menu_model: menu_add_row() — the safe append (returns -1 at capacity);
+  the documented game-append idiom previously walked rows[] out of bounds.
+- RaylibBackend: MenuImpl::present derives impl_->menu_open from the
+  presented model; InputImpl::read reports it as suppress_game_input (raylib
+  + state-only stub branches); close() resets it with the edges (the single
+  reset point — a closed read reports nothing; an open-side reset was
+  dropped as mutually redundant, which the mutation control confirmed).
+- Second audit verified the fixes; its remaining findings were closed:
+  menu_add_row, the window_backend.h menu_keyinput comment (precise
+  invariant; the flat SDL generation predates the field), the close()
+  comment accuracy, rebuild-hook re-entrancy documented, and
+  input_translate_test now pins the raw/masked split at the source.
+- Verification: stub ctest 67/67; FFTA build-raylib 71/71, build-raylib-only
+  72/72; attract golden byte-identical in both configs (menu closed by
+  default). Mutation controls: 12/12 main battery + 4/4 follow-up (the 4th
+  needed the right grep — input_translate_test's helper prints FAIL, not
+  "CHECK failed"). One restore snippet had new/old swapped and left a
+  mutated tree while a sweep was launching — killed the sweep, repaired,
+  re-verified (recorded: `pkill -f` self-matched and killed the fixing
+  shell; use `ps -eo pid,args | awk` filters).
+- Next: 3d (the open trigger + cue: the engine long-press ring moves
+  host-side) closes Phase 3; then Phase 4 (the switch) with human sign-off.
