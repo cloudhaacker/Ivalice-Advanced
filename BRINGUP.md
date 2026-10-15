@@ -6971,3 +6971,62 @@ device gate: tag every capture and settle ≥4.
   token-verified (7/7 transitions; LCD block census exact).
 - Next: Overlay (host overlay hook, touch config, pad visibility), then
   lifecycle/facade (open(OpenParams), caps, suspend/resume, the V2 base).
+
+## 2026-10-15 — V2 Phase 2, Overlay concern (gbarecompx 3b2f4b9)
+
+- `RaylibBackend::OverlayImpl`: the host overlay hook, the touch policy as
+  the TouchConfig value struct (configure_touch unpacks the struct into the
+  flat body's parameter names — the body moves verbatim), the touch config
+  dir (ini [Touch] scan verbatim), and pad visibility (touch_pad_visible;
+  the transition stays the private static apply_touch_pad_visible, shared
+  with InputImpl::read()'s tap handling). The drawing side stays
+  RaylibOverlay, constructed by VideoImpl::present per frame.
+- Flat forwarders: set_host_overlay / configure_touch (builds the
+  TouchConfig) / set_touch_config_dir / set_touch_pad_visible /
+  touch_pad_visible_value.
+- Red-first: overlay contract tests (compile-red "no member named
+  'overlay'") covering the pad state machine (default -> configure_touch
+  emulation -> saved choice wins) and null-safe dir/hook calls; negative
+  control: the inverted pad_default check observed failing. The move script
+  again missed `override` on the moved interface methods — caught by a grep
+  of the generated class before the build.
+- Verification: stub 63/63; FFTA build-raylib 67/67, build-raylib-only
+  68/68; attract golden byte-identical in both configs; body-move
+  token-verified (3/3 bodies; pad-visibility routing checked).
+
+## 2026-10-15 — V2 Phase 2, lifecycle/facade (gbarecompx df141d9) — conversion complete
+
+- The last conversion step: `RaylibBackend` now carries both generations
+  (`public WindowBackend, public WindowBackendV2`); one state behind both.
+  All five concerns were already sub-objects; this step added the V2
+  lifecycle surface.
+- `open(OpenParams)`: AlreadyOpen on a second open; Err::Unsupported for
+  Mode::Headless unless PLATFORM_MEMORY; Err::Window (InitWindow) /
+  Err::Renderer (streaming texture) on failures; Mode maps onto the flat
+  fullscreen modes after init (set_fullscreen 1/2). The 9-arg flat open
+  forwards, preserving its historical idempotent-true for AlreadyOpen
+  (deleted in 4b); the params-struct overload still forwards to the 9-arg.
+- `caps()`: build/platform statics — window/input/touch true on GLFW,
+  headless true on PLATFORM_MEMORY, shaders true except under rlsw — plus
+  live state: audio from audio_ready, vsync_report from the new
+  vsync_probed flag (set by both monitor probes), multi_monitor from
+  GetMonitorCount (added to RaylibApi). rumble/haptics/menu false (raylib
+  has no rumble query; the old predicate returned false — recorded as the
+  open question for Phase 4: a host gating rumble on caps would lose
+  desktop rumble; input().rumble() itself no-ops safely). reopen true on
+  desktop only.
+- `suspend()/resume()`: desktop no-op true (no lifecycle to suspend, no
+  device teardown); the Android port (Phase 4f) grows the real pause/rebind.
+- The five accessors gained `override`; close/is_open/pump/set_runtime_ui/
+  wait_for_foreground already satisfied both bases (same signatures).
+- Red-first: facade contract tests (config-aware caps via the PUBLIC
+  GBARECOMP_USE_RAYLIB define, headless refusal, AlreadyOpen, close/reopen,
+  accessor identity). The compile-red was not observable (base + test are
+  one change) — the headless-gate mutation was observed failing instead.
+- Verification: stub 63/63; FFTA build-raylib 67/67, build-raylib-only
+  68/68 — the raylib run exercises the FULL lifecycle (real window, audio
+  device, reopen) on a display; headless CI takes the Err::Window branch;
+  attract golden byte-identical in both configs.
+- Phase 2 remaining: the §5.2 item 3 fakes (RecordingVideo, ScriptedInput,
+  TappingAudio, FakeClock, FakeBackend) + the display-free slice of the
+  lifecycle contract test.
