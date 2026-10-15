@@ -6939,3 +6939,35 @@ device gate: tag every capture and settle ≥4.
   token-verified (pump→read 10,764 tokens; the split's call census exact).
 - Next: Fx (settings/apply + the LCD config block), then Overlay, then
   lifecycle/facade.
+
+## 2026-10-15 — V2 Phase 2, Fx concern (gbarecompx 215b765)
+
+- `RaylibBackend::FxImpl`: settings() assembles the FxSettings snapshot;
+  apply() writes it change-detected and drives the private per-field
+  transitions (the moved bodies: clamps, live shader load, post-target
+  releases, blend-history resets); reset_frame_blend is the third interface
+  method. Per plan §3.5 the flat Fx methods go through settings()/apply() —
+  the interface is the only channel (no concrete-pointer back doors).
+- The flat setters compose settings()+apply(); set_frame_interp/
+  set_frame_blend keep their unconditional blend-history reset explicitly
+  (apply() fires it only on a real toggle). The flat getters read
+  settings(). frame_blend is a bool under the hood — values round-trip as
+  0.0/1.0 (documented in the class comment).
+- load_input_config's parked [video] block became the private static
+  `load_video_config(Impl*, dir)` (parses the ini, transitions the LCD flag
+  through fx->apply()); load_input_config is now a two-line composition.
+  Dropped: the old no-op calls' spurious post-target re-release
+  (set_lcd_dither/deband(0) when already 0) — idempotent waste.
+- Wiring mistakes caught in-step: (1) a first cut exposed public "extras"
+  reached through the unique_ptr<Fx> interface pointer — impossible;
+  corrected to private helpers + interface composition (which is what §3.5
+  prescribes). (2) the moved reset_frame_blend lost its `override` (the
+  move script missed the keyword) — restored; the token verifier caught it.
+- Red-first: fx contract tests (compile-red "no member named 'fx'");
+  negative control: dropping lcd_clamp_boost observed failing the exact
+  CHECK (clamp 3.0).
+- Verification: stub 63/63; FFTA build-raylib 67/67, build-raylib-only
+  68/68; attract golden byte-identical in both configs; body-move
+  token-verified (7/7 transitions; LCD block census exact).
+- Next: Overlay (host overlay hook, touch config, pad visibility), then
+  lifecycle/facade (open(OpenParams), caps, suspend/resume, the V2 base).
