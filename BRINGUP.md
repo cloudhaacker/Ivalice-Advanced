@@ -7060,3 +7060,39 @@ device gate: tag every capture and settle ≥4.
 - **Phase 2 complete** (all five concerns + lifecycle/facade + the tail).
   Next: Phase 3 — the generic menu (`menu_model.h`, the `Menu`
   presentation, the host-loop test on the fakes).
+
+## 2026-10-15 — V2 Phase 3a: the pure menu model (gbarecompx c7cd371)
+
+- `src/runtime/menu_model.{h,cpp}` (`gbarecomp_menu_model`): the plan §3.4
+  model, ported SEMANTICALLY from recomp-ui's `runtime_ui_test.c` (not its
+  code): two-level list (sections then rows), Confirm drills in, Left/
+  Right/Confirm adjust the selected row (Confirm = +1 with activate),
+  Back leaves the section then closes, Toggle flips direction-independently,
+  StepInt/Float clamp at min/max, Choice cycles with wrap. Values live in
+  the model (host-seeded at open, host-read after `changed_row`); no
+  callbacks, no host pointers, no clock (the host decrements the status/
+  toast frame counts).
+- V2 policy additions over recomp-ui: disabled/invisible rows are skipped
+  (and sections with nothing selectable); the pointer mutator selects on
+  first press and activates on a second press on the same row; the model
+  never sets status itself — the host applies `MenuResult` (the separation
+  §3.4's mutator list implies).
+- API notes: `menu_value/menu_set_value` became the int/float pair (the
+  kind-dependent storage is not losslessly one float);
+  `menu_input_from_keyinput` gained a bool return for the none-case (the
+  plan's single-arg form cannot express "no input"); `editing` is
+  recomp-ui's `in_section` (the drill-in state), documented in the header.
+- Red-first: compile-red observed (empty stub header -> the compiler listed
+  the whole demanded API). Mutation controls: skip-disabled and
+  choice-wrap→clamp caught immediately; **the wrap-direction mutation
+  initially slipped** — with two sections, +1 and -1 mod 2 are
+  indistinguishable — the test was strengthened to three sections/rows and
+  the mutation then fired the exact CHECKs (section and row wraps). This is
+  the workflow's second leg doing its job: the red-first compile only
+  proved the API existed; the mutation found the blind spot.
+- Verification: stub 65/65; FFTA build-raylib 69/69, build-raylib-only
+  70/70; attract golden byte-identical in both configs (the model is
+  unwired — the differential leg proves nothing else moved).
+- Next: 3b (the `Menu` seam interface + `Caps::menu` + the RaylibBackend
+  presentation over HostOverlay), then 3c (host wiring + the host-loop test
+  on the fakes), 3d (the open trigger).
