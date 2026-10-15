@@ -101,23 +101,26 @@ int main() {
 
     // ---- backend factory -------------------------------------------------
     // The factory is the single place that decides which backend a build uses.
-    // Constructing and destroying through the base pointer exercises the virtual
-    // destructor, which is how HostWindow::close() releases the backend.
+    // raylib ON builds the product backend; raylib OFF is the stub (nullptr).
+    // Constructing and destroying through the base pointer exercises the
+    // virtual destructor, which is how HostWindow::close() releases the
+    // backend.
     {
+#if defined(GBARECOMP_USE_RAYLIB)
         gbarecomp::WindowBackend* b = gbarecomp::host_make_backend();
         assert(b != nullptr);
-        assert(!b->is_open());            // freshly constructed, never opened
-        assert(!b->gamepad_connected());  // nothing to claim before open()
-        delete b;                         // must go through ~WindowBackend()
-
-        // The predicate must agree with what this build actually compiles.
-#if defined(GBARECOMP_USE_RAYLIB)
+        assert(!b->is_open());  // freshly constructed, never opened
+        assert(!b->input().gamepad_connected());  // nothing to claim yet
+        delete b;  // must go through ~WindowBackend()
         assert(gbarecomp::host_using_raylib_backend());
 #else
+        // The stub compile-check build: no window backend at all.
+        assert(gbarecomp::host_make_backend() == nullptr);
         assert(!gbarecomp::host_using_raylib_backend());
 #endif
     }
 
+#if defined(GBARECOMP_USE_RAYLIB)
     // Two backends must be independent objects, not a shared singleton: a
     // leaked instance would silently share window/audio state.
     {
@@ -127,6 +130,7 @@ int main() {
         delete a;
         delete c;
     }
+#endif
 
     std::printf("host_window_closed tests: PASS\n");
     return 0;

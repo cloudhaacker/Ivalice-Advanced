@@ -1,28 +1,31 @@
 #!/usr/bin/env python3
-"""Completeness check: every WindowBackend virtual must be overridden by
-RaylibBackend.
+"""Completeness guard for the single-generation window seam (Phase 4b).
 
-Why this exists
----------------
-The `override` keyword in raylib_backend.h only catches *signature drift* — a
-base virtual whose signature changed, or a .cpp definition with no declaration.
-It does NOT catch a brand-new virtual added to WindowBackend that RaylibBackend
-silently fails to override (it just inherits the default). Member-pointer
-comparison cannot detect this either: `&Derived::f != &Base::f` folds to false
-even for a genuine override.
+Three checks, all against the sources:
 
-raylib_backend_test.cpp catches this for methods with observable results, but a
-void method with no observable effect slips through. This closes that gap at
-review / CI time.
+  1. single generation — the flat generation and the SDL backend are gone:
+     no `WindowBackendOpenParams` in the seam, no `host_make_sdl_backend` in
+     the runtime, no `GBARECOMP_HAVE_SDL2` in host_window.cpp /
+     host_backend_factory.cpp, and no inline `Backend` struct in
+     host_window.cpp. (SDL *scancode* vocabulary in the input/config layer is
+     data, not the backend — out of scope.)
+  2. pure interfaces — every virtual in every seam interface (the facade
+     `WindowBackend` plus `Video`/`Audio`/`Input`/`Fx`/`Overlay`/`Menu`) is
+     pure (`= 0`). A defaulted body is the silent-inheritance bug class this
+     guard exists for: the SDL backend's `audio_enabled_state()` once stopped
+     overriding the interface method, so the base default answered while
+     audio was actually playing.
+  3. complete backend — every interface method has a matching `override` in
+     the raylib backend sources (raylib_backend.h for the facade,
+     raylib_backend.cpp for the nested concern impls).
 
-Parsing notes
--------------
-Both scans use balanced-paren argument extraction. A naive `\\([^)]*\\)` regex
-silently drops `set_host_overlay(void (*overlay)(HostOverlay*))` because the
-function-pointer argument contains its own parentheses.
+Why the parsing is fussy: `override` catches signature drift, but not a
+method that silently stops overriding (see check 2), and a naive
+`\\([^)]*\\)` regex drops `set_host_overlay(void (*overlay)(HostOverlay*))`
+because the function-pointer argument contains its own parentheses.
 
 Usage:  python3 tools/check_raylib_backend_complete.py
-Exit 0 when complete, 1 when a virtual is missing or mismatched.
+Exit 0 when all three hold, 1 otherwise.
 """
 from __future__ import annotations
 
@@ -32,9 +35,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_IFACE = ROOT / "gbarecompx/src/runtime/window_backend.h"
-DEFAULT_BACKEND = ROOT / "gbarecompx/src/runtime/raylib_backend.h"
-DEFAULT_SDL = ROOT / "gbarecompx/src/runtime/host_window.cpp"
+DEFAULT_BACKEND_H = ROOT / "gbarecompx/src/runtime/raylib_backend.h"
+DEFAULT_BACKEND_CPP = ROOT / "gbarecompx/src/runtime/raylib_backend.cpp"
+DEFAULT_HOST_WINDOW = ROOT / "gbarecompx/src/runtime/host_window.cpp"
+DEFAULT_FACTORY = ROOT / "gbarecompx/src/runtime/host_backend_factory.cpp"
 
+# The seam interfaces whose methods must all be pure and implemented.
+INTERFACE_NAMES = ["WindowBackend", "Video", "Audio", "Input", "Fx",
+                   "Overlay", "Menu"]
 
 TYPE_WORDS = {
     "void", "bool", "char", "short", "int", "long", "float", "double",
@@ -108,25 +116,10 @@ def balanced_args(text: str, open_paren: int) -> tuple[str, int] | None:
     return None
 
 
-def interface_methods(text: str) -> dict[tuple[str, str], bool]:
-    """Map (name, args) -> is_const for every `virtual` member function."""
-    out: dict[tuple[str, str], bool] = {}
-    for m in re.finditer(r"\bvirtual\b[^;{]*?\b(\w+)\s*\(", text):
-        got = balanced_args(text, m.end() - 1)
-        if got is None:
-            continue
-        args, after = got
-        # A virtual *data* member (none today) would not be followed by `{`.
-        if "{" not in text[after:after + 24]:
-            continue
-        rest = text[after:after + 24]
-        out.setdefault((m.group(1), args), bool(re.match(r"\s*const\b", rest)))
-    return out
-
-
 def struct_body(text: str, struct_name: str) -> str:
     """Return the text inside `class|struct <name> { ... }`, brace-balanced."""
-    m = re.search(rf"\b(?:class|struct)\s+{re.escape(struct_name)}\b[^{{]*\{{", text)
+    m = re.search(rf"\b(?:class|struct)\s+{re.escape(struct_name)}\b[^{{]*\{{",
+                  text)
     if not m:
         return ""
     i = m.end() - 1
@@ -142,29 +135,34 @@ def struct_body(text: str, struct_name: str) -> str:
     return ""
 
 
-def inline_struct_methods(body: str) -> dict[tuple[str, str], bool]:
-    """Map (name, args) -> is_const for inline-defined methods in a struct body.
+def interface_methods(body: str) -> dict[tuple[str, str], tuple[bool, bool]]:
+    """Map (name, args) -> (is_const, is_pure) for every virtual member.
 
-    The SDL Backend defines its methods as inline bodies inside `struct Backend`
-    (no `override`, no trailing `;`), so it needs its own scan.
+    Destructors are skipped (they are never pure and never `override`n in the
+    backend sources as regular methods).
     """
-    out: dict[tuple[str, str], bool] = {}
-    for m in re.finditer(r"\b(\w+)\s*\(", body):
+    out: dict[tuple[str, str], tuple[bool, bool]] = {}
+    for m in re.finditer(r"\bvirtual\b[^;{]*?(\w+)\s*\(", body):
+        # Destructors are never pure and never `override`n as regular methods.
+        # (The `~` cannot be captured in the group: the lazy prefix skips it.)
+        if body[m.start(1) - 1:m.start(1)] == "~":
+            continue
+        name = m.group(1)
         got = balanced_args(body, m.end() - 1)
         if got is None:
             continue
         args, after = got
-        rest = body[after:after + 200]   # signatures may wrap across lines
-        # Either an inline definition (`{`) or an override declaration (`;`).
-        if not re.match(
-            r"\s*(?:const\s*)?(?:noexcept\s*)?(?:override\s*)?(?:\{|;)", rest
-        ):
+        semi = body.find(";", after)
+        if semi < 0:
             continue
-        out.setdefault((m.group(1), args), bool(re.match(r"\s*const\b", rest)))
+        decl = body[after:semi]
+        out.setdefault((name, args),
+                       (bool(re.match(r"\s*const\b", decl)),
+                        bool(re.search(r"=\s*0\s*$", decl.rstrip()))))
     return out
 
 
-def backend_methods(text: str) -> dict[tuple[str, str], bool]:
+def override_methods(text: str) -> dict[tuple[str, str], bool]:
     """Map (name, args) -> is_const for every declared override."""
     out: dict[tuple[str, str], bool] = {}
     for m in re.finditer(r"\b(\w+)\s*\(", text):
@@ -179,81 +177,103 @@ def backend_methods(text: str) -> dict[tuple[str, str], bool]:
     return out
 
 
+def strip_comments(text: str) -> str:
+    """Remove // line comments and /* */ blocks before marker scans.
+
+    The single-generation markers must be judged in *code*: a comment that
+    explains the retirement ("Phase 4b retired GBARECOMP_HAVE_SDL2 ...") is
+    documentation, not a live reference. (Naive on string literals containing
+    `//`; none of the scanned files carry one, and the markers are
+    identifiers, so the trade is fine.)
+    """
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    return re.sub(r"//[^\n]*", "", text)
+
+
+def single_generation_failures(iface_text: str, host_text: str,
+                               factory_text: str) -> list[str]:
+    out: list[str] = []
+    if "WindowBackendOpenParams" in iface_text:
+        out.append("flat generation: WindowBackendOpenParams still in the seam")
+    if "host_make_sdl_backend" in host_text or "host_make_sdl_backend" in factory_text:
+        out.append("SDL backend: host_make_sdl_backend still present")
+    if "GBARECOMP_HAVE_SDL2" in host_text:
+        out.append("SDL backend: GBARECOMP_HAVE_SDL2 still in host_window.cpp")
+    if "GBARECOMP_HAVE_SDL2" in factory_text:
+        out.append("SDL backend: GBARECOMP_HAVE_SDL2 still in "
+                   "host_backend_factory.cpp")
+    if re.search(r"\b(?:class|struct)\s+Backend\b", host_text):
+        out.append("SDL backend: an inline `Backend` struct still exists in "
+                   "host_window.cpp")
+    return out
+
+
 def main(argv: list[str] | None = None) -> int:
     import argparse
 
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--iface", type=Path, default=DEFAULT_IFACE)
-    ap.add_argument("--backend", type=Path, default=DEFAULT_BACKEND)
-    ap.add_argument("--sdl", type=Path, default=DEFAULT_SDL,
-                    help="host_window.cpp holding the SDL Backend struct")
+    ap.add_argument("--backend-h", type=Path, default=DEFAULT_BACKEND_H)
+    ap.add_argument("--backend-cpp", type=Path, default=DEFAULT_BACKEND_CPP)
+    ap.add_argument("--host-window", type=Path, default=DEFAULT_HOST_WINDOW)
+    ap.add_argument("--factory", type=Path, default=DEFAULT_FACTORY)
     args = ap.parse_args(argv)
 
-    iface_path, backend_path = args.iface, args.backend
-    if not iface_path.exists() or not backend_path.exists():
-        print(f"check_raylib_backend_complete: missing {iface_path} or {backend_path}",
-              file=sys.stderr)
-        return 1
+    for p in (args.iface, args.backend_h, args.backend_cpp, args.host_window,
+              args.factory):
+        if not p.exists():
+            print(f"check_raylib_backend_complete: missing {p}", file=sys.stderr)
+            return 1
 
-    # Scope the scan to the flat WindowBackend class body: the file also hosts
-    # the additive V2 generation (plan Phase 1), whose interfaces are covered
-    # by their own tests until the Phase 4 rewrite of this checker.
-    want = interface_methods(struct_body(iface_path.read_text(), "WindowBackend"))
-    have = backend_methods(backend_path.read_text())
+    iface_text = strip_comments(args.iface.read_text())
+    host_text = strip_comments(args.host_window.read_text())
+    factory_text = strip_comments(args.factory.read_text())
 
+    # ── 1. single generation ─────────────────────────────────────────────
+    failures = single_generation_failures(iface_text, host_text, factory_text)
+
+    # ── 2. pure interfaces ───────────────────────────────────────────────
+    want: dict[tuple[str, str], tuple[bool, bool]] = {}
+    for name in INTERFACE_NAMES:
+        body = struct_body(iface_text, name)
+        if not body:
+            failures.append(f"interface: class {name} not found in the seam")
+            continue
+        for key, (is_const, is_pure) in interface_methods(body).items():
+            if not is_pure:
+                failures.append(
+                    f"impure interface method: {name}::{key[0]}({key[1]}) has "
+                    "a defaulted body — pure-virtual interfaces are the "
+                    "contract (silent-inheritance bug class)")
+            want.setdefault(key, (name, is_const))
+
+    # ── 3. complete backend ──────────────────────────────────────────────
+    have = override_methods(strip_comments(args.backend_h.read_text()))
+    have.update(override_methods(strip_comments(args.backend_cpp.read_text())))
     missing = sorted(k for k in want if k not in have)
     mismatched = [
         f"{key[0]}({key[1]}) const-ness: interface "
-        f"{'const' if is_const else 'non-const'}, backend "
+        f"{'const' if want[key][1] else 'non-const'}, backend "
         f"{'const' if have[key] else 'non-const'}"
-        for key, is_const in sorted(want.items())
-        if key in have and have[key] != is_const
+        for key in sorted(want)
+        if key in have and have[key] != want[key][1]
     ]
 
-    total = len(want)
-    if missing or mismatched:
-        print(f"raylib backend INCOMPLETE ({total} interface methods)")
-        for name, args in missing:
-            print(f"  MISSING override: {name}({args})")
+    if failures or missing or mismatched:
+        print(f"window seam INCOMPLETE ({len(want)} interface methods)")
+        for f in failures:
+            print(f"  {f}")
+        for name, args_ in missing:
+            print(f"  MISSING override: {name}({args_})")
         for problem in mismatched:
             print(f"  MISMATCH: {problem}")
         return 1
 
-    # The SDL Backend lives in an anonymous namespace inside host_window.cpp and
-    # its methods are declared without `override`, so the same silent-inheritance
-    # bug applies to it. `audio_enabled_state()` shipped for a while doing exactly
-    # that: a needless rename that stopped it overriding the interface method, so
-    # the base default `false` was returned while SDL audio was actually playing.
-    sdl_rc, sdl_note = 0, "sdl backend n/a"
-    if args.sdl and args.sdl.exists():
-        sdl_text = args.sdl.read_text()
-        have_sdl = inline_struct_methods(struct_body(sdl_text, "Backend"))
-        # Methods too large to inline live out-of-line as `Backend::name(...)`.
-        for m in re.finditer(r"\bBackend::(\w+)\s*\(", sdl_text):
-            got = balanced_args(sdl_text, m.end() - 1)
-            if got is None:
-                continue
-            args_s, after = got
-            rest = sdl_text[after:after + 200]
-            have_sdl.setdefault(
-                (m.group(1), args_s), bool(re.match(r"\s*const\b", rest)))
-        missing_sdl = sorted(f"{n}({a})" for (n, a) in want if (n, a) not in have_sdl)
-        if missing_sdl:
-            sdl_rc = 1
-            sdl_note = f"SDL backend missing {len(missing_sdl)}: " + ", ".join(
-                m.split("(")[0] for m in missing_sdl[:6])
-        else:
-            sdl_note = f"sdl backend complete: {total}/{total}"
-
-    if sdl_rc != 0:
-        print(f"SDL backend INCOMPLETE ({total} interface methods)")
-        print(f"  {sdl_note}")
-        return sdl_rc
-
-    print(f"raylib backend complete: all {total} interface methods overridden")
-    print(f"  {sdl_note}")
+    print(f"window seam complete: {len(want)} interface methods, all pure, "
+          "all overridden by the raylib backend")
+    print("single generation: no flat class, no SDL backend")
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv[1:]))
+    raise SystemExit(main())

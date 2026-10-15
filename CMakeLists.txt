@@ -317,11 +317,11 @@ if(FFTA_BUILD_TESTS AND NOT ANDROID)
         ${GAME_GENERATED_SOURCES})
     target_include_directories(ffta_backend_select_tests PRIVATE
         "${GBARECOMP_ROOT}/src/runtime" src)
-    # Same recipe as ffta_host_window_tests (the factory calls
-    # host_make_sdl_backend(), which is defined in host_window.cpp, so the
-    # runtime is needed), plus the raylib backend explicitly. The raylib backend
-    # references rab_*, whose implementation is compiled inside host_window.cpp,
-    # so listing it inside the same --start-group keeps the resolver happy.
+    # Same recipe as ffta_host_window_tests (the factory lives in the runtime,
+    # so the runtime is needed), plus the raylib backend explicitly. The raylib
+    # backend references rab_*, whose implementation is compiled inside
+    # host_window.cpp, so listing it inside the same --start-group keeps the
+    # resolver happy.
     target_link_libraries(ffta_backend_select_tests PRIVATE
         "-Wl,--start-group"
         gbarecomp_runtime

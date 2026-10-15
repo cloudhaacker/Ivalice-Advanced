@@ -7337,3 +7337,53 @@ device gate: tag every capture and settle ≥4.
   WindowBackendV2 → WindowBackend; retire GBARECOMP_USE_RAYLIB as a
   backend-selection flag; the flat fallback branches in HostWindow go with
   it).
+
+## 2026-10-15 — V2 Phase 4b: the switch — flat generation + SDL deleted (gbarecompx 8cadb3b)
+
+- window_backend.h: the flat generation (`WindowBackendOpenParams` + the
+  56-method class) deleted; the facade renamed `WindowBackend` (the
+  historical `using Events` alias kept so every `WindowBackend::Events`
+  reference stays valid); `set_runtime_ui` deleted from the seam.
+- host_window.cpp: the SDL backend region (~3.2k lines: the inline
+  `Backend`, its helpers, SDL/ImGui includes) deleted — the file went from
+  164 KB to ~19 KB of single-branch delegation (impl_ is the facade) plus
+  the no-backend stub. `service_events` is a no-op; `set_runtime_ui` is a
+  compile-compat shim.
+- host_backend_factory: the SDL branch gone; `GBARECOMP_USE_RAYLIB` is no
+  longer a *backend* selector (ON = RaylibBackend, OFF = nullptr stub).
+- raylib_backend: V2-only (flat forwarders, the flat open overloads,
+  `set_runtime_ui`, the `runtime_ui` field and its dead suppression read all
+  deleted; the runtime-UI include dropped). `OpenParams::Mode` now applies
+  through `Video::set_fullscreen`.
+- CMake (framework): SDL discovery/static-release/staging/define/link and
+  the ImGui-SDL-renderer runtime-UI adapter deleted (the app-side launcher,
+  Track L, keeps its own SDL2 — its `find_package` is app-scoped).
+- Red-first: the completeness guard rewritten for the single-generation seam
+  — (1) single generation (no `WindowBackendOpenParams`, no
+  `host_make_sdl_backend`, no `GBARECOMP_HAVE_SDL2` in the runtime, no inline
+  `Backend` struct), (2) every interface method pure (`= 0`; a defaulted
+  body is the silent-inheritance bug class that bit once), (3) every
+  interface method overridden by the raylib backend sources. Observed
+  failing against the pre-4b tree (flat present, SDL present, WindowBackend
+  impure) and green after. Self-tests rewritten (15 cases incl. the impure
+  method, the flat marker, the SDL factory/define/struct markers and the
+  per-interface scan; the constructor false-positive the rewrite surfaced was
+  fixed).
+- Tests: the four flat-seam tests deleted (`window_backend_test`,
+  `window_backend_dispatch_test`, `window_backend_virtual_dispatch_test`,
+  `raylib_backend_test` — 4d ports the per-interface tier);
+  backend_v2_types, fake_backend, raylib_backend_v2, host_window_closed and
+  the FFTA present test updated for the single generation; the FFTA
+  delegation test is now the host→facade wiring contract (every HostWindow
+  method reaches its concern) plus the open-failure ownership case.
+- Verification: ctest 70/70 (raylib-only) + 69/69 (OFF) + 64/64 (framework stub); attract
+  byte-identical in both configs (`1EF4C118...`); ws_check PASS; android-static
+  PASS; guard + self-tests PASS; `nm` on the runtime archive: 0 SDL refs;
+  mutations: the guard caught a re-added flat marker, the delegation test
+  caught lcd_boost writing the wrong Fx field.
+- Note (the Accept's `ldd` line): the *runtime* is SDL-free (`nm` on
+  `libgbarecomp_runtime.a` reports zero SDL references — now a failing gate
+  in the sweep); the app's `ldd` still shows SDL because the recomp-ui
+  launcher (`game_launcher_ui`, Track L) links it — retired by 4e/7, not a
+  4b blocker.
+- Next: 4c (flip FFTA's default build to raylib; play.sh/check.py/CI naming).

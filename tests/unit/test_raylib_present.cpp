@@ -58,6 +58,7 @@ int glfwJoystickIsGamepad(int jid);
 #endif
 
 using gbarecomp::HostOverlay;
+
 using gbarecomp::RaylibBackend;
 using gbarecomp::WindowBackend;
 
@@ -76,6 +77,54 @@ void check(bool ok, const char* what) {
 
 constexpr int kBaseW = 240;
 constexpr int kBaseH = 160;
+
+// Single-generation Fx helpers: the flat setters are gone (Phase 4b), so each
+// site composes settings()+apply() the way HostWindow does.
+static void set_lcd(gbarecomp::RaylibBackend& b, bool on) {
+    gbarecomp::FxSettings s = b.fx().settings();
+    s.lcd = on;
+    b.fx().apply(s);
+}
+static void set_lcd_dither(gbarecomp::RaylibBackend& b, float v) {
+    gbarecomp::FxSettings s = b.fx().settings();
+    s.lcd_dither = v;
+    b.fx().apply(s);
+}
+static void set_lcd_deband(gbarecomp::RaylibBackend& b, float v) {
+    gbarecomp::FxSettings s = b.fx().settings();
+    s.lcd_deband = v;
+    b.fx().apply(s);
+}
+static void set_frame_interp(gbarecomp::RaylibBackend& b, bool on) {
+    gbarecomp::FxSettings s = b.fx().settings();
+    s.frame_interp = on;
+    b.fx().apply(s);
+    b.fx().reset_frame_blend();  // the host pairing's unconditional reset
+}
+static void set_frame_blend(gbarecomp::RaylibBackend& b, bool on) {
+    gbarecomp::FxSettings s = b.fx().settings();
+    s.frame_blend = on ? 1.0f : 0.0f;
+    b.fx().apply(s);
+    b.fx().reset_frame_blend();
+}
+
+// Single-generation open helper: the flat 9-arg overload is gone (Phase 4b),
+// so every site builds an OpenParams. Scale/geometry match what this suite
+// always used (2x, native GBA geometry).
+static bool open_backend(gbarecomp::RaylibBackend& b, const char* title,
+                         const char* screen = nullptr,
+                         bool linear_filter = false,
+                         bool sharp_filter = false) {
+    gbarecomp::OpenParams p;
+    p.scale = 2;
+    p.base_w = kBaseW;
+    p.base_h = kBaseH;
+    p.title = title;
+    p.display = screen;
+    p.linear_filter = linear_filter;
+    p.sharp_filter = sharp_filter;
+    return b.open(p).ok();
+}
 
 // Spin-off hook probe: counts invocations and draws one line through the
 // seam, proving the callback runs inside present() with a live overlay.
@@ -118,10 +167,9 @@ int main() {
     ::unsetenv("GBARECOMP_LCD_SHADER");
 
     // Constructed directly rather than through host_make_backend(): the factory
-    // calls host_make_sdl_backend(), which lives in host_window.cpp and drags in
-    // SDL, ImGui and gbarecomp_runtime -- and gbarecomp_runtime needs the
-    // ROM-derived dispatch table, which is never committed. Linking that here
-    // would make this test impossible on a fresh CI checkout.
+    // path drags in gbarecomp_runtime -- which needs the ROM-derived dispatch
+    // table, never committed. Linking that here would make this test impossible
+    // on a fresh CI checkout.
     //
     // The factory wiring itself is covered by ctest `backend_select`, which runs
     // in both app configurations. This test covers the backend's BEHAVIOUR.
@@ -131,11 +179,13 @@ int main() {
     // ---- open -------------------------------------------------------------
     // Default geometry and default (off) filtering, which is what the host
     // passes in practice.
-    const bool opened = b.open(/*scale=*/2, kBaseW, kBaseH, "recomp smoke",
-                                /*screen=*/nullptr, /*linear_filter=*/false,
-                                /*sharp_filter=*/false,
-                                /*resize_driven_view=*/false,
-                                /*freely_resizable_window=*/false);
+    gbarecomp::OpenParams params;
+    params.scale = 2;
+    params.base_w = kBaseW;
+    params.base_h = kBaseH;
+    params.title = "recomp smoke";
+    const gbarecomp::Result open_result = b.open(params);
+    const bool opened = open_result.ok();
     check(opened, "open() succeeded");
     check(b.is_open(), "is_open() after open");
 
@@ -147,17 +197,17 @@ int main() {
           "window is visible after open()");
 
     int dw = 0, dh = 0;
-    const bool have_size = b.drawable_size(&dw, &dh);
+    const bool have_size = b.video().drawable_size(&dw, &dh);
     check(have_size, "drawable_size() reported a size");
     check(dw > 0 && dh > 0, "drawable size is positive");
 
     // ---- present + readback ----------------------------------------------
     const std::vector<std::uint8_t> frame_a = make_frame(1);
-    b.present(frame_a.data(), /*fresh=*/true);
+    b.video().present(frame_a.data(), /*fresh=*/true);
 
     std::vector<std::uint8_t> got;
     int rw = 0, rh = 0;
-    const bool have_frame = b.copy_presented_frame(got, rw, rh);
+    const bool have_frame = b.video().readback(got, rw, rh);
     check(have_frame, "copy_presented_frame() returned a frame");
     check(rw == kBaseW && rh == kBaseH, "readback is native GBA geometry");
     check(got == frame_a, "uploaded bytes round-trip exactly");
@@ -167,9 +217,9 @@ int main() {
     // one-shot or stale buffer.
     const std::vector<std::uint8_t> frame_b = make_frame(200);
     check(frame_a != frame_b, "the two test frames really differ");
-    b.present(frame_b.data(), /*fresh=*/true);
+    b.video().present(frame_b.data(), /*fresh=*/true);
     got.clear();
-    const bool have_frame2 = b.copy_presented_frame(got, rw, rh);
+    const bool have_frame2 = b.video().readback(got, rw, rh);
     check(have_frame2 && got == frame_b, "second frame replaced the first");
 
     // ---- pump: live polling against the real window -------------------------
@@ -196,7 +246,7 @@ int main() {
     // phantom button reads as held.
     {
 #if defined(__ANDROID__)
-        check(b.gamepad_connected() == (IsGamepadAvailable(0) != 0),
+        check(b.input().gamepad_connected() == (IsGamepadAvailable(0) != 0),
               "gamepad presence agrees with raylib (Android: no GLFW)");
 #else
         // Forward declarations mirror the backend's (same GLFW 3.4
@@ -209,7 +259,7 @@ int main() {
                 break;
             }
         }
-        check(b.gamepad_connected() == standard_present,
+        check(b.input().gamepad_connected() == standard_present,
               "gamepad presence agrees with GLFW standard mapping");
 #endif
         const auto ev1 = b.pump();
@@ -233,10 +283,11 @@ int main() {
         check(!ev2.quit && ev2.save_slot == 0 && ev2.load_slot == 0 &&
                   !ev2.toggle_pause,
               "second idle pump re-fires nothing");
-        WindowBackend::Events pev;
-        b.pump_events(pev);
-        check(pev.keyinput == 0x03FFu && !pev.quit,
-              "pump_events agrees with pump");
+        // A third pump after the two above: still quiet (no hidden edge
+        // accumulation across pumps).
+        const auto ev3 = b.pump();
+        check(ev3.keyinput == 0x03FFu && !ev3.quit,
+              "third idle pump stays quiet");
     }
 
     // ---- load_input_config: real files, real parsing ------------------------
@@ -275,20 +326,22 @@ int main() {
                 std::fclose(g);
             }
         }
-        b.load_input_config(dir, true, 4);
+        b.input().load_config(dir, true, 4);
+        b.fx().load_config(dir);  // the [video] half, as HostWindow pairs them
         const auto evc = b.pump();
         check(evc.keyinput == 0x03FFu && !evc.quit,
               "pump baseline holds after loading a real config");
         // Idempotent: loading twice must not accumulate stale overrides.
-        b.load_input_config(dir, true, 4);
+        b.input().load_config(dir, true, 4);
+        b.fx().load_config(dir);
         const auto evc2 = b.pump();
         check(evc2.keyinput == 0x03FFu && !evc2.quit,
               "reloading the config is idempotent");
         // Missing dir and null dir must leave working defaults, not garbage.
-        b.load_input_config("/tmp/opencode/raylib_pump_cfg_missing", true, 4);
+        b.input().load_config("/tmp/opencode/raylib_pump_cfg_missing", true, 4);
         check(b.pump().keyinput == 0x03FFu,
               "missing config dir falls back to defaults");
-        b.load_input_config(nullptr, true, 4);
+        b.input().load_config(nullptr, true, 4);
         check(b.pump().keyinput == 0x03FFu,
               "null config dir falls back to defaults");
     }
@@ -298,13 +351,21 @@ int main() {
     // observable contract is that enabling the touch system (policy, pad
     // visibility, [Touch] persistence) runs without disturbing input.
     {
-        b.configure_touch(true, 0, 1, true, 0);
-        check(b.touch_pad_visible_value(), "pad visible after configure");
+        {
+            gbarecomp::TouchConfig tcfg;
+            tcfg.policy = true;
+            tcfg.claims = 0;
+            tcfg.pad_default = 1;
+            tcfg.emulate_touch = true;
+            tcfg.pad_idle_hide_seconds = 0;
+            b.overlay().configure_touch(tcfg);
+        }
+        check(b.overlay().touch_pad_visible(), "pad visible after configure");
         const auto evt = b.pump();
         check(evt.keyinput == 0x03FFu && !evt.quit,
               "touch-enabled pump with no fingers holds the baseline");
-        b.set_touch_pad_visible(false);
-        check(!b.touch_pad_visible_value(), "pad hides on request");
+        b.overlay().set_touch_pad_visible(false);
+        check(!b.overlay().touch_pad_visible(), "pad hides on request");
         // [Touch] persistence round-trip through the config dir.
         {
             std::FILE* f = std::fopen("/tmp/opencode/raylib_pump_cfg/config.ini", "a");
@@ -314,13 +375,16 @@ int main() {
                 std::fclose(f);
             }
         }
-        b.set_touch_config_dir("/tmp/opencode/raylib_pump_cfg");
-        check(b.touch_pad_visible_value(),
+        b.overlay().set_config_dir("/tmp/opencode/raylib_pump_cfg");
+        check(b.overlay().touch_pad_visible(),
               "pad_visible restored from [Touch]");
         check(b.pump().keyinput == 0x03FFu,
               "baseline holds after [Touch] load");
-        b.configure_touch(false, 0, 0, false, 0);
-        b.set_touch_pad_visible(false);
+        {
+            gbarecomp::TouchConfig tcfg;
+            b.overlay().configure_touch(tcfg);
+        }
+        b.overlay().set_touch_pad_visible(false);
     }
 
     // ---- host chrome: overlay hook + pad drawing ------------------------------
@@ -329,26 +393,35 @@ int main() {
     // the assertion is invocation + no crash, not pixels.
     {
         g_overlay_calls = 0;
-        b.set_host_overlay(&test_overlay);
-        b.configure_touch(true, 0, 1, true, 0);
+        b.overlay().set_host_overlay(&test_overlay);
+        {
+            gbarecomp::TouchConfig tcfg;
+            tcfg.policy = true;
+            tcfg.pad_default = 1;
+            tcfg.emulate_touch = true;
+            b.overlay().configure_touch(tcfg);
+        }
         // An earlier block saved pad-hidden as the player choice, and choice
-        // persists across configure (same rule as SDL) -- set it explicitly.
-        b.set_touch_pad_visible(true);
-        check(b.touch_pad_visible_value(), "pad visible for chrome test");
+        // persists across configure -- set it explicitly.
+        b.overlay().set_touch_pad_visible(true);
+        check(b.overlay().touch_pad_visible(), "pad visible for chrome test");
         const std::vector<std::uint8_t> src = make_frame(71);
-        b.present(src.data(), true);
+        b.video().present(src.data(), true);
         check(g_overlay_calls == 1, "overlay hook ran once per present");
         std::vector<std::uint8_t> got_c;
         int cw = 0, ch = 0;
-        check(b.copy_presented_frame(got_c, cw, ch) && got_c == src,
+        check(b.video().readback(got_c, cw, ch) && got_c == src,
               "chrome does not disturb the presented frame");
-        b.present(src.data(), true);
+        b.video().present(src.data(), true);
         check(g_overlay_calls == 2, "overlay hook runs on every present");
-        b.set_host_overlay(nullptr);
-        b.configure_touch(false, 0, 0, false, 0);
-        b.set_touch_pad_visible(false);
+        b.overlay().set_host_overlay(nullptr);
+        {
+            gbarecomp::TouchConfig tcfg;
+            b.overlay().configure_touch(tcfg);
+        }
+        b.overlay().set_touch_pad_visible(false);
         const int calls_after = g_overlay_calls;
-        b.present(src.data(), true);
+        b.video().present(src.data(), true);
         check(g_overlay_calls == calls_after,
               "removed overlay hook is not called");
     }
@@ -358,28 +431,28 @@ int main() {
     // staging buffer, so readback must equal the source exactly while the
     // set_ returns prove the program compiled and the shaded blits ran.
     {
-        check(!b.lcd_shader_enabled(), "LCD shader off by default");
+        check(!b.fx().settings().lcd, "LCD shader off by default");
         // Liveness (compiled, not just recorded) is proven by the shaded
         // presents below running clean plus the live-boot log line; the
         // setter itself reports nothing by seam convention (void, like the
         // frame-blend pair).
-        b.set_lcd_shader(true);
-        check(b.lcd_shader_enabled(), "LCD shader reports enabled");
-        check(b.lcd_shader_enabled(), "LCD shader reports enabled");
+        set_lcd(b, true);
+        check(b.fx().settings().lcd, "LCD shader reports enabled");
+        check(b.fx().settings().lcd, "LCD shader reports enabled");
         const std::vector<std::uint8_t> src = make_frame(123);
-        b.present(src.data(), true);
+        b.video().present(src.data(), true);
         std::vector<std::uint8_t> got_l;
         int lw = 0, lh = 0;
-        check(b.copy_presented_frame(got_l, lw, lh) && got_l == src,
+        check(b.video().readback(got_l, lw, lh) && got_l == src,
               "shaded present keeps the CPU frame exact");
         // The program is reused, not recompiled, on the next present.
-        b.present(src.data(), false);
-        check(b.copy_presented_frame(got_l, lw, lh) && got_l == src,
+        b.video().present(src.data(), false);
+        check(b.video().readback(got_l, lw, lh) && got_l == src,
               "second shaded present keeps the frame");
-        b.set_lcd_shader(false);
-        check(!b.lcd_shader_enabled(), "LCD shader off after disable");
-        b.present(src.data(), true);
-        check(b.copy_presented_frame(got_l, lw, lh) && got_l == src,
+        set_lcd(b, false);
+        check(!b.fx().settings().lcd, "LCD shader off after disable");
+        b.video().present(src.data(), true);
+        check(b.video().readback(got_l, lw, lh) && got_l == src,
               "unshaded present after disable keeps the frame");
         // config.ini [video] lcd_shader = 1 persists through load_input_config.
         {
@@ -390,42 +463,40 @@ int main() {
                 std::fclose(f);
             }
         }
-        b.load_input_config("/tmp/opencode/raylib_pump_cfg", true, 4);
-        check(b.lcd_shader_enabled(),
+        b.input().load_config("/tmp/opencode/raylib_pump_cfg", true, 4);
+        b.fx().load_config("/tmp/opencode/raylib_pump_cfg");  // the [video] half
+        check(b.fx().settings().lcd,
               "config [video] lcd_shader=1 enables it");
         check(b.pump().keyinput == 0x03FFu,
               "baseline holds after the [video] load");
-        b.set_lcd_shader(false);
+        set_lcd(b, false);
         // Env-at-open beats the config file in both directions: "0" keeps it
         // off despite [video] lcd_shader = 1 ...
         b.close();
         ::setenv("GBARECOMP_LCD_SHADER", "0", 1);
         const bool eopen =
-            b.open(/*scale=*/2, kBaseW, kBaseH, "lcd-env-off", nullptr,
-                   false, false, false, false);
+            open_backend(b, "lcd-env-off");
         check(eopen, "reopen with env=0");
         if (eopen)
-            check(!b.lcd_shader_enabled(),
+            check(!b.fx().settings().lcd,
                   "env GBARECOMP_LCD_SHADER=0 beats config [video]=1");
         // ... and "1" turns it on (compiling at open, not via set_).
         b.close();
         ::setenv("GBARECOMP_LCD_SHADER", "1", 1);
         const bool eopen2 =
-            b.open(/*scale=*/2, kBaseW, kBaseH, "lcd-env-on", nullptr,
-                   false, false, false, false);
+            open_backend(b, "lcd-env-on");
         check(eopen2, "reopen with env=1");
         if (eopen2) {
-            check(b.lcd_shader_enabled(),
+            check(b.fx().settings().lcd,
                   "env GBARECOMP_LCD_SHADER=1 enables at open");
-            b.present(src.data(), true);
-            check(b.copy_presented_frame(got_l, lw, lh) && got_l == src,
+            b.video().present(src.data(), true);
+            check(b.video().readback(got_l, lw, lh) && got_l == src,
                   "env-enabled shaded present keeps the frame");
         }
         ::unsetenv("GBARECOMP_LCD_SHADER");
         b.close();
         const bool ropen_lcd =
-            b.open(/*scale=*/2, kBaseW, kBaseH, "post-lcd", nullptr,
-                   false, false, false, false);
+            open_backend(b, "post-lcd");
         check(ropen_lcd, "reopen unshaded for the remaining checks");
     }
 
@@ -435,24 +506,24 @@ int main() {
     // pre-GPU either way, so all of these are exact — the assertions prove the
     // passes run (compile + blit, both combinations) without dropping frames.
     {
-        check(!b.lcd_shader_enabled(), "grid off entering dither checks");
+        check(!b.fx().settings().lcd, "grid off entering dither checks");
         const std::vector<std::uint8_t> src = make_frame(141);
         std::vector<std::uint8_t> got_d;
         int dw2 = 0, dh2 = 0;
-        b.present(src.data(), true);
-        check(b.copy_presented_frame(got_d, dw2, dh2) && got_d == src,
+        b.video().present(src.data(), true);
+        check(b.video().readback(got_d, dw2, dh2) && got_d == src,
               "dither-only present keeps the frame");
-        b.set_lcd_dither(0.0f);
-        b.present(src.data(), true);
-        check(b.copy_presented_frame(got_d, dw2, dh2) && got_d == src,
+        set_lcd_dither(b, 0.0f);
+        b.video().present(src.data(), true);
+        check(b.video().readback(got_d, dw2, dh2) && got_d == src,
               "dither-off present keeps the frame");
         // Grid + dither together (the combined path) also keeps it.
-        b.set_lcd_dither(1.0f);
-        b.set_lcd_shader(true);
-        b.present(src.data(), true);
-        check(b.copy_presented_frame(got_d, dw2, dh2) && got_d == src,
+        set_lcd_dither(b, 1.0f);
+        set_lcd(b, true);
+        b.video().present(src.data(), true);
+        check(b.video().readback(got_d, dw2, dh2) && got_d == src,
               "grid+dither present keeps the frame");
-        b.set_lcd_shader(false);
+        set_lcd(b, false);
     }
 
     // ---- deband without anything else: independent pass ---------------------
@@ -461,22 +532,22 @@ int main() {
     // prove the program compiles, the two-target chain links, and nothing
     // drops. Melting itself is measured on screenshots (visual regression).
     {
-        b.set_lcd_dither(0.0f);   // isolate deband: no noise on top
-        b.set_lcd_deband(6.0f);
+        set_lcd_dither(b, 0.0f);   // isolate deband: no noise on top
+        set_lcd_deband(b, 6.0f);
         const std::vector<std::uint8_t> src = make_frame(151);
         std::vector<std::uint8_t> got_e;
         int ew = 0, eh = 0;
-        b.present(src.data(), true);
-        check(b.copy_presented_frame(got_e, ew, eh) && got_e == src,
+        b.video().present(src.data(), true);
+        check(b.video().readback(got_e, ew, eh) && got_e == src,
               "deband-only present keeps the frame");
-        b.present(src.data(), true);
-        check(b.copy_presented_frame(got_e, ew, eh) && got_e == src,
+        b.video().present(src.data(), true);
+        check(b.video().readback(got_e, ew, eh) && got_e == src,
               "second deband present keeps the frame");
-        b.set_lcd_deband(0.0f);
-        b.present(src.data(), true);
-        check(b.copy_presented_frame(got_e, ew, eh) && got_e == src,
+        set_lcd_deband(b, 0.0f);
+        b.video().present(src.data(), true);
+        check(b.video().readback(got_e, ew, eh) && got_e == src,
               "deband-off present keeps the frame");
-        b.set_lcd_dither(1.0f);   // restore the default for later sections
+        set_lcd_dither(b, 1.0f);   // restore the default for later sections
     }
 
     // ---- frame blending: SDL-identical CPU-side averaging -------------------
@@ -499,107 +570,107 @@ int main() {
         };
         auto readback = [&](std::vector<std::uint8_t>& out, int& w, int& h) {
             out.clear();
-            return b.copy_presented_frame(out, w, h);
+            return b.video().readback(out, w, h);
         };
-        b.set_frame_blend(true);
-        check(b.frame_blend_value(), "frame blend reports enabled");
+        set_frame_blend(b, true);
+        check((b.fx().settings().frame_blend != 0.0f), "frame blend reports enabled");
         const auto fa = make_frame(11);
         const auto fb = make_frame(12);
         const auto fc = make_frame(13);
         std::vector<std::uint8_t> got_b;
         int bw = 0, bh = 0;
         // Enabling resets history: the first fresh frame is as drawn.
-        b.present(fa.data(), true);
+        b.video().present(fa.data(), true);
         check(readback(got_b, bw, bh) && got_b == fa,
               "first blended frame presented as drawn");
-        b.present(fb.data(), true);
+        b.video().present(fb.data(), true);
         check(readback(got_b, bw, bh) && got_b == expect_mix(fa, fb),
               "second fresh frame averages with the first");
         // History advanced: a third frame mixes against the second, not the
         // first (a feedback mix would show fa in the result).
-        b.present(fc.data(), true);
+        b.video().present(fc.data(), true);
         check(readback(got_b, bw, bh) && got_b == expect_mix(fb, fc),
               "history advances past the first frame");
         check(got_b != expect_mix(fa, fc),
               "no feedback: the first frame is gone from history");
         // Enabling interp resets history too (cadence change would smear).
-        b.set_frame_interp(true);
-        b.present(fc.data(), true);
+        set_frame_interp(b, true);
+        b.video().present(fc.data(), true);
         check(readback(got_b, bw, bh) && got_b == fc,
               "interp toggle resets blend history");
         const auto fd = make_frame(14);
-        b.present(fd.data(), true);
+        b.video().present(fd.data(), true);
         check(readback(got_b, bw, bh) && got_b == expect_mix(fc, fd),
               "fresh frame after the reset blends again");
         // Holding repeat: blends against UNCHANGED history (kept=fd after the
         // fresh fd), so the mix is fd-with-fd, i.e. fd as drawn — while the
         // next fresh still sees fd, proving the hold advanced nothing.
-        b.present(fd.data(), false);
+        b.video().present(fd.data(), false);
         check(readback(got_b, bw, bh) && got_b == fd,
               "holding repeat blends against unchanged history");
         const auto fe = make_frame(15);
-        b.present(fe.data(), true);
+        b.video().present(fe.data(), true);
         check(readback(got_b, bw, bh) && got_b == expect_mix(fd, fe),
               "fresh frame after a hold still sees the held history");
         // Explicit reset: next fresh is as drawn.
-        b.reset_frame_blend();
-        b.present(fe.data(), true);
+        b.fx().reset_frame_blend();
+        b.video().present(fe.data(), true);
         check(readback(got_b, bw, bh) && got_b == fe,
               "reset presents the next frame as drawn");
         // Off: raw uploads, even with a stale-valid history behind.
-        b.set_frame_blend(false);
-        b.set_frame_interp(false);
-        check(!b.frame_blend_value(), "frame blend reports disabled");
-        b.present(fa.data(), true);
+        set_frame_blend(b, false);
+        set_frame_interp(b, false);
+        check(!(b.fx().settings().frame_blend != 0.0f), "frame blend reports disabled");
+        b.video().present(fa.data(), true);
         check(readback(got_b, bw, bh) && got_b == fa,
               "disabled blend uploads raw despite stale history");
     }
 #else
     // Primitive absent: the flag is recorded but nothing is applied.
     {
-        b.set_frame_blend(true);
+        set_frame_blend(b, true);
         const std::vector<std::uint8_t> src = make_frame(17);
-        b.present(src.data(), true);
+        b.video().present(src.data(), true);
         std::vector<std::uint8_t> got_n;
         int nw = 0, nh = 0;
-        check(b.copy_presented_frame(got_n, nw, nh) && got_n == src,
+        check(b.video().readback(got_n, nw, nh) && got_n == src,
               "blend flag without the primitive uploads raw");
-        b.set_frame_blend(false);
+        set_frame_blend(b, false);
     }
 #endif
 
     // ---- set_surface_size: texture recreated, readback follows --------------
     {
-        check(b.set_surface_size(248, 160), "set_surface_size(248, 160)");
-        check(!b.set_surface_size(0, 160), "set_surface_size rejects 0 width");
-        check(!b.set_surface_size(240, -1), "set_surface_size rejects negative");
+        check(b.video().set_surface_size(248, 160), "set_surface_size(248, 160)");
+        check(!b.video().set_surface_size(0, 160), "set_surface_size rejects 0 width");
+        check(!b.video().set_surface_size(240, -1), "set_surface_size rejects negative");
         const std::vector<std::uint8_t> wide(
             static_cast<std::size_t>(248) * 160 * 3u, 0x7Fu);
-        b.present(wide.data(), true);
+        b.video().present(wide.data(), true);
         std::vector<std::uint8_t> got_w;
         int ww = 0, wh = 0;
-        check(b.copy_presented_frame(got_w, ww, wh) && ww == 248 && wh == 160,
+        check(b.video().readback(got_w, ww, wh) && ww == 248 && wh == 160,
               "readback follows the resized surface");
         check(got_w == wide, "resized upload round-trips exactly");
-        check(b.set_surface_size(kBaseW, kBaseH), "surface restored to 240x160");
-        b.present(frame_b.data(), true);
+        check(b.video().set_surface_size(kBaseW, kBaseH), "surface restored to 240x160");
+        b.video().present(frame_b.data(), true);
     }
 
     // ---- wait_for_foreground / haptics / FPS readout ------------------------
     {
         check(b.wait_for_foreground(),
               "wait_for_foreground true while open (desktop: nothing to wait for)");
-        b.haptic_pulse(100, 0.5f);   // no pad with motors here: must be a safe no-op
-        b.haptic_pulse(0, 0.5f);     // non-positive duration: refused by policy
-        b.haptic_pulse(-5, 2.0f);    // out-of-range args: clamped, never crashes
+        b.input().haptic_pulse(100, 0.5f);   // no pad with motors here: must be a safe no-op
+        b.input().haptic_pulse(0, 0.5f);     // non-positive duration: refused by policy
+        b.input().haptic_pulse(-5, 2.0f);    // out-of-range args: clamped, never crashes
         check(true, "haptic_pulse with no motors does not crash");
-        b.set_fps_readout(true);
-        check(b.fps_readout_value(), "fps readout reports enabled");
+        b.video().set_fps_readout(true);
+        check(b.video().fps_readout(), "fps readout reports enabled");
         const std::vector<std::uint8_t> f = make_frame(5);
-        b.present(f.data(), true);
-        b.present(f.data(), false);
-        b.set_fps_readout(false);
-        check(!b.fps_readout_value(), "fps readout reports disabled");
+        b.video().present(f.data(), true);
+        b.video().present(f.data(), false);
+        b.video().set_fps_readout(false);
+        check(!b.video().fps_readout(), "fps readout reports disabled");
         check(true, "fps readout toggle across presents does not crash");
     }
 
@@ -610,29 +681,27 @@ int main() {
     // grading path without a colorimeter.
     {
         b.close();
-        const bool gopen = b.open(/*scale=*/2, kBaseW, kBaseH, "graded",
-                                  "frontlit", false, false, false, false);
+        const bool gopen = open_backend(b, "graded", "frontlit");
         check(gopen, "open with screen=frontlit");
         if (gopen) {
             const std::vector<std::uint8_t> src = make_frame(31);
-            b.present(src.data(), true);
+            b.video().present(src.data(), true);
             std::vector<std::uint8_t> got_g;
             int gw = 0, gh = 0;
-            const bool ok = b.copy_presented_frame(got_g, gw, gh);
+            const bool ok = b.video().readback(got_g, gw, gh);
             check(ok && gw == kBaseW && gh == kBaseH,
                   "graded readback keeps native geometry");
             check(ok && got_g != src,
                   "frontlit grading changes the uploaded bytes");
             // And Raw really is passthrough: same frame ungraded is identical.
             b.close();
-            const bool ropen = b.open(/*scale=*/2, kBaseW, kBaseH, "raw",
-                                      nullptr, false, false, false, false);
+            const bool ropen = open_backend(b, "raw");
             check(ropen, "reopen with screen=nullptr (Raw)");
             if (ropen) {
-                b.present(src.data(), true);
+                b.video().present(src.data(), true);
                 std::vector<std::uint8_t> got_r;
                 int rw2 = 0, rh2 = 0;
-                check(b.copy_presented_frame(got_r, rw2, rh2) && got_r == src,
+                check(b.video().readback(got_r, rw2, rh2) && got_r == src,
                       "Raw uploads the frame untouched");
             }
         }
@@ -645,29 +714,26 @@ int main() {
     // RenderTexture lifecycle runs without dropping or corrupting a frame.
     {
         b.close();
-        const bool sopen = b.open(/*scale=*/2, kBaseW, kBaseH, "sharp",
-                                  nullptr, false, /*sharp_filter=*/true,
-                                  false, false);
+        const bool sopen = open_backend(b, "sharp", nullptr, false, true);
         check(sopen, "open with sharp_filter=true");
         if (sopen) {
             SetWindowSize(700, 500);
             const std::vector<std::uint8_t> src = make_frame(61);
-            b.present(src.data(), true);
+            b.video().present(src.data(), true);
             std::vector<std::uint8_t> got_s;
             int sw = 0, sh = 0;
-            check(b.copy_presented_frame(got_s, sw, sh) && got_s == src,
+            check(b.video().readback(got_s, sw, sh) && got_s == src,
                   "present through the sharp path keeps the frame");
             // Mutual exclusion: enabling linear clears sharp, same rule as SDL.
-            b.set_linear_filter(true);
-            check(b.linear_filter_enabled(), "linear filter reports enabled");
-            b.present(src.data(), true);
-            check(b.copy_presented_frame(got_s, sw, sh) && got_s == src,
+            b.video().set_linear_filter(true);
+            check(b.video().linear_filter(), "linear filter reports enabled");
+            b.video().present(src.data(), true);
+            check(b.video().readback(got_s, sw, sh) && got_s == src,
                   "present after linear-clears-sharp keeps the frame");
-            b.set_linear_filter(false);
+            b.video().set_linear_filter(false);
             SetWindowSize(kBaseW * 2, kBaseH * 2);
             b.close();
-            const bool ropen2 = b.open(/*scale=*/2, kBaseW, kBaseH, "raw2",
-                                       nullptr, false, false, false, false);
+            const bool ropen2 = open_backend(b, "raw2");
             check(ropen2, "reopen non-sharp for the remaining checks");
         }
     }
@@ -676,19 +742,19 @@ int main() {
     // Far-future deadline + vsync => present immediately (no hold, no sleep
     // beyond the vsync block itself). Disabled => immediate return.
     {
-        b.set_frame_interp(true);
-        check(b.frame_interp(), "frame interp reports enabled");
+        set_frame_interp(b, true);
+        check(b.fx().settings().frame_interp, "frame interp reports enabled");
         const std::vector<std::uint8_t> tick_f = make_frame(83);
-        b.interp_display_tick(tick_f.data(), UINT64_MAX);
+        b.video().interp_display_tick(tick_f.data(), UINT64_MAX);
         std::vector<std::uint8_t> got_t;
         int tw = 0, th = 0;
-        check(b.copy_presented_frame(got_t, tw, th) && got_t == tick_f,
+        check(b.video().readback(got_t, tw, th) && got_t == tick_f,
               "enabled interp tick presents the frame");
-        b.set_frame_interp(false);
+        set_frame_interp(b, false);
         const std::vector<std::uint8_t> other = make_frame(84);
-        b.interp_display_tick(other.data(), UINT64_MAX);
+        b.video().interp_display_tick(other.data(), UINT64_MAX);
         got_t.clear();
-        check(b.copy_presented_frame(got_t, tw, th) && got_t == tick_f,
+        check(b.video().readback(got_t, tw, th) && got_t == tick_f,
               "disabled interp tick presents nothing");
     }
 
@@ -778,11 +844,10 @@ int main() {
 
     std::vector<std::uint8_t> after_close;
     int aw = 0, ah = 0;
-    check(!b.copy_presented_frame(after_close, aw, ah),
+    check(!b.video().readback(after_close, aw, ah),
           "readback refused after close");
 
-    const bool reopened = b.open(/*scale=*/2, kBaseW, kBaseH, "recomp smoke 2",
-                                   nullptr, false, false, false, false);
+    const bool reopened = open_backend(b, "recomp smoke 2");
     check(reopened, "reopen() succeeded (audio slot was released)");
     check(b.is_open(), "is_open() after reopen");
 
@@ -790,9 +855,9 @@ int main() {
         check(!IsWindowState(FLAG_WINDOW_HIDDEN),
               "window visible after reopen()");
         const std::vector<std::uint8_t> frame_c = make_frame(99);
-        b.present(frame_c.data(), true);
+        b.video().present(frame_c.data(), true);
         got.clear();
-        check(b.copy_presented_frame(got, rw, rh) && got == frame_c,
+        check(b.video().readback(got, rw, rh) && got == frame_c,
               "present/readback works after reopen");
     }
 
