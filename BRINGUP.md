@@ -6816,3 +6816,33 @@ device gate: tag every capture and settle ≥4.
 - Policy: new tests keep using the always-active `CHECK` macro; `-UNDEBUG`
   is the belt-and-braces for the legacy assert-based files (the Phase 4
   rewrites migrate them).
+
+## 2026-10-15 — V2 Phase 2 infra: RaylibApi + Clock, all raylib calls routed
+
+- `raylib_api.h/.cpp`: the raylib surface (65 methods, raylib's exact names
+  and signatures) behind one interface; `real_raylib_api()` forwards 1:1
+  (`::`-qualified against member-name recursion). All 154 raylib call sites
+  in raylib_backend.cpp route through it (`impl_->api->` in methods,
+  `impl->api->` in the static helpers, `api_->` in RaylibOverlay) — the
+  Phase 5 failure-injection fake needs no backend changes.
+- `host_clock.h/.cpp`: the backend's time source; real impl = raylib
+  `GetTime()` in raylib builds, steady clock in stubs. The three GetTime()
+  sites (input snapshot now_ms, Android rate log, FPS readout) route
+  through it. FakeClock arrives with the §5.2 item 3 fakes.
+- `RaylibBackend(RaylibApi* api = nullptr, Clock* clock = nullptr)`:
+  injectable, defaulted — existing construction unchanged.
+- Stale "skeleton/stub" commentary replaced (the header's STUBS section +
+  both file tops).
+- Verification: both configs build; FFTA `build-raylib` 66/66,
+  `build-raylib-only` 67/67; attract golden byte-identical in both configs
+  (the routing is behavior-preserving); the completeness checker 56/56; a
+  scanner (same masker as the routing transform) confirms zero unrouted
+  raylib calls remain. `bios_smoke`'s link break is unchanged (the known
+  FFTA-side ImGui set — no new symbols).
+- Note: the routing was applied by a reviewed Python transform
+  (string/comment masking, range-based receivers, abort-on-unranged); the
+  one-shot script is recorded at /tmp/opencode/route_raylib.py, not
+  committed.
+- Next: concern conversions in order (Video → Audio → Input → Fx → Overlay
+  → lifecycle), each with a red-first V2-accessor test; then the fakes +
+  the display-free contract slice.
