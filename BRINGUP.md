@@ -7030,3 +7030,33 @@ device gate: tag every capture and settle ≥4.
 - Phase 2 remaining: the §5.2 item 3 fakes (RecordingVideo, ScriptedInput,
   TappingAudio, FakeClock, FakeBackend) + the display-free slice of the
   lifecycle contract test.
+
+## 2026-10-15 — V2 Phase 2 tail: fakes + contract slice (gbarecompx e3be683) — PHASE 2 COMPLETE
+
+- `tests/runtime/support/fake_backend.h` (§5.2 item 3): `RecordingVideo`
+  (records presents, serves readback from the last frame), `ScriptedInput`
+  (scriptable snapshot + observation), `TappingAudio` (single-owner claim
+  incl. `refuse_claim` injection, push recording), `FakeClock` (settable
+  `now_s`), `FakeBackend` composing them behind the V2 facade (knobs:
+  `open_fails`, `caps_override`, `suspend_ok`/`resume_ok`; pump =
+  `translate_input(scripted read, edges)` with the clock stamping `now_ms`).
+  `FakeFx`/`FakeOverlay` are the minimal storing companions the facade needs
+  (the plan names five fakes; Fx/Overlay have no observable behavior to
+  fake). Component members are named after their fake types — a member may
+  not share a name with the accessor methods.
+- `tests/runtime/backend_contract_test.cpp` (§5.2 item 2, display-free
+  slice): one contract suite run against (a) the FakeBackend (strict; the
+  full scripted checks incl. readback fidelity, audio claim, fx/overlay)
+  and (b) the real RaylibBackend (generic lifecycle; a display-less box
+  early-outs on `Err::Window`, which the suite accepts). Phase 3's menu
+  host-loop test and Phase 5's `RaylibApi` fake build on these.
+- Red-first: the contract suite is new test code; the negative control
+  (TappingAudio ignoring its second claimant) was observed failing the exact
+  CHECK, then restored.
+- Verification: stub 64/64; FFTA build-raylib 68/68, build-raylib-only
+  69/69 (the raylib run executes the contract against both the fake and the
+  real backend — real window open/close on a display); attract golden
+  byte-identical in both configs.
+- **Phase 2 complete** (all five concerns + lifecycle/facade + the tail).
+  Next: Phase 3 — the generic menu (`menu_model.h`, the `Menu`
+  presentation, the host-loop test on the fakes).
