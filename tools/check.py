@@ -23,7 +23,7 @@ silently redefining the baseline.
 
 Usage:
   .venv/bin/python tools/check.py            # everything (~1.5-2 min)
-  .venv/bin/python tools/check.py --fast     # unit tests + ui tests + android checks + attract
+  .venv/bin/python tools/check.py --fast     # unit tests + ui tests + android checks + raylib default probe + attract
   .venv/bin/python tools/check.py --jobs 1   # serial
   .venv/bin/python tools/check.py --only NAME[,NAME...]
 
@@ -397,41 +397,57 @@ def check_hangrepro():
 def check_raylib_compile():
     """Compile the RaylibBackend against real raylib 6 (opt-in).
 
-    Nothing else builds the raylib path, so it could silently stop compiling
-    while every other gate stays green. This configures a SEPARATE build dir
-    (switching the main build would trade a working SDL app for an incomplete
-    one) and builds just the backend target -- not raylib itself, not the game.
+    Phase 4c made raylib the DEFAULT: this configures the canonical `build/`
+    dir with NO raylib flag and asserts the framework's effective flag. If the
+    default regresses to OFF, that assertion fails and names the regression
+    (the present-test target would also vanish, but its error would read
+    "unknown target" instead).
+
+    Nothing else builds the raylib path on a fresh checkout, so it could
+    silently stop compiling while every other gate stays green. Builds just the
+    backend target -- not raylib itself, not the game.
 
     It ALSO compiles the backend with the flag OFF (stub build, second build
     dir). The backend file must compile in both configurations: Slice B/C
     helpers were once declared inside `#if defined(GBARECOMP_USE_RAYLIB)` but
-    called from unguarded setters, which broke the SDL-config build while the
-    raylib tree stayed green -- and no gate built that configuration, so it
-    survived several sessions. This is the gate that closes that class.
+    called from unguarded setters, which broke the other configuration while
+    the raylib tree stayed green -- and no gate built that configuration, so it
+    survived several sessions. This is the gate that closes that class, and the
+    explicit OFF is what keeps a default flip from silently dropping this half.
 
     Opt-in rather than default: the first configure fetches and builds raylib,
-    which is minutes. Once cached in build-raylib-only/ it is a few seconds.
-    The stub dir needs no raylib at all (flag OFF skips the fetch), so it is
-    cheap and offline from the first run.
+    which is minutes. Once cached in build/ it is a few seconds. The stub dir
+    needs no raylib at all (flag OFF skips the fetch), so it is cheap and
+    offline from the first run.
 
     Needs network on first run (raylib is fetched by SHA). Skips cleanly when
-    the experimental tree is absent."""
+    the raylib tree is absent (CI before Phase 7)."""
     if not (REPO / "gbarecompx/src/runtime/raylib_backend.cpp").exists():
         return True, "skipped (no gbarecompx tree)"
 
-    # Configure from the ROOT project: that is how build-raylib-only is created,
-    # and it wires GBARECOMP_ROOT / mods / the app target the runtime needs.
-    # A build dir caches its source directory, so pointing a -S at the framework
-    # subdir against the same dir is rejected by CMake.
-    build = REPO / "build-raylib-only"
+    # Configure from the ROOT project with DEFAULTS ONLY -- the no-flag
+    # configure IS the Phase 4c contract (raylib is the product backend), and
+    # this is the same dir every app suite runs from. It wires GBARECOMP_ROOT /
+    # mods / the app target the runtime needs. A build dir caches its source
+    # directory, so pointing a -S at the framework subdir against the same dir
+    # is rejected by CMake.
+    build = REPO / "build"
     src = REPO
     # NB: cmake, not sys.executable -- "-S" is also a Python flag and would be
     # silently swallowed as one, turning this into `python -S <dir>`.
     cfg = ["cmake", "-S", str(src), "-B", str(build), "-G", "Ninja",
-           "-DCMAKE_BUILD_TYPE=Release", "-DGBARECOMP_USE_RAYLIB=ON"]
+           "-DCMAKE_BUILD_TYPE=Release"]
     r = run(cfg, timeout=900)
     if r.returncode != 0:
         return False, f"configure failed (raylib fetched by SHA; needs network)"
+
+    # The effective flag, not the request: "GBARECOMP_USE_RAYLIB was requested"
+    # is not the same claim as "raylib was fetched and linked".
+    if "GBARECOMP_RAYLIB_ENABLED:INTERNAL=ON" not in (
+            build / "CMakeCache.txt").read_text():
+        return False, ("default configure did not select raylib: the Phase 4c "
+                       "default flip regressed (GBARECOMP_RAYLIB_ENABLED is "
+                       "not ON)")
 
     r = run(["cmake", "--build", str(build), "--target",
              "gbarecomp_raylib_backend", "--parallel", "4"], timeout=900)
@@ -441,8 +457,8 @@ def check_raylib_compile():
         return False, (errs[0].strip() if errs else "raylib backend build failed")
 
     # The OFF half: same file must compile as a stub. Uses its own build dir
-    # (a dir caches its source AND its flag set -- reconfiguring
-    # build-raylib-only OFF and back would thrash the cached raylib build).
+    # (a dir caches its source AND its flag set -- reconfiguring build/ OFF
+    # and back would thrash the cached raylib build).
     # Explicit OFF rather than relying on the default, so a default flip can
     # never silently drop this half. No raylib fetch happens with the flag
     # off, so this half is offline-cheap.
@@ -566,6 +582,35 @@ def check_release():
     return r.returncode == 0, line or f"exit {r.returncode}"
 
 
+def check_backend_default():
+    """The canonical build dir is the raylib product build (Phase 4c).
+
+    The default flip is only real if the dir every app suite runs from was
+    configured with it: `build/` must carry the framework's effective raylib
+    flag, and (when built) the selection predicate must agree. Cheap: reads the
+    cache and runs one small binary; no configure, no fetch. Skips cleanly when
+    the raylib tree is absent (CI before Phase 7) or the canonical dir is not
+    configured (tier-1-only checkouts)."""
+    if not (REPO / "gbarecompx/src/runtime/raylib_backend.cpp").exists():
+        return True, "skipped (no gbarecompx tree)"
+    cache = REPO / "build/CMakeCache.txt"
+    if not cache.exists():
+        return True, "skipped (build/ not configured)"
+    if "GBARECOMP_RAYLIB_ENABLED:INTERNAL=ON" not in cache.read_text():
+        return False, ("build/ is not the raylib product build: "
+                       "GBARECOMP_RAYLIB_ENABLED is not ON (Phase 4c default "
+                       "regressed, or the dir was configured with "
+                       "-DGBARECOMP_USE_RAYLIB=OFF)")
+    exe = REPO / "build/ffta_backend_select_tests"
+    if not exe.exists():
+        return True, "build/ is raylib (selection binary not built)"
+    r = run([str(exe)])
+    line = (r.stdout.strip().splitlines() or [""])[-1]
+    if r.returncode != 0 or "raylib=1" not in line:
+        return False, f"backend_select disagrees: {line or f'exit {r.returncode}'}"
+    return True, "build/ is raylib; backend_select raylib=1"
+
+
 CHECKS = {
     "unit-cpp": check_unit_cpp,
     "unit-py": check_unit_py,
@@ -574,6 +619,7 @@ CHECKS = {
     "patches": check_patches,
     "android-static": check_android_static,
     "raylib-backend": check_raylib_backend,
+    "backend-default": check_backend_default,
     "raylib-compile": check_raylib_compile,
     "hangrepro": check_hangrepro,
     "desktop-accept": check_desktop_accept,
@@ -592,7 +638,7 @@ CHECKS = {
                                           REG / "battle_move.sav", 5600),
 }
 FAST = ["unit-cpp", "unit-py", "ui-tests", "savecheck", "patches",
-        "android-static", "raylib-backend", "attract"]
+        "android-static", "raylib-backend", "backend-default", "attract"]
 # Opt-in suites, left out of the default run (they need local artifacts a
 # desktop-only worktree may not have); --only NAME runs them explicitly.
 # release: the zip packager — needs a built tree (no ROM), and its output

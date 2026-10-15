@@ -48,6 +48,9 @@ jobs:
       - name: Python deps (unit-py)
         run: python3 -m pip install "capstone==5.0.7"
 
+      # The Phase 4c default (raylib ON) is inert here: gbarecompx/ is
+      # untracked until Phase 7, so GBARECOMP_ROOT falls back to the pinned
+      # gbarecomp submodule and the raylib option is never consumed.
       - name: Configure
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 
@@ -55,7 +58,9 @@ jobs:
         run: python3 tools/check.py --only unit-cpp,unit-py,ui-tests,patches,android-static
 
   raylib-backend:
-    # Compiles the experimental raylib backend and RUNS it headless.
+    # Compiles the raylib PRODUCT backend (the default since Phase 4c) and RUNS
+    # it headless. The gate configures the canonical `build/` dir with defaults
+    # only, so it also fails if the default flip regresses to the stub.
     #
     # GitHub's ubuntu runners have no GPU, no /dev/dri and no X server, so this
     # is where the raylib path gets its first real signal from something other
@@ -88,8 +93,9 @@ jobs:
             libfreetype-dev libharfbuzz-dev libsdl2-dev \
             xvfb libgl1-mesa-dri
 
-      # Configures build-raylib-only with -DGBARECOMP_USE_RAYLIB=ON, builds
-      # gbarecomp_raylib_backend, then builds and runs ffta_raylib_present_tests.
+      # Configures build/ with default flags (raylib is the product default
+      # since Phase 4c), builds gbarecomp_raylib_backend, then builds and runs
+      # ffta_raylib_present_tests.
       # Deliberately builds nothing that needs the ROM: generated/ is
       # gitignored, and the integration test is kept link-lean (raylib +
       # gbarecomp_raylib_backend only) precisely so it works on a fresh

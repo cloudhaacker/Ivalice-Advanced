@@ -7387,3 +7387,49 @@ device gate: tag every capture and settle ≥4.
   launcher (`game_launcher_ui`, Track L) links it — retired by 4e/7, not a
   4b blocker.
 - Next: 4c (flip FFTA's default build to raylib; play.sh/check.py/CI naming).
+
+## 2026-10-15 — V2 Phase 4c: raylib is the default build (HASH)
+
+- Root CMake declares the product default:
+  `option(GBARECOMP_USE_RAYLIB ... ON)` before add_subdirectory. option()
+  never overwrites an existing cache entry, so the framework's own OFF default
+  still governs standalone framework builds and `-DGBARECOMP_USE_RAYLIB=OFF`
+  still opts out (verified). `build/` — the dir every app suite (attract,
+  routes, ws_smoke, hle-audit, unit-cpp) already runs from — was wiped and
+  reconfigured from scratch: it is now the raylib product build.
+- Framework (gbarecompx): the option text lost the "experimental/scaffolding"
+  framing, and the OFF branch now `unset(GBARECOMP_RAYLIB_ENABLED CACHE)` — a
+  stale INTERNAL=ON used to survive a flip to OFF in the same build dir, which
+  would make parents add raylib-only targets and would falsely pass the new
+  default probe (verified both directions on a scratch dir).
+- Red-first: a default (no-flag) configure must select raylib. Pre-flip:
+  "RaylibBackend built stub-only", `GBARECOMP_USE_RAYLIB:BOOL=OFF`, no
+  effective flag → RED. Post-flip: "linked against raylib 6",
+  `GBARECOMP_RAYLIB_ENABLED:INTERNAL=ON` → GREEN.
+  The check is permanent:
+  - `check.py --only backend-default` (new; cheap; in FAST): asserts build/'s
+    effective flag and runs `ffta_backend_select_tests` expecting "raylib=1";
+  - `check.py --only raylib-compile` now configures `build/` with NO flag and
+    asserts the effective flag before building the backend/present test (the
+    present-test target only exists when raylib was actually fetched).
+- Naming: `tools/play.sh` defaults to `build/FFTARecomp` and `--sdl` was
+  retired (exit 2 with a message); `check.py`'s raylib-compile suite dropped
+  `build-raylib-only` (now redundant); `.github/workflows/ci.yml` comments
+  updated (the raylib job is the product gate; tier1's configure is inert
+  until Phase 7 repoints GBARECOMP_ROOT at the published tree).
+- Android unaffected: the Gradle build uses the pinned submodule by default
+  (no raylib target, ignores the flag) — the SDL shell stays until 4f; a
+  `-PgbarecompRoot=<fork>` build now defaults to raylib, which is the 4f
+  direction.
+- Verification: fresh product build from zero; ctest 70/70 in build/; backend_select PASS
+  (raylib=1); attract byte-identical (`1EF4C118...`); check.py --fast 8/9
+  (only the pre-existing patches-suite items red — the recomp-ui drift
+  files carry Oct 13-14 mtimes and 4c touched neither submodule);
+  raylib-compile PASS; ws_check PASS; android-static PASS; runtime SDL
+  refs 0; windowed smoke of the switched build: raylib 6/GLFW init,
+  present-in-place, 600 frames presented, clean close, FULLY_STATIC.
+- Mutations: M1 (build/ flipped OFF → the probe FAILS; back ON → PASSES), M2
+  (`--sdl` exits 2). Attract golden byte-identical on the switched build.
+- Next: 4d (port framework/app tests to the per-interface surfaces; rewrite
+  the completeness guard's per-interface tier), then 4e (release packaging:
+  SDL2 pin → raylib cross-build), 4f (Android scaffold swap).

@@ -15,9 +15,10 @@
 #           (Or your keybinds.ini rebinds — config is read from the exe's
 #           directory, so each build dir has its own copy.)
 #
-# Backend: raylib (`build-raylib-only/FFTARecomp`) while it is under active
-# validation. Pass --sdl to run the SDL build (`build/FFTARecomp`) instead;
-# --sdl is consumed here, everything else passes through to the game.
+# Backend: raylib (`build/FFTARecomp`) — the product backend since Phase 4c;
+# a plain `cmake -S . -B build` selects it. The old SDL build is gone (--sdl
+# was retired) and the OFF configuration is a headless stub compile-check, not
+# playable. Everything else passes through to the game.
 #
 # Extras:  tools/play.sh --fullscreen            windowed fullscreen
 #          tools/play.sh --tcp-observe 19850     window + live debug port;
@@ -47,25 +48,21 @@ done
 # unclean closes) and rewritten with final counts on a clean exit — archive
 # it too, so back-to-back sessions can't clobber the previous proposals.
 [ -f logs/playtest_misses.frag ] && cp logs/playtest_misses.frag "saves/frag_prev_${ts}.frag" || true
-# Backend selection: raylib by default (see header), --sdl for the SDL build.
-# The flag is filtered out before "$@" reaches the game.
-EXE=./build-raylib-only/FFTARecomp
+# The product build (raylib; Phase 4c made it the default). --sdl is retired:
+# fail loudly rather than pass a dead flag through to the game.
+EXE=./build/FFTARecomp
 ARGS=()
 for a in "$@"; do
   if [ "$a" = "--sdl" ]; then
-    EXE=./build/FFTARecomp
-  else
-    ARGS+=("$a")
+    echo "play.sh: --sdl was retired in Phase 4c (raylib is the only window backend)." >&2
+    exit 2
   fi
+  ARGS+=("$a")
 done
 if [ ! -x "$EXE" ]; then
   echo "play.sh: $EXE missing. Build it first:" >&2
-  if [ "$EXE" = "./build-raylib-only/FFTARecomp" ]; then
-    echo "  cmake -S . -B build-raylib-only -G Ninja -DCMAKE_BUILD_TYPE=Release -DGBARECOMP_USE_RAYLIB=ON" >&2
-    echo "  cmake --build build-raylib-only --target FFTARecomp --parallel 8" >&2
-  else
-    echo "  cmake --build build --target FFTARecomp --parallel 8" >&2
-  fi
+  echo "  cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release" >&2
+  echo "  cmake --build build --target FFTARecomp --parallel 8" >&2
   exit 1
 fi
 exec env -u GBARECOMP_STRICT_STATIC \

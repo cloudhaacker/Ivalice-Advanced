@@ -31,6 +31,15 @@ set(GBARECOMP_ENABLE_MODS ON CACHE BOOL
 set(GBARECOMP_RUNTIME_UI_ROOT "${RECOMP_UI_ROOT}"
     CACHE PATH "recomp-ui root used by the live GBA runtime adapter")
 
+# ── Window backend (Phase 4c) ────────────────────────────────────────────────
+# raylib is the product backend. Declared here so a plain
+# `cmake -S . -B build` selects it; -DGBARECOMP_USE_RAYLIB=OFF builds the
+# stub compile-check instead. option() never overwrites an existing cache
+# entry, so the framework's own OFF default still applies to standalone
+# framework builds.
+option(GBARECOMP_USE_RAYLIB
+    "Build the raylib window backend (the product; OFF = stub compile-check)" ON)
+
 add_subdirectory("${GBARECOMP_ROOT}" gbarecomp_build EXCLUDE_FROM_ALL)
 
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/generated/recompiled.cpp")
