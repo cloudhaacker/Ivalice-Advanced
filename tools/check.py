@@ -528,16 +528,18 @@ def check_raylib_compile():
 def check_raylib_backend():
     """RaylibBackend completeness + guard self-test.
 
-    The WindowBackend seam only pays off if every platform backend implements the
-    WHOLE interface. `override` catches signature drift but NOT a newly-added
-    virtual the backend fails to override -- that silently inherits the default.
-    tools/check_raylib_backend_complete.py closes that gap; its self-test covers
-    the parser cases that have bitten us (function-pointer args, pointer spacing,
-    overloads).
+    The WindowBackend seam only pays off if the backend implements the WHOLE
+    interface. `override` catches signature drift but NOT a newly-added virtual
+    the backend fails to override -- that silently inherits the default.
+    tools/check_raylib_backend_complete.py closes that gap with three checks:
+    the single-generation markers, purity of every interface method, and
+    per-interface attribution (each method overridden at ITS OWN impl site -- a
+    method implemented in the wrong impl class is caught since Phase 4d). Its
+    self-test covers the parser cases that have bitten us (function-pointer
+    args, pointer spacing, overloads) plus the attribution cases.
 
-    Runs in both worktrees: on the experimental raylib tree it enforces the 56/56
-    contract, and elsewhere it skips (the pinned gbarecomp/ has no raylib backend).
-    Cheap -- pure Python, no build."""
+    Runs where the raylib tree exists; elsewhere it skips (the pinned
+    gbarecomp/ has no raylib backend). Cheap -- pure Python, no build."""
     if not (REPO / "gbarecompx/src/runtime/raylib_backend.h").exists():
         return True, "skipped (no gbarecompx tree)"
 

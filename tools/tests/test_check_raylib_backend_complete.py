@@ -4,13 +4,17 @@
 The completeness guard is load-bearing: if it silently passes, the seam
 silently drifts from its contract. So it gets tested like any other code --
 including the cases that once broke it (the function-pointer argument, the
-overload pair) and the Phase 4b checks (pure interfaces, single generation,
-per-interface scanning).
+overload pair), the Phase 4b checks (pure interfaces, single generation), and
+the Phase 4d per-interface attribution cases: a method implemented in the
+WRONG impl class, a cross-interface signature collision, and a facade method
+implemented in an impl class. The old union scan accepted all three.
 
 Run: python3 tools/tests/test_check_raylib_backend_complete.py
 """
 from __future__ import annotations
 
+import contextlib
+import io
 import sys
 import tempfile
 from pathlib import Path
@@ -26,6 +30,8 @@ def check(label: str, got, want) -> None:
         FAILURES.append(f"{label}: got {got!r}, want {want!r}")
 
 
+# One slot per interface in the seam header, and one per implementation site
+# (the facade in raylib_backend.h, the five concerns in their nested impls).
 IFACE_HEADER = """#pragma once
 namespace gbarecomp {
 struct HostOverlay;
@@ -42,22 +48,27 @@ public:
 class Audio {
 public:
     virtual ~Audio() = default;
+%s
 };
 class Input {
 public:
     virtual ~Input() = default;
+%s
 };
 class Fx {
 public:
     virtual ~Fx() = default;
+%s
 };
 class Overlay {
 public:
     virtual ~Overlay() = default;
+%s
 };
 class Menu {
 public:
     virtual ~Menu() = default;
+%s
 };
 }  // namespace gbarecomp
 """
@@ -78,6 +89,26 @@ class RaylibBackend::VideoImpl final : public Video {
 public:
 %s
 };
+class RaylibBackend::AudioImpl final : public Audio {
+public:
+%s
+};
+class RaylibBackend::InputImpl final : public Input {
+public:
+%s
+};
+class RaylibBackend::FxImpl final : public Fx {
+public:
+%s
+};
+class RaylibBackend::OverlayImpl final : public Overlay {
+public:
+%s
+};
+class RaylibBackend::MenuImpl final : public Menu {
+public:
+%s
+};
 }  // namespace gbarecomp
 """
 
@@ -85,10 +116,12 @@ CLEAN_HOST = "// host_window.cpp fixture: no SDL markers\n"
 CLEAN_FACTORY = "// factory fixture: no SDL markers\n"
 
 
-def build(tmp: Path, facade_methods: str, backend_h_methods: str,
-          backend_cpp_methods: str = "", video_methods: str = "",
-          host_window: str = CLEAN_HOST,
-          factory: str = CLEAN_FACTORY) -> dict[str, Path]:
+def run(tmp: Path, facade_iface: str = "", video_iface: str = "",
+        audio_iface: str = "", input_iface: str = "", fx_iface: str = "",
+        overlay_iface: str = "", menu_iface: str = "", facade_impl: str = "",
+        video_impl: str = "", audio_impl: str = "", input_impl: str = "",
+        fx_impl: str = "", overlay_impl: str = "", menu_impl: str = "",
+        host_window: str = CLEAN_HOST, factory: str = CLEAN_FACTORY) -> int:
     paths = {
         "iface": tmp / "window_backend.h",
         "backend_h": tmp / "raylib_backend.h",
@@ -96,20 +129,14 @@ def build(tmp: Path, facade_methods: str, backend_h_methods: str,
         "host_window": tmp / "host_window.cpp",
         "factory": tmp / "host_backend_factory.cpp",
     }
-    paths["iface"].write_text(IFACE_HEADER % (facade_methods, video_methods))
-    paths["backend_h"].write_text(BACKEND_HEADER % backend_h_methods)
-    paths["backend_cpp"].write_text(BACKEND_CPP % backend_cpp_methods)
+    paths["iface"].write_text(IFACE_HEADER % (
+        facade_iface, video_iface, audio_iface, input_iface, fx_iface,
+        overlay_iface, menu_iface))
+    paths["backend_h"].write_text(BACKEND_HEADER % facade_impl)
+    paths["backend_cpp"].write_text(BACKEND_CPP % (
+        video_impl, audio_impl, input_impl, fx_impl, overlay_impl, menu_impl))
     paths["host_window"].write_text(host_window)
     paths["factory"].write_text(factory)
-    return paths
-
-
-def run(tmp: Path, facade_methods: str, backend_h_methods: str,
-        backend_cpp_methods: str = "", video_methods: str = "",
-        host_window: str = CLEAN_HOST, factory: str = CLEAN_FACTORY) -> int:
-    paths = build(tmp, facade_methods, backend_h_methods, backend_cpp_methods,
-                  video_methods, host_window, factory)
-    import contextlib, io
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
         return checker.main([
@@ -125,126 +152,152 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
 
-        # 1. Baseline: pure interface, everything overridden -> clean.
+        # 1. Baseline: pure interfaces, every method overridden at its own
+        #    site (facade in the header class, concerns in their impls).
         check("complete backend passes",
               run(tmp,
-                  "    virtual void set_volume(int pct) = 0;\n"
-                  "    virtual int volume_percent() const = 0;\n",
-                  "    void set_volume(int pct) override;\n"
-                  "    int volume_percent() const override;\n"),
+                  facade_iface="    virtual void set_volume(int pct) = 0;\n"
+                               "    virtual int volume_percent() const = 0;\n",
+                  facade_impl="    void set_volume(int pct) override;\n"
+                              "    int volume_percent() const override;\n",
+                  video_iface="    virtual void present(const std::uint8_t* p, bool fresh) = 0;\n",
+                  video_impl="    void present(const std::uint8_t* p, bool fresh) override;\n"),
               0)
 
         # 2. A missing override must be reported, not silently accepted.
         check("missing override fails",
               run(tmp,
-                  "    virtual void set_volume(int pct) = 0;\n"
-                  "    virtual void set_fps_readout(bool on) = 0;\n",
-                  "    void set_volume(int pct) override;\n"),
+                  facade_iface="    virtual void set_volume(int pct) = 0;\n"
+                               "    virtual void set_fps_readout(bool on) = 0;\n",
+                  facade_impl="    void set_volume(int pct) override;\n"),
               1)
 
         # 3. REGRESSION: a function-pointer parameter contains its own parens.
-        #    A naive [^)]* regex drops this and reports a false failure.
         check("function-pointer arg parses (regression)",
               run(tmp,
-                  "    virtual void set_host_overlay(void (*overlay)(HostOverlay*)) = 0;\n",
-                  "    void set_host_overlay(void (*overlay)(HostOverlay*)) override;\n"),
+                  overlay_iface="    virtual void set_host_overlay(void (*overlay)(HostOverlay*)) = 0;\n",
+                  overlay_impl="    void set_host_overlay(void (*overlay)(HostOverlay*)) override;\n"),
               0)
 
         # 4. REGRESSION: overloaded interface methods are distinct entries.
         check("overloads tracked separately",
               run(tmp,
-                  "    virtual bool open(int scale) = 0;\n"
-                  "    virtual bool open(long scale) = 0;\n",
-                  "    bool open(int scale) override;\n"
-                  "    bool open(long scale) override;\n"),
+                  facade_iface="    virtual bool open(int scale) = 0;\n"
+                               "    virtual bool open(long scale) = 0;\n",
+                  facade_impl="    bool open(int scale) override;\n"
+                              "    bool open(long scale) override;\n"),
               0)
 
         # 5. REGRESSION: one open() override must not satisfy the other.
         check("overload mismatch fails",
               run(tmp,
-                  "    virtual bool open(int scale) = 0;\n"
-                  "    virtual bool open(long scale) = 0;\n",
-                  "    bool open(int scale) override;\n"),
+                  facade_iface="    virtual bool open(int scale) = 0;\n"
+                               "    virtual bool open(long scale) = 0;\n",
+                  facade_impl="    bool open(int scale) override;\n"),
               1)
 
         # 6. const-ness drift must be caught.
         check("const-ness mismatch fails",
               run(tmp,
-                  "    virtual int value() const = 0;\n",
-                  "    int value() override;\n"),
+                  facade_iface="    virtual int value() const = 0;\n",
+                  facade_impl="    int value() override;\n"),
               1)
 
         # 7. Whitespace normalization must not create false mismatches.
         check("spacing tolerated",
               run(tmp,
-                  "    virtual bool drawable_size(int* w, int* h) const = 0;\n",
-                  "    bool drawable_size(int *w, int *h) const override;\n"),
+                  video_iface="    virtual bool drawable_size(int* w, int* h) const = 0;\n",
+                  video_impl="    bool drawable_size(int *w, int *h) const override;\n"),
               0)
 
         # 8. A non-virtual member in the interface must not be required.
         check("non-virtual ignored",
               run(tmp,
-                  "    int helper_field = 0;\n"
-                  "    virtual void set_volume(int pct) = 0;\n",
-                  "    void set_volume(int pct) override;\n"),
+                  facade_iface="    int helper_field = 0;\n"
+                               "    virtual void set_volume(int pct) = 0;\n",
+                  facade_impl="    void set_volume(int pct) override;\n"),
               0)
 
         # 9. REGRESSION (Phase 4b): an interface method with a defaulted body is
-        #    the silent-inheritance bug class (audio_enabled_state()). It must
-        #    fail even when the backend overrides it.
+        #    the silent-inheritance bug class (audio_enabled_state()).
         check("impure interface method fails",
               run(tmp,
-                  "    virtual bool audio_enabled() const { return false; }\n",
-                  "    bool audio_enabled() const override;\n"),
+                  audio_iface="    virtual bool audio_enabled() const { return false; }\n"),
               1)
 
         # 10. Phase 4b: the flat generation must be gone.
         check("flat marker fails",
               run(tmp,
-                  "    virtual bool open(const WindowBackendOpenParams& p) = 0;\n",
-                  "    bool open(const WindowBackendOpenParams& p) override;\n"),
+                  facade_iface="    virtual bool open(const WindowBackendOpenParams& p) = 0;\n",
+                  facade_impl="    bool open(const WindowBackendOpenParams& p) override;\n"),
               1)
 
         # 11. Phase 4b: the SDL factory hook must be gone.
         check("sdl factory marker fails",
               run(tmp,
-                  "    virtual void close() = 0;\n",
-                  "    void close() override;\n",
+                  facade_iface="    virtual void close() = 0;\n",
+                  facade_impl="    void close() override;\n",
                   host_window="WindowBackend* host_make_sdl_backend() { return nullptr; }\n"),
               1)
 
         # 12. Phase 4b: the SDL compile define must be gone from the runtime.
         check("sdl define marker fails",
               run(tmp,
-                  "    virtual void close() = 0;\n",
-                  "    void close() override;\n",
+                  facade_iface="    virtual void close() = 0;\n",
+                  facade_impl="    void close() override;\n",
                   host_window="#if defined(GBARECOMP_HAVE_SDL2)\n#endif\n"),
               1)
 
         # 13. Phase 4b: an inline SDL `Backend` struct must be gone.
         check("sdl backend struct fails",
               run(tmp,
-                  "    virtual void close() = 0;\n",
-                  "    void close() override;\n",
+                  facade_iface="    virtual void close() = 0;\n",
+                  facade_impl="    void close() override;\n",
                   host_window="struct Backend : public WindowBackend {};\n"),
               1)
 
         # 14. Phase 4b: concern interfaces are scanned too (not just the facade).
         check("concern interface missing override fails",
               run(tmp,
-                  "    virtual void close() = 0;\n",
-                  "    void close() override;\n",
-                  video_methods="    virtual void present(const std::uint8_t* p) = 0;\n"),
+                  facade_iface="    virtual void close() = 0;\n",
+                  facade_impl="    void close() override;\n",
+                  video_iface="    virtual void present(const std::uint8_t* p) = 0;\n"),
               1)
 
-        # 15. Phase 4b: a concern implemented in the nested impl (the .cpp) passes.
+        # 15. A concern implemented in its own nested impl passes.
         check("concern implemented in cpp passes",
               run(tmp,
-                  "    virtual void close() = 0;\n",
-                  "    void close() override;\n",
-                  backend_cpp_methods="    void present(const std::uint8_t* p) override;\n",
-                  video_methods="    virtual void present(const std::uint8_t* p) = 0;\n"),
+                  facade_iface="    virtual void close() = 0;\n",
+                  facade_impl="    void close() override;\n",
+                  video_iface="    virtual void present(const std::uint8_t* p) = 0;\n",
+                  video_impl="    void present(const std::uint8_t* p) override;\n"),
               0)
+
+        # 16. Phase 4d: WRONG-CLASS attribution must fail. `present` is a Video
+        #     method; implementing it in AudioImpl satisfies the old union scan
+        #     but not the per-interface one.
+        check("wrong-class attribution fails",
+              run(tmp,
+                  video_iface="    virtual void present(const std::uint8_t* p) = 0;\n",
+                  audio_impl="    void present(const std::uint8_t* p) override;\n"),
+              1)
+
+        # 17. Phase 4d: a cross-interface signature collision must fail when
+        #     only one of the two impls implements it.
+        check("cross-interface collision fails",
+              run(tmp,
+                  video_iface="    virtual void set_config_dir(const char* dir) = 0;\n",
+                  video_impl="    void set_config_dir(const char* dir) override;\n",
+                  audio_iface="    virtual void set_config_dir(const char* dir) = 0;\n"),
+              1)
+
+        # 18. Phase 4d: a facade method implemented in an impl class (instead of
+        #     the RaylibBackend class body) must fail.
+        check("facade method in wrong site fails",
+              run(tmp,
+                  facade_iface="    virtual void close() = 0;\n",
+                  video_impl="    void close() override;\n"),
+              1)
 
     if FAILURES:
         print("check_raylib_backend_complete SELF-TESTS FAILED:")

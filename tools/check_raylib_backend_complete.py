@@ -15,9 +15,13 @@ Three checks, all against the sources:
      guard exists for: the SDL backend's `audio_enabled_state()` once stopped
      overriding the interface method, so the base default answered while
      audio was actually playing.
-  3. complete backend — every interface method has a matching `override` in
-     the raylib backend sources (raylib_backend.h for the facade,
-     raylib_backend.cpp for the nested concern impls).
+  3. complete backend, per interface — every method of every interface has a
+     matching `override` at ITS OWN implementation site (the facade in the
+     RaylibBackend class body, each concern in its nested impl class). The
+     scan is scoped per site: a method implemented in the wrong impl class, or
+     a cross-interface signature collision satisfied by only one impl, is a
+     FAILURE here (a union scan over both files accepts both — the Phase 4d
+     rewrite is what closed that).
 
 Why the parsing is fussy: `override` catches signature drift, but not a
 method that silently stops overriding (see check 2), and a naive
@@ -43,6 +47,18 @@ DEFAULT_FACTORY = ROOT / "gbarecompx/src/runtime/host_backend_factory.cpp"
 # The seam interfaces whose methods must all be pure and implemented.
 INTERFACE_NAMES = ["WindowBackend", "Video", "Audio", "Input", "Fx",
                    "Overlay", "Menu"]
+
+# Where each interface's implementation must live (Phase 4d: attribution is
+# per site, not a union over the backend sources).
+IMPL_SITES = {
+    "WindowBackend": ("h", "RaylibBackend"),
+    "Video":         ("cpp", "RaylibBackend::VideoImpl"),
+    "Audio":         ("cpp", "RaylibBackend::AudioImpl"),
+    "Input":         ("cpp", "RaylibBackend::InputImpl"),
+    "Fx":            ("cpp", "RaylibBackend::FxImpl"),
+    "Overlay":       ("cpp", "RaylibBackend::OverlayImpl"),
+    "Menu":          ("cpp", "RaylibBackend::MenuImpl"),
+}
 
 TYPE_WORDS = {
     "void", "bool", "char", "short", "int", "long", "float", "double",
@@ -233,44 +249,68 @@ def main(argv: list[str] | None = None) -> int:
     failures = single_generation_failures(iface_text, host_text, factory_text)
 
     # ── 2. pure interfaces ───────────────────────────────────────────────
-    want: dict[tuple[str, str], tuple[bool, bool]] = {}
+    want: dict[str, dict[tuple[str, str], bool]] = {}
     for name in INTERFACE_NAMES:
         body = struct_body(iface_text, name)
         if not body:
             failures.append(f"interface: class {name} not found in the seam")
             continue
+        want[name] = {}
         for key, (is_const, is_pure) in interface_methods(body).items():
             if not is_pure:
                 failures.append(
                     f"impure interface method: {name}::{key[0]}({key[1]}) has "
                     "a defaulted body — pure-virtual interfaces are the "
                     "contract (silent-inheritance bug class)")
-            want.setdefault(key, (name, is_const))
+            want[name][key] = is_const
 
-    # ── 3. complete backend ──────────────────────────────────────────────
-    have = override_methods(strip_comments(args.backend_h.read_text()))
-    have.update(override_methods(strip_comments(args.backend_cpp.read_text())))
-    missing = sorted(k for k in want if k not in have)
-    mismatched = [
-        f"{key[0]}({key[1]}) const-ness: interface "
-        f"{'const' if want[key][1] else 'non-const'}, backend "
-        f"{'const' if have[key] else 'non-const'}"
-        for key in sorted(want)
-        if key in have and have[key] != want[key][1]
-    ]
+    # ── 3. complete backend, per interface ───────────────────────────────
+    # Each interface is checked against ITS OWN site (IMPL_SITES): the scoping
+    # is the point — a union over both files would let a method implemented in
+    # the wrong impl class satisfy the guard.
+    header_text = strip_comments(args.backend_h.read_text())
+    cpp_text = strip_comments(args.backend_cpp.read_text())
+    sites: dict[str, dict[tuple[str, str], bool]] = {}
+    for name in INTERFACE_NAMES:
+        where, cls = IMPL_SITES[name]
+        text, fname = ((header_text, "raylib_backend.h") if where == "h"
+                       else (cpp_text, "raylib_backend.cpp"))
+        body = struct_body(text, cls)
+        if not body:
+            failures.append(f"impl site: class {cls} not found in {fname}")
+            continue
+        sites[name] = override_methods(body)
+
+    missing: list[str] = []
+    mismatched: list[str] = []
+    total = 0
+    for name in INTERFACE_NAMES:
+        cls = IMPL_SITES[name][1]
+        site = sites.get(name, {})
+        for key, is_const in sorted(want.get(name, {}).items()):
+            total += 1
+            if key not in site:
+                missing.append(f"{name}::{key[0]}({key[1]}) — not overridden "
+                               f"in {cls}")
+            elif site[key] != is_const:
+                mismatched.append(
+                    f"{name}::{key[0]}({key[1]}) const-ness: interface "
+                    f"{'const' if is_const else 'non-const'}, {cls} "
+                    f"{'const' if site[key] else 'non-const'}")
 
     if failures or missing or mismatched:
-        print(f"window seam INCOMPLETE ({len(want)} interface methods)")
+        print(f"window seam INCOMPLETE ({total} interface methods)")
         for f in failures:
             print(f"  {f}")
-        for name, args_ in missing:
-            print(f"  MISSING override: {name}({args_})")
+        for m in missing:
+            print(f"  MISSING override: {m}")
         for problem in mismatched:
             print(f"  MISMATCH: {problem}")
         return 1
 
-    print(f"window seam complete: {len(want)} interface methods, all pure, "
-          "all overridden by the raylib backend")
+    print(f"window seam complete: {total} interface methods across "
+          f"{len(INTERFACE_NAMES)} surfaces, all pure, each overridden at its "
+          "own impl site")
     print("single generation: no flat class, no SDL backend")
     return 0
 

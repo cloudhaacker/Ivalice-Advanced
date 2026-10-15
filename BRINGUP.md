@@ -7433,3 +7433,43 @@ device gate: tag every capture and settle ≥4.
 - Next: 4d (port framework/app tests to the per-interface surfaces; rewrite
   the completeness guard's per-interface tier), then 4e (release packaging:
   SDL2 pin → raylib cross-build), 4f (Android scaffold swap).
+
+## 2026-10-15 — V2 Phase 4d: per-interface guard + dispatch walk (gbarecompx HASH)
+
+- Guard rewrite (`tools/check_raylib_backend_complete.py`): attribution is now
+  per interface — every method of each of the 7 surfaces must be overridden at
+  ITS OWN impl site (the facade in the `RaylibBackend` class body, the five
+  concerns in their nested impl classes). The old union scan over both backend
+  files accepted a method implemented in the WRONG impl class; the new scan
+  catches it. Mutation (real tree): moved `VideoImpl::refresh_hz`'s definition
+  into `AudioImpl` — the old guard still printed "window seam complete", the
+  new one names "MISSING override: Video::refresh_hz() — not overridden in
+  RaylibBackend::VideoImpl". Restored → PASS.
+- Guard self-tests: 18 cases (parser regressions + the 4b checks + three new
+  attribution cases: wrong-class, cross-interface collision, facade-in-wrong-
+  site). The three new cases were RED against the old union scan before the
+  rewrite.
+- Restored the deleted flat dispatch tier in per-interface form:
+  `tests/runtime/window_backend_dispatch_test.cpp` — a surface walk that drives
+  EVERY method of EVERY interface through its interface type (`WindowBackend&`,
+  `Video&`, `Audio&`, `Input&`, `Fx&`, `Overlay&`, `Menu&`) against the §5.2
+  fakes and asserts each call lands on the composed implementation (59 methods
+  across 7 surfaces). Accessor-identity checks make a broken accessor fail.
+  Mutation control: `FakeBackend::video()` returning a different object → the
+  walk fails at the identity check; restored → PASS. Registered as
+  `window_backend_dispatch_tests`.
+- App tier: fully ported (4b/4c — delegation/closed/present/select); no stale
+  transition references remain outside history.
+- `check.py`'s guard docstring updated (the 56/56 flat-era wording → the
+  per-interface contract).
+- Verification: guard self-test 18/18 + real tree (59 methods across 7 surfaces) +
+  the real-tree mutation caught (the old union scan false-accepted);
+  dispatch walk PASS + accessor-identity mutation caught; ctest 71/71
+  (FFTA build/, +1) and 65/65 (framework stub, +1); attract
+  byte-identical (`1EF4C118...`); check.py --fast 8/9 (only the
+  pre-existing patches-suite items red); raylib-compile PASS; ws_check
+  PASS; android-static PASS; runtime SDL refs 0; off-app-config +
+  stub-backend builds green.
+- Next: 4e (release packaging: the SDL2 pin → raylib cross-build, remaining
+  SDL references), 4f (Android scaffold swap to raylib/NativeActivity), then
+  Phase 5/6/7.
