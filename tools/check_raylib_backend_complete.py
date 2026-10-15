@@ -125,8 +125,8 @@ def interface_methods(text: str) -> dict[tuple[str, str], bool]:
 
 
 def struct_body(text: str, struct_name: str) -> str:
-    """Return the text inside `struct <name> { ... }`, brace-balanced."""
-    m = re.search(rf"\bstruct\s+{re.escape(struct_name)}\b[^{{]*\{{", text)
+    """Return the text inside `class|struct <name> { ... }`, brace-balanced."""
+    m = re.search(rf"\b(?:class|struct)\s+{re.escape(struct_name)}\b[^{{]*\{{", text)
     if not m:
         return ""
     i = m.end() - 1
@@ -195,7 +195,10 @@ def main(argv: list[str] | None = None) -> int:
               file=sys.stderr)
         return 1
 
-    want = interface_methods(iface_path.read_text())
+    # Scope the scan to the flat WindowBackend class body: the file also hosts
+    # the additive V2 generation (plan Phase 1), whose interfaces are covered
+    # by their own tests until the Phase 4 rewrite of this checker.
+    want = interface_methods(struct_body(iface_path.read_text(), "WindowBackend"))
     have = backend_methods(backend_path.read_text())
 
     missing = sorted(k for k in want if k not in have)

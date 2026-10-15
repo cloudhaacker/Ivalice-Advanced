@@ -6729,3 +6729,35 @@ device gate: tag every capture and settle ≥4.
   guard red-state reproduced. CI on `10aa5c2`: all three jobs green (stub
   2m35s incl. SDL2 coverage, raylib 3m18s, guard).
 - Next: Phase 1 (V2 types and interfaces, additive — no behavior change).
+
+## 2026-10-14 — V2 Phase 1: types, interfaces, facade (gbarecompx `b2713bf`)
+
+- `window_backend.h` now hosts both generations: the flat 56-method class
+  (contract untouched) and the V2 types (`OpenParams`, `Caps`, `Err`/
+  `Result`, `FxSettings`, `TouchConfig`), the five concern interfaces
+  (`Video`/`Audio`/`Input`/`Fx`/`Overlay`), and the facade — introduced as
+  `WindowBackendV2` until Phase 4 deletes the flat class and the name goes
+  plain (4b records the rename).
+- `Events` moved to seam scope with a member alias on the flat class, so
+  `WindowBackend::Events` and `HostWindow::Events` still name the same type
+  (the V2 facade returns it too; Phase 4 then has nothing nested to
+  untangle). All references verified intact (input_translate, host_window,
+  raylib_backend, dispatch tests).
+- New test `tests/runtime/backend_v2_types_test.cpp` (plan §5.2 item 1):
+  defaults, `Result::ok`, interface purity (virtual dtor + abstract), and
+  the no-op-implies-false-cap rule via a fully no-op backend. Red-first:
+  written before the types existed (compile-red captured), then green;
+  three negative controls (Caps default, Result::ok, OpenParams default)
+  each observed failing and restored byte-identical. Uses the always-active
+  CHECK macro — the Release/`-DNDEBUG` vacuous-assert trap is real in this
+  tree (the older `tests/runtime/*` suite still uses bare `assert`;
+  flagged, not fixed).
+- Checker `tools/check_raylib_backend_complete.py` scoped to the flat class
+  body — it scanned the whole file, so the V2 section would have polluted
+  the 56-method contract. Still 56/56 raylib + SDL; self-tests pass.
+- Verification: standalone stub ctest 62/62 (SDL2 present); FFTA
+  `build-raylib` 66/66 and `build-raylib-only` 67/67 (+1 each = the new
+  test); attract golden byte-identical in both configs; `check.py --only
+  raylib-backend` green; CI on the phase commit (see run for `b2713bf`).
+- Next: Phase 2 (raylib backend conversion, concern by concern — Video →
+  Audio → Input → Fx → Overlay → lifecycle; `Clock` + `RaylibApi` seam).
