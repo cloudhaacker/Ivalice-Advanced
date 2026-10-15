@@ -40,6 +40,19 @@ set(GBARECOMP_RUNTIME_UI_ROOT "${RECOMP_UI_ROOT}"
 option(GBARECOMP_USE_RAYLIB
     "Build the raylib window backend (the product; OFF = stub compile-check)" ON)
 
+# The pinned cross prefix (tools/win_cross_deps.py) provides raylib for the
+# Windows release. Prefer it: no FetchContent, no network, deterministic.
+# The framework's raylib block only fetches when no `raylib` target exists.
+if(MINGW)
+    find_package(raylib CONFIG QUIET)
+    if(TARGET raylib)
+        message(STATUS "ffta: raylib from the cross prefix (${raylib_DIR})")
+    else()
+        message(STATUS "ffta: raylib not in the cross prefix -- the framework "
+                       "will fetch it (tools/win_cross_deps.py build pins it)")
+    endif()
+endif()
+
 add_subdirectory("${GBARECOMP_ROOT}" gbarecomp_build EXCLUDE_FROM_ALL)
 
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/generated/recompiled.cpp")

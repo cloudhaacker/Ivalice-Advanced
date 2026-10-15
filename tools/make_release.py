@@ -82,6 +82,7 @@ REQUIRED_FILES = [
     "LICENSES/FTL.txt",
     "LICENSES/MIT-harfbuzz.txt",
     "LICENSES/ZLIB-SDL2.txt",
+    "LICENSES/ZLIB-raylib.txt",
     "THIRD_PARTY_ATTRIBUTION.md",
     "mods/packages/ffta.enhancement.widescreen/1.0.0/manifest.toml",
 ]
@@ -101,7 +102,8 @@ def licenses_required():
     helper so the sweep AND the unit test read the same contract)."""
     return ["LICENSE", "LICENSES/LGPL-3.0-or-later.txt",
             "LICENSES/ZLIB.txt", "LICENSES/FTL.txt",
-            "LICENSES/MIT-harfbuzz.txt", "LICENSES/ZLIB-SDL2.txt"]
+            "LICENSES/MIT-harfbuzz.txt", "LICENSES/ZLIB-SDL2.txt",
+            "LICENSES/ZLIB-raylib.txt"]
 
 
 def required_files(platform):
@@ -222,7 +224,7 @@ def win_configure_needed():
 def win_build_exe(jobs, strip):
     """Configure (if needed) + build the static release exe."""
     marker = CROSS_PREFIX / ".done"
-    missing = [d for d in ("zlib", "freetype", "harfbuzz", "sdl2")
+    missing = [d for d in ("zlib", "freetype", "harfbuzz", "sdl2", "raylib")
                if not any(marker.glob(f"{d}-*"))]
     if missing:
         die("cross prefix incomplete: " + ", ".join(missing),
@@ -253,7 +255,6 @@ def win_build_exe(jobs, strip):
              "-DCMAKE_BUILD_TYPE=Release",
              f"-DCMAKE_EXE_LINKER_FLAGS={linker}",
              "-DGBARECOMP_STATIC_RELEASE=ON",
-             f"-DGBARECOMP_MINGW_PREFIX_UNIX={CROSS_PREFIX}",
              "-DFFTA_BUILD_TESTS=OFF"], env=env)
         if r.returncode != 0:
             die("windows cmake configure failed",

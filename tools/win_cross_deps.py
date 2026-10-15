@@ -3,7 +3,11 @@
 
 Builds the MinGW-x64 static libraries the release exe links (issue #3, R2):
 
-  cross-prefix/lib/libSDL2.a + libSDL2main.a     engine (GBARECOMP_STATIC_RELEASE)
+  cross-prefix/lib/libraylib.a                  engine window backend (the
+                                                game's product backend since
+                                                Phase 4c; found via
+                                                find_package(raylib CONFIG))
+  cross-prefix/lib/libSDL2.a + libSDL2main.a    the recomp-ui launcher (Track L)
   cross-prefix/lib/libfreetype.a                recomp-ui color emoji (QUIET find)
   cross-prefix/lib/libharfbuzz.a                recomp-ui shaping (pkg-config)
   cross-prefix/lib/libzlib.a                    freetype compressed fonts
@@ -102,6 +106,20 @@ DEPS = [
             "-DSDL_SHARED=OFF",
             "-DSDL_STATIC=ON",
             "-DSDL_TEST=OFF",
+        ],
+    },
+    {
+        "name": "raylib",
+        "repo": "raysan5/raylib",
+        "tag": "6.0",
+        "sha256": "2b3ee1e2120c7a0796b33062c7e9a694dd8a8caa56a96319ac8c8ecf54a90d0b",
+        "cmake": [
+            # The engine's window backend (Phase 4e). Same release as the
+            # framework's FetchContent pin (tag 6.0 = commit dbc56a87...);
+            # the prefix build is what the Windows release links, so the
+            # cross build needs no FetchContent and no network.
+            "-DBUILD_SHARED_LIBS=OFF",
+            "-DBUILD_EXAMPLES=OFF",
         ],
     },
 ]

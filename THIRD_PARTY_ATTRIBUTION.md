@@ -57,7 +57,7 @@ The Windows artifact (`FFTARecomp-*-windows-x64.zip`, built by
 static MinGW build: the libraries below are **compiled in**, so their
 code ships to players who download the zip. That is redistribution, and
 the Linux build links the same libraries dynamically from distro
-packages. All four are permissive-licensed; none taints the game's
+packages. All five are permissive-licensed; none taints the game's
 PolyForm Noncommercial 1.0.0 terms. The pinned versions live as
 tarball-sha256 pins in `tools/win_cross_deps.py` (verify any time by
 rebuilding the prefix and re-hashing - determinism is gated in BRINGUP
@@ -68,19 +68,22 @@ section "R-track: R2").
 | zlib (compression, via freetype) | madler/zlib @ v1.3.2 | zlib/libpng license (permissive; attribution in `LICENSES/` below) |
 | FreeType 2 (launcher font raster, via the engine's `recomp-ui` layer - `find_package(Freetype ...)`, color-emoji path) | freetype/freetype @ VER-2-14-3 | **FreeType License (FTL)** - the license's BSD-style permissive branch (we do not take the GPL branch); dual-licensing notice retained by the FTL terms |
 | HarfBuzz (text shaping, via `recomp-ui` - `pkg_check_modules(harfbuzz)`) | harfbuzz/harfbuzz @ 14.6.0 | **MIT** |
-| SDL2 (windowing/input/audio - engine `GBARECOMP_STATIC_RELEASE`, `libSDL2.a`+`libSDL2main.a`) | libsdl-org/SDL @ release-2.32.10 | **zlib license** |
+| SDL2 (the recomp-ui launcher's windowing/input - `libSDL2.a`+`libSDL2main.a`) | libsdl-org/SDL @ release-2.32.10 | **zlib license** |
+| raylib (the game's window/input/audio backend since Phase 4e - `libraylib.a`, `find_package(raylib CONFIG)`) | raysan5/raylib @ 6.0 | **zlib license** |
 
 - License texts: [`LICENSES/ZLIB.txt`](LICENSES/ZLIB.txt),
   [`LICENSES/FTL.txt`](LICENSES/FTL.txt), [`LICENSES/MIT-harfbuzz.txt`](LICENSES/MIT-harfbuzz.txt),
-  [`LICENSES/ZLIB-SDL2.txt`](LICENSES/ZLIB-SDL2.txt) - each is the
+  [`LICENSES/ZLIB-SDL2.txt`](LICENSES/ZLIB-SDL2.txt),
+  [`LICENSES/ZLIB-raylib.txt`](LICENSES/ZLIB-raylib.txt) - each is the
   verbatim upstream license document (permissive-license documents are
   redistributed as-is by their own terms, same exception class as the
   GFDL/LGPL documents above). `tools/make_release.py` stages `LICENSES/`
   into every artifact.
-- Windows-DLL note: SDL2's static build depends on Windows system
-  libraries only (kernel32/user32/gdi32/opengl32/... - OS components, not
-  third-party redistributables); the objdump import-table guard in
-  `make_release.py --windows` fails the build on any non-system DLL.
+- Windows-DLL note: SDL2's and raylib's static builds depend on Windows
+  system libraries only (kernel32/user32/gdi32/winmm/opengl32/... - OS
+  components, not third-party redistributables); the objdump import-table
+  guard in `make_release.py --windows` fails the build on any non-system
+  DLL.
 
 ## Oracle tooling
 

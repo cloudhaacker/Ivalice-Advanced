@@ -7473,3 +7473,36 @@ device gate: tag every capture and settle ≥4.
 - Next: 4e (release packaging: the SDL2 pin → raylib cross-build, remaining
   SDL references), 4f (Android scaffold swap to raylib/NativeActivity), then
   Phase 5/6/7.
+
+## 2026-10-15 — V2 Phase 4e: release packaging off the SDL2 pin (gbarecompx HASH)
+
+- The Windows release no longer fetches raylib: `tools/win_cross_deps.py` gains
+  a pinned raylib 6.0 dep (tarball sha256 `2b3ee1e2...`; same release as the
+  framework's FetchContent SHA `dbc56a87...`), installed into the cross prefix
+  (`libraylib.a` + `include/raylib.h` + `lib/cmake/raylib/*`). The FFTA root
+  CMake prefers the prefix when cross-building (`if(MINGW)
+  find_package(raylib CONFIG QUIET)`, with a message naming the path), and the
+  framework's raylib block now only fetches when no `raylib` target exists.
+- Red-first: pre-4e the cross configure pulled raylib via FetchContent
+  ("gbarecompx: building raylib 6.0 (dbc56a87...)", "Using raylib's GLFW");
+  post-4e it prints "ffta: raylib from the cross prefix (...)" with no fetch.
+  The release preflight now requires the raylib prefix marker.
+- Packager: dropped the stale `-DGBARECOMP_MINGW_PREFIX_UNIX` flag (the
+  framework stopped consuming it in 4b); raylib added to the prefix
+  completeness check; `LICENSES/ZLIB-raylib.txt` staged (verbatim upstream
+  license) with the attribution table's raylib row and the Windows-DLL note
+  updated. `tools/README.md`'s prefix row updated.
+- Desktop unaffected: `build/` still takes raylib via FetchContent (verified:
+  reconfigure + rebuild + `backend_select raylib=1` + guard green).
+- Verification: cycle.py PASS (cold regen 63,134 fns, build, attract byte-identical
+  `1EF4C118...`); ctest 71/71 (build/) + 65/65 (framework stub); check.py
+  --fast 8/9 (only the pre-existing patches-suite items red); the
+  Windows release: static imports=29 (all system DLLs), wine smoke
+  FULLY_STATIC (`FFTARecomp-v1.6-29-g8e74633-dirty-windows-x64.zip`
+  sha1 369f2552..., 43.6 MB); the Linux packager PASS; ws_check PASS;
+  android-static PASS (23 checks); runtime SDL refs 0.
+- Mutations: M1 (hidden raylib marker → the release preflight fails with
+  "cross prefix incomplete: raylib"; restored → present), M2 (the cross
+  configure takes the prefix; no FetchContent line).
+- Next: 4f (Android scaffold swap to raylib/NativeActivity — the last SDL
+  stronghold), then Phase 5/6/7.
