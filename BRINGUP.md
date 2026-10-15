@@ -6846,3 +6846,33 @@ device gate: tag every capture and settle ≥4.
 - Next: concern conversions in order (Video → Audio → Input → Fx → Overlay
   → lifecycle), each with a red-first V2-accessor test; then the fakes +
   the display-free contract slice.
+
+## 2026-10-15 — V2 Phase 2, Video concern (gbarecompx 685f05a)
+
+- First concern conversion. `RaylibBackend::VideoImpl` (nested; declared in
+  raylib_backend.h, defined in raylib_backend.cpp) implements the V2 `Video`
+  interface over the same Impl state; all 18 flat Video methods (per plan
+  §3.5) are now one-line forwarders through `impl_->video->…`.
+- Bodies moved verbatim (`impl_.get()` → `impl_` only) — verified
+  token-for-token by a move-checker (present 11,143 tokens, interp 2,087,
+  surface 1,406, …: 0 mismatches). Nested so the private static helpers
+  (sharp/post targets, shader programs, interp mode) stay reachable.
+- `refresh_hz()` is new: `1e9 / interp_period_ns`; the field is guarded at
+  its only writer (`hz > 0 ? … : 16666666`), so no division by zero.
+- The `video()` accessor lands as a plain method now and becomes the
+  `WindowBackendV2::video()` override when the facade lands at the end of
+  Phase 2. Staging rule discovered here: the V2 base cannot land earlier —
+  pure-virtual interfaces make a partially-converted backend abstract, and
+  the production factory instantiates it.
+- Red-first: `tests/runtime/raylib_backend_v2_test.cpp` written against the
+  missing accessor → observed compile-red ("no member named 'video'") →
+  green. Negative control: clamp 8→7 mutation → observed the exact CHECK
+  fail → restored.
+- Verification: stub ctest 63/63; FFTA `build-raylib` 67/67,
+  `build-raylib-only` 68/68; attract golden byte-identical in both;
+  completeness checker 56/56. Note: the first FFTA sweep raced the
+  mutation-check window (two tests compiled against clamp 7) — rebuilt
+  cleanly and re-ran; green. Lesson: never mutate while a background sweep
+  is compiling the same tree.
+- Next: Audio (claim/release + push/volume/enabled), then Input, Fx,
+  Overlay, lifecycle/facade.
