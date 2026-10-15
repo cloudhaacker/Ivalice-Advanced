@@ -283,6 +283,29 @@ if(FFTA_BUILD_TESTS AND NOT ANDROID)
     target_compile_options(ffta_host_window_tests PRIVATE -UNDEBUG)
     add_test(NAME host_window_closed COMMAND ffta_host_window_tests)
 
+    # HostWindow delegation contract (Phase 4a): with a V2-capable backend the
+    # flat generation must stay cold; the flat-only case proves the fallback
+    # still lands AND that the spy covers every delegation site (so the
+    # zero-flat assertion cannot be vacuous). Same build recipe as
+    # ffta_host_window_tests; the V2 fakes live in the framework test tree.
+    add_executable(ffta_host_window_delegation_tests
+        tests/unit/test_host_window_delegation.cpp
+        # gbarecomp_runtime's ARM core references the generated dispatch table.
+        ${GAME_GENERATED_SOURCES})
+    target_include_directories(ffta_host_window_delegation_tests PRIVATE
+        "${GBARECOMP_ROOT}/src/runtime" "${GBARECOMP_ROOT}/tests/runtime" src)
+    target_link_libraries(ffta_host_window_delegation_tests PRIVATE
+        "-Wl,--start-group"
+        gbarecomp_runtime
+        gbarecomp_debug
+        gbarecomp_gba
+        gbarecomp_armv4t
+        game_launcher_ui
+        "-Wl,--end-group")
+    target_compile_options(ffta_host_window_delegation_tests PRIVATE -UNDEBUG)
+    add_test(NAME host_window_delegation
+             COMMAND ffta_host_window_delegation_tests)
+
     # Backend-selection predicate. Built in BOTH app configurations so
     # host_using_raylib_backend() is exercised where it returns true, not only
     # where it returns false. Linking gbarecomp_runtime transitively brings

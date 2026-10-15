@@ -7307,3 +7307,33 @@ device gate: tag every capture and settle ≥4.
   fed by window events only. `quit.py`'s clean close therefore applies to
   the headless `--tcp` path (where the server *is* the run loop); the
   practical stop for observe sessions is closing the window / SIGTERM.
+
+## 2026-10-15 — V2 Phase 4a: HostWindow delegates to the V2 facade (gbarecompx 6df93f6)
+
+- Change: every HostWindow method prefers the V2 facade when the backend
+  implements it (cached at open, cleared at close); the flat generation is
+  the fallback for the SDL config until 4b deletes it. Public surface
+  unchanged. The seam gained `Fx::load_config(dir)` — the [video] block's V2
+  home (Input::load_config is the input half), so the config pair survives
+  the delegation switch; the flat forwarder's private static moved into
+  FxImpl.
+- Red-first: new app-side test `ffta_host_window_delegation_tests` (both
+  app configs) asserts "with a V2-capable backend NOT ONE flat method is
+  reached" — flat calls == 0 across the whole public surface, with the V2
+  fake recording every effect. Observed failing at `spy.v2.open_calls == 1`
+  before the rewrite (HostWindow called the flat open). The flat-only case
+  proves the fallback AND the spy coverage (flat count == expected), so the
+  zero-flat assertion cannot be vacuous. Same-signature collisions
+  (close/is_open/pump/wait_for_foreground/set_runtime_ui) are one final
+  overrider by C++ rules — the two paths are indistinguishable there by
+  construction; the test asserts the recorded call instead.
+- Mutations (4/4 caught, each a distinct assertion): set_volume→flat,
+  set_title→flat, lcd_boost→wrong Fx field, open()'s flat fallback removed.
+- Differential: ctest 73/73 (SDL config) + 74/74 (raylib); attract byte-identical in both
+  configs (`1EF4C118...`); ws_check PASS (6 cases x 3 widths); the framework
+  stub config 68/68; the known pre-existing `bios_smoke` link failure is
+  unchanged (submodule ImGui link break).
+- Next: 4b (delete the flat generation + the SDL backend; rename
+  WindowBackendV2 → WindowBackend; retire GBARECOMP_USE_RAYLIB as a
+  backend-selection flag; the flat fallback branches in HostWindow go with
+  it).
