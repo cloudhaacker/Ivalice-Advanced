@@ -7096,3 +7096,53 @@ device gate: tag every capture and settle ≥4.
 - Next: 3b (the `Menu` seam interface + `Caps::menu` + the RaylibBackend
   presentation over HostOverlay), then 3c (host wiring + the host-loop test
   on the fakes), 3d (the open trigger).
+
+## 2026-10-15 — V2 Phase 3b: the Menu seam + shared presentation (gbarecompx 68df8d5)
+
+- The seam: `class Menu` in window_backend.h (`available() == Caps::menu`;
+  `MenuResult present(MenuModel&, const PointerState&)`), the facade
+  `menu()` accessor, and menu_model.h included by the seam. **Recorded
+  deviation:** the plan's sketch said `void present(...)`; the pointer path
+  (the presentation hit-tests and calls the mutators) needs the resulting
+  MenuResult to reach the host, so it is returned — the comment says the
+  host applies it exactly like menu_navigate()'s.
+- `src/runtime/menu_draw.h` (pure, header-only, the touch_pad_draw.h
+  pattern): `menu_compute_geometry` / `menu_hit_test` / `menu_draw` over
+  HostOverlay primitives — panel, section list / row list (labels + values
+  On-Off / int / %.2f / choice), selected highlight, disabled dimming,
+  status line, toast (draws while closed), touch position marker. The
+  geometry is computed once per frame and shared by hit-test and draw so
+  they can never disagree (even across a resize). At the top level a press
+  on a section line maps to its first selectable row, so the press drills in
+  through the shared pointer mutator.
+- `RaylibBackend::MenuImpl`: present() computes geometry + hit-test (the
+  result is immediate — no one-frame latency) and stashes the frame;
+  `draw_pending_menu()` (private static) consumes it inside
+  VideoImpl::present's Begin/EndDrawing, after the pad chrome — the topmost
+  layer, never inside a shader/scale pass; ONE-SHOT, so no model pointer
+  survives a frame. `caps().menu = true` (raylib builds; available() agrees).
+- RaylibOverlay text is real: text_supported/text/text_width over
+  RaylibApi's new `DrawText`/`MeasureText`, aligned via MeasureText, scaled
+  through view_scale.
+- Fakes: `FakeMenu` (records the model + pointer, scripts the result);
+  FakeBackend + NoopBackend implement `menu()`; the contract test checks
+  accessor stability and `available() == caps.menu`.
+- **Link fix only the raylib-ON config could catch:**
+  `gbarecomp_raylib_backend` now links `gbarecomp_menu_model` — the stub
+  build compiles the menu calls out, so the standalone config stayed green
+  while FFTARecomp failed to link. Same lesson as the Input step: the ON
+  config is the one that sees the guarded code.
+- Red-first: `menu_draw_test.cpp` (a recording HostOverlay — the plan's
+  "assertable with a recording overlay") written against the missing header
+  (compile-red) + the v2 test's `caps.menu` expectation flipped first
+  (compile-red for `menu()`). Mutation controls: hit-test invisibility
+  caught immediately; **the header-offset and editing-highlight mutations
+  initially slipped** — relative hit points move with the geometry bug, and
+  the editing highlight had no check at all — both tests strengthened with
+  absolute-y checks, then the mutations fired.
+- Verification: stub 66/66; FFTA build-raylib 70/70, build-raylib-only
+  71/71; attract golden byte-identical in both configs (the menu is closed
+  by default — nothing draws, nothing moved).
+- Next: 3c (host wiring: build the model from settings on open, apply
+  MenuResult to Fx/Audio/Video, persist, derive suppress_game_input; the
+  host-loop test on the Phase 2-tail fakes), 3d (the open trigger).
