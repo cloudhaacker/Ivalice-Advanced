@@ -22,10 +22,10 @@
 #include <pthread.h>
 #endif
 
-// The guard APIs live in the host-stack-guard-desktop.patch work (applied on
-// the pinned gbarecomp submodule). A pristine checkout — CI — compiles the
-// pinned header, which does not declare them; compile this whole test away
-// there instead of breaking the unit build. The patch-applied tree builds
+// The guard APIs live in the framework submodule (the gbarecompx fork —
+// host-stack-guard-desktop as committed code). A checkout whose framework
+// does not declare them compiles this whole test away instead of breaking
+// the unit build. The fork tree builds
 // and runs it as before.
 #if defined(__linux__) && defined(HOST_STACK_GUARD_API)
 #define HOST_STACK_GUARD_TESTING 1

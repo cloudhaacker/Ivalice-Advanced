@@ -17,10 +17,10 @@
 #include <cstdint>
 #include <cstdio>
 
-// The banked-wait API lives in the frame-pacer-banked-wait.patch work
-// (applied on the pinned gbarecomp submodule). A pristine checkout — CI —
-// compiles the pinned header, which declares wait_for_next_frame() with no
-// parameters; compile this whole test away there instead of breaking the
+// The banked-wait API lives in the framework submodule (the gbarecompx
+// fork — frame-pacer banked wait as committed code). A checkout whose
+// framework declares wait_for_next_frame() with no parameters compiles
+// this whole test away there instead of breaking the
 // unit build. The patch-applied tree builds and runs it as before.
 #if defined(PACER_BANKED_API)
 #define PACER_BANKED_TESTING 1

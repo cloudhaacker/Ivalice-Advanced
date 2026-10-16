@@ -11,9 +11,9 @@ start, features, controls, building); running and display options live in
 - **C++ (`src/` custom code, no ROM/BIOS):**
   `cmake --build build --target ffta_unit_tests && ctest --test-dir build -R ram_dispatch`
   — `ffta_ram_dispatch` (RAM-code canonicalizer) + the host-stack-guard
-  test, which **compiles only where the pinned submodule declares the guard
-  APIs** (`HOST_STACK_GUARD_API`; absent on a pristine checkout, it prints a
-  skip — the APIs live in `tools/patches/host-stack-guard-desktop.patch`).
+  test, which **compiles where the framework submodule declares the guard
+  APIs** (`HOST_STACK_GUARD_API` in the gbarecompx fork; a checkout
+  missing them prints a skip).
   Also unit-covered since the 2026-10-09 src audit: the **LZSS entry guard**
   (`ffta::lzss_entry_guard`, `src/ffta_lzss_guard.h`) — plausible length →
   declined, implausible → return-to-LR with the thumb bit stripped, and the
@@ -36,12 +36,10 @@ start, features, controls, building); running and display options live in
   - **TSV shape** — `symbols/*.tsv` field counts, hex addresses, region
     vocab, C-identifier names, no duplicate names (a malformed line breaks
     regen or mislabels an emitted unit; negative-tested).
-  - **Patches README parity** — the table must list exactly the present
-    `*.patch` files.
   - **`gba_bios.bin` byte-pin** — sha1 + the exact words at every contract
     point the engine cites (vectors, IRQ wrapper epilogue, SWI dispatcher
     service-switch + epilogue). **Local-only:** the retail dump is
-    BIOS-derived and never in git (`gbarecomp/.gitignore bios/*.bin`);
+    BIOS-derived and never in git (`gbarecompx/.gitignore bios/*.bin`);
     the test skips on any checkout without it (CI included). Since the
     issue #17 swap this is REFERENCE material (a user-supplied
     alternative the picker still accepts + the oracle's default), not
@@ -137,7 +135,7 @@ single long-lived watcher per session.
 | `.venv/bin/python tools/livewatch.py PORT` | frame-stall watchdog — snapshots registers, state hash and an IWRAM stack window to `/tmp/hang_*.json` the moment the frame counter stops advancing |
 | `.venv/bin/python tools/hangprobe.py PORT` | read-only hang probe — registers + IF/IE/IME + FFTA wake flag + IRQ vector + miss report; safe on stalled sessions (never send `savestate_save` there — it wedges the single-client server) |
 | `.venv/bin/python tools/quit.py PORT` | clean remote close (archives + flushes) |
-| raw TCP reads | memory/register reads for ad-hoc questions — see `gbarecomp/TCP.md`; observe mode has no stepping |
+| raw TCP reads | memory/register reads for ad-hoc questions — see `gbarecompx/TCP.md`; observe mode has no stepping |
 
 For deeper captures (no code changes): `GBARECOMP_INSN_TRACE=1` +
 `GBARECOMP_FP_SAVE=file` (per-instruction ring; query with
@@ -167,7 +165,7 @@ For deeper captures (no code changes): `GBARECOMP_INSN_TRACE=1` +
   (mixer rate, samples_generated, SOUNDBIAS, cycles/sample),
   `GBARECOMP_FRAME_PHASE=path` (per-visit guest/pacer split),
   `GBARECOMP_SAMPLE=1` (hot-PC histogram). Knobs live in
-  `gbarecomp/src/runtime/host_window.cpp` + `recomp_audio_drc.h`; note the
+  `gbarecompx/src/runtime/host_window.cpp` + `recomp_audio_drc.h`; note the
   mixer is mono and FFTA runs with the MP2K shadow off (`game.toml`).
 - **Save flows / external saves.** Play on a copy (`--save-path`), validate
   structurally with `tools/savecheck.py`; oracle comparisons:
@@ -308,7 +306,7 @@ GBARECOMP_INPUT_REPLAY=logs/playthrough.csv ./build/FFTARecomp ...` — expect
 |---|---|
 | `dispatch miss for pc=… no generated function` | Normal coverage gap: bridged + healed. Feed it to the corpus. |
 | `SELF-HEAL bridge for 0x… exceeded 200000000 instructions … Aborting` | Bridge stop-contract limitation (crash #1/#2 in BRINGUP). Harvest the cache, seed the path static, retry. |
-| `SELF-HEAL bridge hit interpreter NotImplemented/Undefined at pc=…` | A genuine interpreter-lowering gap in gbarecomp. Report; fix belongs upstream. |
+| `SELF-HEAL bridge hit interpreter NotImplemented/Undefined at pc=…` | A genuine interpreter-lowering gap in the gbarecompx framework. Report; fix lands in the fork (upstream mstan/gbarecomp where the change is general). |
 
 ## Verification & regression
 

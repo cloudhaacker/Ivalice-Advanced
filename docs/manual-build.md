@@ -31,71 +31,51 @@ uv venv .venv && uv pip install --python .venv capstone
 #   (or: python3 -m venv .venv && .venv/bin/pip install capstone)
 ```
 
-**4. Apply the local framework patches** (recommended — the tooling below
-assumes them; the two **consolidated** `*-local.patch` files are the
-canonical re-apply units — per-feature files are reference diffs whose
-contexts interleave, so apply them only onto a pristine submodule, before
-the consolidated ones, and only if you need the attribution history):
-
-```sh
-cd gbarecomp
-git apply ../tools/patches/gbarecomp-local.patch
-cd external/arm-recomp-core && git apply ../../../tools/patches/arm-recomp-core-local.patch && cd ../..
-cd ..
-```
-
-`tools/check.py --only patches` guards their validity — each file must be
-apply-able forward against the pristine pin (the CI condition) and
-reverse against the patched tree, and the replay must byte-match the dev
-tree (`tools/patches/README.md`).
-
-**5. Build the framework tools** (one-time; re-run only after submodule
+**4. Build the framework tools** (one-time; re-run only after submodule
 changes):
 ```sh
-cmake -S gbarecomp -B gbarecomp/build -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build gbarecomp/build --target gba_recompile gba_scan --parallel 8
+cmake -S gbarecomp -B gbarecompx/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build gbarecompx/build --target gba_recompile gba_scan --parallel 8
 ```
 
-**6. Recompile the BIOS (one-time).** Run it *from `gbarecomp/`* so the
-output lands in `gbarecomp/src/runtime/generated_bios/`, and pass the
+**5. Recompile the BIOS (one-time).** Run it *from `gbarecompx/`* so the
+output lands in `gbarecompx/src/runtime/generated_bios/`, and pass the
 project's BIOS config — it seeds the named emibios functions from the build
 ELF (plus the two statically-unreachable fragments: the `after_interrupt`
 trampoline epilogue and the runtime-installed `.vc_irqh` boot handler) and
 identity-checks the committed clean-room BIOS (issue #17):
 ```sh
-cd gbarecomp && ./build/gba_recompile \
+cd gbarecompx && ./build/gba_recompile \
   --bios ../bios/emibios_gba_bios.bin \
   --config ../bios/emibios_gba_bios.toml && cd ..
 ```
 
-**7. Generate the game's static code corpus** (also after every `game.toml`
+**6. Generate the game's static code corpus** (also after every `game.toml`
 change — `tools/cycle.py` wraps this with the sanity checks and the attract
 gate):
 ```sh
-./gbarecomp/build/gba_recompile --rom game.gba --config game.toml \
+./gbarecompx/build/gba_recompile --rom game.gba --config game.toml \
   --symbols symbols/ffta_symbols.tsv --data-symbols symbols/ffta_data_symbols.tsv \
   --out generated --max-functions 65536
 ```
 
-**8. Configure and build the game binary:**
+**7. Configure and build the game binary:**
 ```sh
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DGBARECOMP_ENABLE_MODS=ON
 cmake --build build --target FFTARecomp --parallel 8
 ```
 
-> **The game binary currently requires an in-tree `gbarecompx/` checkout**
-> (the framework dev fork — gitignored, not distributed; see `.gitignore`
-> and BRINGUP). The configure prefers it when present
-> (`GBARECOMP_ROOT`); the pinned-submodule fallback lacks the launch-screen
-> contract (`src/runtime/launcher.h`), so `src/main.cpp` does not compile
-> against it. Repointing the build at the published gbarecompx remote is
-> the remaining launcher-track item (BRINGUP § Phase 7).
+The `gbarecomp` submodule **is** the framework: james2doyle/gbarecompx —
+the fork carrying the raygui launch screen, the tinyfiledialogs asset
+picker, the emibios default BIOS, and every former local patch as
+committed history. A plain `--recurse-submodules` clone builds everything;
+there are no working-tree patches to apply.
 
 (`GBARECOMP_ENABLE_MODS=ON` links the framework's mod lifecycle APIs —
 activation/reset plugins, view-width requests — used by the game's
 widescreen hooks; verified gate-neutral.)
 
-**9. Sanity.** Strict, headless, no input — expect `FULLY_STATIC` in the
+**8. Sanity.** Strict, headless, no input — expect `FULLY_STATIC` in the
 banner:
 ```sh
 GBARECOMP_STRICT_STATIC=1 ./build/FFTARecomp \
@@ -116,12 +96,12 @@ use `tools/play.sh` (guide: [`tests/README.md`](../tests/README.md)).
   wrong hash (ROM SHA-1: root README § Building from source; BIOS pin:
   `bios/README.md`); it never downloads them.
 - `build.py` stops at **framework patches** → the submodule drifted from
-  its pin; check `git -C gbarecomp status`.
-- `gba_recompile: command not found` → step 5 was not run in this checkout.
-- `generated_bios/` stays empty / BIOS never loads → step 6 was run from the
-  wrong directory (`cd gbarecomp` first). If strict runs instead abort with
-  a dispatch miss near pc `0x300`, step 6 ran without
-  `--config bios/gba_bios.toml`.
+  its pin; check `git -C gbarecompx status`.
+- `gba_recompile: command not found` → step 4 was not run in this checkout.
+- `generated_bios/` stays empty / BIOS never loads → step 5 was run from the
+  wrong directory (`cd gbarecompx` first). If strict runs instead abort with
+  a dispatch miss near pc `0x300`, step 5 ran without
+  `--config ../bios/emibios_gba_bios.toml`.
 - Launch aborts with an identity/hash error → wrong or missing dump; compare
   against the pinned SHA-1s (ROM: root README § Building from source; BIOS:
   `bios/README.md`).
@@ -140,7 +120,7 @@ use `tools/play.sh` (guide: [`tests/README.md`](../tests/README.md)).
 - A submodule directory is empty after cloning → step 1's retry line.
 - Window refuses to close, or a session wedges → `tools/quit.py <port>`; see
   `tests/README.md` § Playtesting & debugging.
-- After `game.toml` edits: regenerate (step 7) → rebuild → attract gate, i.e.
+- After `game.toml` edits: regenerate (step 6) → rebuild → attract gate, i.e.
   `.venv/bin/python tools/cycle.py`.
 
 ## mGBA oracle (optional)
@@ -149,7 +129,7 @@ The mGBA oracle used by the frame-diff harness (needs network
 once; distinct from a system mGBA):
 
 ```sh
-cd gbarecomp && bash oracle/setup-mgba.sh \
+cd gbarecompx && bash oracle/setup-mgba.sh \
   && cmake -B build -S . -DGBARECOMP_BUILD_ORACLE=ON \
   && cmake --build build --target gbarecomp_oracle --parallel 8
 ```

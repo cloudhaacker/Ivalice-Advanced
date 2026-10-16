@@ -29,7 +29,7 @@ Usage:
 
 CI tier 1 runs the no-private-material subset (no ROM/savestates needed;
 the launch BIOS is committed clean-room repo material since the emibios
-swap): `--only unit-cpp,unit-py,patches,android-static` — see
+swap): `--only unit-cpp,unit-py,android-static` — see
 tests/README.md § Continuous integration.
 
 Opt-in suite (not in the default run): `android-apk` — the content guard for
@@ -188,123 +188,6 @@ def check_savecheck():
     return r.returncode == 0 and "savecheck: OK" in line, line
 
 
-def check_patches():
-    """tools/patches/*.patch must be real diffs matching the pinned submodules:
-    apply-able forward to a pristine tree, or reversible from the patched dev
-    tree. Catches mangled/empty exports (2026-10-08 regression). Patches named
-    arm-recomp-core-* target the nested external/arm-recomp-core repo and
-    patches targeting gbarecomp (including emibios) and arm-recomp-core (nested)."""
-    details = []
-    ok = True
-    names = sorted(p.name for p in (REPO / "tools" / "patches").glob("*.patch"))
-    if not names:
-        return False, "no *.patch files found"
-    for name in names:
-        p = REPO / "tools/patches" / name
-        if not p.exists():
-            ok = False
-            details.append(f"{name}: missing")
-            continue
-        if name.startswith("arm-recomp-core"):
-            root = "gbarecomp/external/arm-recomp-core"
-        else:
-            root = "gbarecomp"
-        fwd = run(["git", "-C", root, "apply", "--check", str(p)])
-        if fwd.returncode == 0:
-            details.append(f"{name}: forward-ok")
-            continue
-        rev = run(["git", "-C", root, "apply", "--check",
-                   "--reverse", str(p)])
-        if rev.returncode == 0:
-            # Reverse-ok on a local dev tree is NOT enough for CI: a fresh
-            # checkout validates the SAME file forward against the pristine
-            # pin, and a dev-based export (context interleave from other
-            # local features) goes INVALID there (2026-10-09: both
-            # regenerated reference diffs broke tier-1 this way). A pristine
-            # submodule has no local edits, so forward-apply there is the
-            # cheap equivalent of the pin-based export — enforce it.
-            pin_ok = None
-            with tempfile.TemporaryDirectory(prefix="gbpin.") as td:
-                pr = subprocess.run(
-                    ["bash", "-c",
-                     f"git -C {root} archive HEAD | tar -x -C {td}"],
-                    cwd=str(REPO), capture_output=True, text=True)
-                if pr.returncode == 0:
-                    pf = subprocess.run(
-                        ["git", "-C", td, "apply", "--check", str(p)],
-                        capture_output=True, text=True)
-                    if pf.returncode != 0:
-                        ok = False
-                        details.append(
-                            f"{name}: INVALID on pristine pin "
-                            f"(CI condition; rebase pin-based)")
-                    else:
-                        pin_ok = True
-            details.append(f"{name}: reverse-ok (applied)"
-                           + (", pin-forward-ok" if pin_ok else ""))
-        else:
-            ok = False
-            details.append(f"{name}: INVALID")
-    # Replay integrity: pin + the consolidated patch must byte-match the dev
-    # tree. This catches submodule drift (unrecorded edits) and any mangling
-    # the per-file forward/reverse checks would miss. The per-feature files
-    # are reference diffs and deliberately are NOT stacked here (their
-    # contexts interleave after historical re-exports; the consolidated
-    # patch is the canonical re-apply unit). Same for the nested
-    # arm-recomp-core repo with its own consolidated patch.
-    for root, cons_name, label in (
-            ("gbarecomp", "gbarecomp-local.patch", "gbarecomp-local"),
-            ("gbarecomp/external/arm-recomp-core",
-             "arm-recomp-core-local.patch", "arm-recomp-core-local")):
-        cons = REPO / "tools" / "patches" / cons_name
-        if not cons.exists():
-            continue
-        with tempfile.TemporaryDirectory(prefix="gbpatch.") as td:
-            arch = subprocess.run(
-                ["bash", "-c", f"git -C {root} archive HEAD | tar -x -C {td}"],
-                cwd=str(REPO), capture_output=True, text=True)
-            app = subprocess.run(
-                ["patch", "-p1", "-s", "-f", "--no-backup-if-mismatch",
-                 "-i", str(cons)], cwd=td, capture_output=True, text=True)
-            if arch.returncode != 0 or app.returncode != 0:
-                ok = False
-                details.append(f"{label} replay: apply FAILED")
-            else:
-                # The byte-compare below is a LOCAL-dev-tree guarantee: pin+
-                # patch must equal the submodule tree that carries the
-                # uncommitted framework edits. A pristine checkout (CI) has
-                # no local edits — its tree IS the pin, so the clean apply
-                # above already proved patch<->pin fidelity and the compare
-                # would false-red on every patched file. Skip it there.
-                # Tracked modifications only (-uno): untracked build junk
-                # must not force the compare.
-                pristine = not run(
-                    ["git", "-C", root, "status", "--porcelain", "-uno"]
-                ).stdout.strip()
-                if pristine:
-                    details.append(
-                        f"{label} replay: apply-ok (pristine submodule)")
-                    continue
-                tracked = run(["git", "-C", root, "ls-files"]).stdout.split()
-                bad = []
-                for f in tracked:
-                    dev = REPO / root / f
-                    if not dev.is_file():
-                        continue  # gitlinks and directories
-                    rep = pathlib.Path(td) / f
-                    if not rep.exists() or rep.read_bytes() != dev.read_bytes():
-                        bad.append(f)
-                if bad:
-                    ok = False
-                    details.append(
-                        f"{label} replay: {len(bad)} file(s) differ "
-                        f"(e.g. {', '.join(bad[:3])})")
-                else:
-                    details.append(
-                        f"{label} replay: {len(tracked)}-file tree matches")
-    return ok, " ".join(details)
-
-
 def _acceptance_lock():
     """Cross-process lock so concurrent check runs never race two acceptance
     games (they share evidence paths and would collide regardless of port)."""
@@ -394,10 +277,7 @@ def check_raylib_headless():
     report line -- the gate states which tier ran, not just exit 0.
 
     Opt-in locally (first run fetches + builds raylib, minutes; needs
-    network on first run); CI runs it every push (the `headless` job).
-    Skips cleanly when the gbarecompx tree is absent."""
-    if not (REPO / "gbarecompx/src/runtime/raylib_backend.cpp").exists():
-        return True, "skipped (no gbarecompx tree)"
+    network on first run); CI runs it every push (the `headless` job)."""
     build = REPO / "build-raylib-headless"
     cfg = ["cmake", "-S", str(REPO / "gbarecompx"), "-B", str(build),
            "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release",
@@ -454,10 +334,8 @@ def check_raylib_compile():
     needs no raylib at all (flag OFF skips the fetch), so it is cheap and
     offline from the first run.
 
-    Needs network on first run (raylib is fetched by SHA). Skips cleanly when
-    the raylib tree is absent (CI before Phase 7)."""
-    if not (REPO / "gbarecompx/src/runtime/raylib_backend.cpp").exists():
-        return True, "skipped (no gbarecompx tree)"
+    Needs network on first run (raylib is fetched by SHA).
+    """
 
     # Configure from the ROOT project with DEFAULTS ONLY -- the no-flag
     # configure IS the Phase 4c contract (raylib is the product backend), and
@@ -572,11 +450,7 @@ def check_raylib_backend():
     self-test covers the parser cases that have bitten us (function-pointer
     args, pointer spacing, overloads) plus the attribution cases.
 
-    Runs where the raylib tree exists; elsewhere it skips (the pinned
-    gbarecomp/ has no raylib backend). Cheap -- pure Python, no build."""
-    if not (REPO / "gbarecompx/src/runtime/raylib_backend.h").exists():
-        return True, "skipped (no gbarecompx tree)"
-
+    Cheap -- pure Python, no build."""
     r = run([sys.executable, "tools/tests/test_check_raylib_backend_complete.py"],
             timeout=120)
     if r.returncode != 0:
@@ -642,10 +516,7 @@ def check_backend_default():
     configured with it: `build/` must carry the framework's effective raylib
     flag, and (when built) the selection predicate must agree. Cheap: reads the
     cache and runs one small binary; no configure, no fetch. Skips cleanly when
-    the raylib tree is absent (CI before Phase 7) or the canonical dir is not
-    configured (tier-1-only checkouts)."""
-    if not (REPO / "gbarecompx/src/runtime/raylib_backend.cpp").exists():
-        return True, "skipped (no gbarecompx tree)"
+    the canonical dir is not configured (tier-1-only checkouts)."""
     cache = REPO / "build/CMakeCache.txt"
     if not cache.exists():
         return True, "skipped (build/ not configured)"
@@ -666,7 +537,6 @@ CHECKS = {
     "unit-cpp": check_unit_cpp,
     "unit-py": check_unit_py,
     "savecheck": check_savecheck,
-    "patches": check_patches,
     "android-static": check_android_static,
     "raylib-backend": check_raylib_backend,
     "backend-default": check_backend_default,
@@ -688,7 +558,7 @@ CHECKS = {
                                           REG / "battle_move_start.state",
                                           REG / "battle_move.sav", 5600),
 }
-FAST = ["unit-cpp", "unit-py", "savecheck", "patches",
+FAST = ["unit-cpp", "unit-py", "savecheck",
         "android-static", "raylib-backend", "backend-default", "attract"]
 # Opt-in suites, left out of the default run (they need local artifacts a
 # desktop-only worktree may not have); --only NAME runs them explicitly.
@@ -696,8 +566,7 @@ FAST = ["unit-cpp", "unit-py", "savecheck", "patches",
 # is a public artifact contract, so it runs explicit, never by default.
 # raylib-compile is opt-in locally (its first run fetches + builds raylib, minutes)
 # but IS run by CI: the raylib-backend job in .github/workflows/ci.yml needs no ROM
-# and no display, so it is cheap enough to gate every push. It skips cleanly while
-# gbarecompx/ is untracked.
+# and no display, so it is cheap enough to gate every push.
 OPTIONAL = {"android-apk", "release", "raylib-compile", "raylib-headless"}
 # Checks that execute the game binary (require it to exist); the others run
 # on a fresh clone without the ROM (CI tier 1: unit-cpp, unit-py, patches).
@@ -710,7 +579,7 @@ def main():
     ap.add_argument("--fast", action="store_true")
     ap.add_argument("--only",
                     help="comma-separated subset, e.g. "
-                         "unit-cpp,unit-py,patches,android-static")
+                         "unit-cpp,unit-py,android-static")
     ap.add_argument("--jobs", type=int, default=0,
                     help="concurrent checks (default: auto = min(8, cpus); "
                          "1 = serial)")

@@ -41,9 +41,9 @@ fallback. The loop itself is documented in
 [tests/README.md](../tests/README.md).
 
 Framework truth supersedes any summary here:
-[gbarecomp/PRINCIPLES.md](../gbarecomp/PRINCIPLES.md),
-[DEBUG.md](../gbarecomp/DEBUG.md), and
-[docs/TOML_SCHEMA.md](../gbarecomp/docs/TOML_SCHEMA.md).
+[gbarecompx/PRINCIPLES.md](../gbarecompx/PRINCIPLES.md),
+[DEBUG.md](../gbarecompx/DEBUG.md), and
+[docs/TOML_SCHEMA.md](../gbarecompx/docs/TOML_SCHEMA.md).
 
 ## Running the built game
 
@@ -109,7 +109,7 @@ step detects whether it is already done.
 | `tools/` | The harness — full list in `tools/README.md` |
 | `reference/` | Study notes, sources, and credits — `reference/README.md` |
 | `.agents/skills/` | Project-local agent skills — `gbarecomp-recomp-playbook`, a portable healing-loop/audit playbook |
-| `gbarecomp/` | Pinned framework submodule — do not update casually (pins + local patches: `reference/dev-gotchas.md`). The build prefers an in-tree `gbarecompx/` framework checkout when present (the framework dev fork — see `.gitignore` and BRINGUP) |
+| `gbarecompx/` | Pinned framework submodule = the fork (`james2doyle/gbarecompx`; every former local patch is committed history there) — do not update casually (pin bumps: `reference/dev-gotchas.md` § Submodules) |
 | `BRINGUP.md` | Decision log — the project's memory; read it |
 | `AGENTS.md` | Rules of engagement for agents and contributors |
 | `THIRD_PARTY_ATTRIBUTION.md` | Third-party terms and redistribution rules |

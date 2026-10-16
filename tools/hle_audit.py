@@ -18,7 +18,7 @@ code, which is exactly what the release-hygiene story (issue #3) needs to
 eliminate.
 
 HLE_IMPLEMENTED mirrors the dispatch() switch in
-gbarecomp/src/runtime/bios_hle.cpp (Div/DivARM, Sqrt, ArcTan/ArcTan2,
+gbarecompx/src/runtime/bios_hle.cpp (Div/DivARM, Sqrt, ArcTan/ArcTan2,
 GetBiosChecksum, CpuSet/CpuFastSet, Bg/ObjAffineSet, BitUnpack, LZ77/Huff/
 RL/Diff decompressors, SoundBias, MidiKey2Freq). Everything else (SoftReset,
 RegisterRamReset, Halt/Stop, IntrWait/VBlankIntrWait, sound-driver SWIs,

@@ -34,19 +34,24 @@ config (`bios/emibios_gba_bios.toml`) documents the source URL and commit.
 
 | Component | Upstream | License |
 |---|---|---|
-| `gbarecomp/` (pinned submodule) | <https://github.com/mstan/gbarecomp> | PolyForm Noncommercial 1.0.0, © 2026 Matthew Stanley |
-| `gbarecompx/` (framework dev tree, not distributed with this repo) | <https://github.com/james2doyle/gbarecompx> (fork of the above) | Same terms as gbarecomp upstream |
+| `gbarecompx/` (pinned submodule) | <https://github.com/james2doyle/gbarecompx> — a fork of <https://github.com/mstan/gbarecomp> | PolyForm Noncommercial 1.0.0, © 2026 Matthew Stanley (upstream); fork changes by James Doyle under the same terms |
 
-The recomp-ui submodule (former launcher/runtime UI, MIT) was removed in
-the 2026-10 launcher track: the pre-boot surface is now the framework's
-raygui launch screen (`gbarecompx/src/runtime/launcher*.cpp`), and the
-in-game settings UI is the framework's generic menu. Working-tree patches
-in `tools/patches/` modify gbarecomp sources; patched copies remain under
-gbarecomp's terms (see `tools/patches/README.md`).
+The submodule **is** the framework fork: it carries the former
+working-tree patch set as committed history (the launch screen, the
+tinyfiledialogs asset picker, the emibios default BIOS, the host-stack
+guard, the SWI-return ledger, the MMIO cap fix, …) plus the in-game menu
+and LCD work — there are no local patches to apply. Its nested
+`external/arm-recomp-core` points at
+<https://github.com/james2doyle/arm-recomp-core> (`cd010b5`,
+`feat/in-body-forward-goto`). The recomp-ui dependency (former
+launcher/runtime UI, MIT) was removed in the 2026-10 launcher track: the
+pre-boot surface is the fork's raygui launch screen
+(`src/runtime/launcher*.cpp`), and the in-game settings UI is the
+framework's generic menu.
 
 ## Runtime HLE (mGBA-derived)
 
-The BIOS HLE services (`gbarecomp/src/runtime/bios_hle.cpp`, enabled by
+The BIOS HLE services (`gbarecompx/src/runtime/bios_hle.cpp`, enabled by
 `game.toml [bios].hle`) port SWI semantics from mGBA's `src/gba/bios.c`
 ([mgba-emu/mgba](https://github.com/mgba-emu/mgba), MPL-2.0 — notice retained
 in the file header plus `third_party/MPL-2.0.txt` upstream). The object code
@@ -111,7 +116,7 @@ art from [Justme488/3-D-Box-Art](https://github.com/Justme488/3-D-Box-Art)
 
 ## Oracle tooling
 
-`gbarecomp/oracle/setup-mgba.sh` clones
+`gbarecompx/oracle/setup-mgba.sh` clones
 [mgba-emu/mgba](https://github.com/mgba-emu/mgba) (MPL-2.0) into an ignored
 `third_party/` directory to build the frame-diff oracle. Not tracked, not
 redistributed here.

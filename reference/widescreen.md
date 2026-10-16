@@ -49,7 +49,8 @@ bottom of this file (savestate diff → abort trace → FP ring).
 - Plugin + manifest: `src/main.cpp` (`register_ffta_mod_plugins` /
   `ffta_ws_activate`), `mods/preloaded/packages/ffta.enhancement.widescreen/1.0.0/`
   (shipped to `<exe>/mods` by a CMake POST_BUILD rule). Framework race fix
-  for parallel launches: `tools/patches/mod-state-publish-race.patch`.
+  for parallel launches lives in the framework fork
+  (`mod_runtime.cpp` pid-unique publish temp).
 
 ## Display facts (world map + battle, mode 0)
 
@@ -111,8 +112,8 @@ descriptor (load/backup copy).
   0x08000718; the 0x0800072x-3C sequence sets the channel up, helper form
   `str r0,[r2,#8]` at 0x080013E0) executes the whole
   transfer while the flag is set, so every destination write was swallowed.
-  Fixed by per-call record control — patch
-  `tools/patches/mmio-cap-dma-reentrancy.patch`; see BRINGUP § "MMIO cap gap".
+  Fixed by per-call record control — framework fork code
+  (`gbarecompx/src/gba/gba_io.{h,cpp}`); see BRINGUP § "MMIO cap gap".
 - **What the fixed cap shows** (world-map recenter repro): the display commit
   is a per-frame **DMA block copy** of a shadow struct — 39 halfwords
   `0x04000008..0x04000054` (BGxCNT/HOFS/VOFS, affine, windows, blend), one
@@ -291,11 +292,11 @@ landed as milestone 3 at the end of this file.)
 - **Framework race fixed (patched):** parallel launches each publish
   `mods/state.toml`; the shared `state.toml.tmp` name let one process's
   rename consume another's file (ENOENT), whose retry then removed the
-  freshly published output. Patch
-  `tools/patches/mod-state-publish-race.patch` (unique per-PID temp;
-  exported + reverse-checked); 4/4 parallel smoke runs clean after.
-- Gates: `cycle` PASS (attract byte-exact); `check.py` 9/9 (the patches
-  check now validates 4 patch files); `ws_smoke` 6 cases x 3 widths PASS.
+  freshly published output. Fix in the framework fork
+  (`mod_runtime.cpp` unique per-PID temp); 4/4 parallel smoke runs clean
+  after.
+- Gates: `cycle` PASS (attract byte-exact); `ws_smoke` 6 cases x 3 widths
+  PASS.
 
 ## Probe recipes used (reproducible)
 

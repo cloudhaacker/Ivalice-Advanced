@@ -93,7 +93,7 @@ runtime args can only arrive via an app-private `debug-args.txt` (adb
 - **Pad idle auto-hide**: the touch pad hides after 15 s of screen-wide
   touch inactivity (`touch_pad_idle_hide_seconds = 15` in `src/main.cpp`);
   any touch reveals it and then acts normally — a tap after the quiet
-  period is never swallowed (engine patch: `touch-pad-idle-hide.patch`).
+  period is never swallowed (framework fork feature).
 
 ## Mods state (why `payload/mods/state.toml` ships)
 
@@ -332,8 +332,8 @@ once a valid save exists in either location, `○ Not provided` otherwise —
 and PLAY is never gated on it (fresh start without a save stays one tap).
 The card only appears when the build declares `saveFile`/`saveSize`
 (`android/app/build.gradle`; engine placeholders `gbaSaveFile`/`gbaSaveSize`
-→ manifest `gbarecomp.save_file`/`save_size` → `GbaGameConfig`; local patch
-`tools/patches/android-save-picker.patch`).
+→ manifest `gbarecomp.save_file`/`save_size` → `GbaGameConfig`; framework
+fork code).
 
 Example — loading a desktop/emulator save on the phone (the battery save
 is always named `ffta_us.sav` regardless of where the original came from):
@@ -356,9 +356,8 @@ app-private files outward (copy + size-verify + remove original, only when
 the external copy is absent — a player-imported file is never overwritten;
 the `.suspend.pending` marker is deliberately not migrated), then appends
 `--save-path` / `--state-dir` (CLI wins over the staged TOML). The engine
-knows `--state-dir` through a local patch (`tools/patches/
-android-external-state-dir.patch` — slots/suspend keep the ROM basename
-under that directory). When external storage is unavailable the staged
+knows `--state-dir` as framework fork code (slots/suspend keep the ROM
+basename under that directory). When external storage is unavailable the staged
 `game_android.toml` fallback (`files/saves/ffta_us.sav`, states next to the
 ROM in `files/roms/`) stands. The device lifecycle gate
 (`tools/android_lifecycle_test.py`) asserts the external locations, and
@@ -375,8 +374,8 @@ TOML) device-free.
   `{0x08000428u, 1u, 1u, gf_vblank_wait_loop}` — a resume alias). The
   IRQ abandon-close (`d152a46`) additionally closes a handler that never
   iret'd, so a stalled spin can no longer leave `g_irq_nest_depth` stuck.
-- **Host-stack guard** (`tools/patches/host-stack-guard-desktop.patch`):
-  retained as the second line of defense — a spin that still fails to
+- **Host-stack guard** (framework fork code): retained as the second line
+  of defense — a spin that still fails to
   unwind (any other split loop) unwinds through the runtime's standard
   yield path before the 256 MiB game-thread stack is exhausted, logging
   `runtime: host-stack guard unwind count=… pc=…` to `android-runtime.log`.

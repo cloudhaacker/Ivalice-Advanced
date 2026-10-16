@@ -36,7 +36,7 @@ included).
    and commit after every milestone.
 6. **Three strikes.** Do: after 3 inexplicable failures, stop, write the
    state to `BRINGUP.md`, report — don't thrash.
-7. **Framework docs win.** `gbarecomp/{PRINCIPLES,DEBUG,CLAUDE}.md` +
+7. **Framework docs win.** `gbarecompx/{PRINCIPLES,DEBUG,CLAUDE}.md` +
    `docs/TOML_SCHEMA.md` supersede other notes; read PRINCIPLES before any
    debugging session.
 8. **Public-repo hygiene.** Do: summaries + attribution only, never verbatim
@@ -82,10 +82,10 @@ close handling live in `reference/dev-gotchas.md`.
 
 ```sh
 # framework tools (re-run after submodule changes)
-cmake -S gbarecomp -B gbarecomp/build -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build gbarecomp/build --target gba_recompile gba_scan --parallel 8
+cmake -S gbarecomp -B gbarecompx/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build gbarecompx/build --target gba_recompile gba_scan --parallel 8
 # regenerate static code (canonical form; cycle.py wraps this)
-./gbarecomp/build/gba_recompile --rom game.gba --config game.toml \
+./gbarecompx/build/gba_recompile --rom game.gba --config game.toml \
   --symbols symbols/ffta_symbols.tsv --data-symbols symbols/ffta_data_symbols.tsv \
   --out generated --max-functions 65536
 # build the game (mods flag links the widescreen plugin lifecycle)
@@ -125,7 +125,7 @@ cmake --build build --target FFTARecomp --parallel 8
 | `tools/` | The harness — key ones listed in the table above; full list: `tools/README.md` |
 | `.agents/skills/` | `gbarecomp-recomp-playbook` — portable playtest/healing/audit playbook (SKILL.md routes its references) |
 | `mods/` `inputs/` `symbols/` `reference/` | Widescreen catalog; input traces; symbol seeds; study notes |
-| `gbarecomp/` | Pinned submodule — do not update casually (pins + local patches: `reference/dev-gotchas.md`). The build prefers an in-tree `gbarecompx/` framework checkout when present (gitignored dev fork — the launch screen + tinyfd picker live there) |
+| `gbarecompx/` | Pinned submodule = the framework fork (`james2doyle/gbarecompx`; every former patch is committed history there) — do not update casually (pin bumps: `reference/dev-gotchas.md` § Submodules) |
 
 ## Status (2026-10-18)
 
@@ -169,14 +169,16 @@ EmuMovies credits in `THIRD_PARTY_ATTRIBUTION.md`), staged beside the exe
 as `assets/img/boxart.png` (dev: CMake `stage_boxart`; release: packager).
 Attract golden unchanged throughout (`1EF4C118…`).
 
-**Remaining (launcher track):** repoint the build at the published
-gbarecompx remote — the `.gitignore` deferral. Until then the game binary
-requires an in-tree `gbarecompx/` checkout: the pinned-submodule fallback
-lacks `src/runtime/launcher.h`, so fresh clones cannot build FFTARecomp
-(tier-1 CI stays green only because it never builds the game binary; the
-raylib-backend CI job skips cleanly while gbarecompx is untracked).
-Framework-side follow-ups (dead `launcher_seam.h` et al. in gbarecompx,
-Flatpak XDG portal) are logged in BRINGUP, not dropped.
+**Repoint (was the remaining launcher-track item — done 2026-10-18):** the
+build now points at the published gbarecompx remote directly — the
+`gbarecomp` submodule IS the fork (`52c73d9`), the patch suite
+(`tools/patches/` + the `patches` check suite + `build.py`'s apply step)
+is retired, and fresh clones build the game binary again. The nested
+`arm-recomp-core` pin moved to the published fork branch (`cd010b5`,
+`feat/in-body-forward-goto` — the former working-tree-only patch work is
+now committed history). Framework-side follow-ups (dead `launcher_seam.h`
+et al. in the fork, Flatpak XDG portal) remain logged in BRINGUP, not
+dropped.
 
 ## Reference index (load what the task needs)
 
@@ -196,5 +198,5 @@ Flatpak XDG portal) are logged in BRINGUP, not dropped.
 | Event VM + scripts | `reference/event-vm.md` |
 | Community source summaries (decomp, engine hacks, FAQs, notes) | `reference/{ffta-decomp,fergusson-mechanics,bcrobert-notes,jokyr-hack-guide,ffta-gamefaqs-code-guides}.md` |
 | BIOS boot/SoftReset/System-SPSR semantics (validated vs GBATEK + mGBA source) | `reference/gba-bios-boot-and-spsr.md` |
-| Framework truth + config schema | `gbarecomp/PRINCIPLES.md`, `DEBUG.md`, `CLAUDE.md`, `docs/TOML_SCHEMA.md` |
+| Framework truth + config schema | `gbarecompx/PRINCIPLES.md`, `DEBUG.md`, `CLAUDE.md`, `docs/TOML_SCHEMA.md` |
 | Portable gbarecomp practice (loop, triage, verification) | `.agents/skills/gbarecomp-recomp-playbook/` |

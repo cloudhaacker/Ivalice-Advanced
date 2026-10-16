@@ -28,7 +28,7 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-RECOMPILER = REPO / "gbarecomp/build/gba_recompile"
+RECOMPILER = REPO / "gbarecompx/build/gba_recompile"
 NATIVE = REPO / "build/FFTARecomp"
 BIOS = REPO / "bios/emibios_gba_bios.bin"
 ROM = REPO / "game.gba"

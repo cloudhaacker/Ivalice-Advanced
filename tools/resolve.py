@@ -61,7 +61,7 @@ def main():
         overlay.write_text(body)
 
     def regen_build():
-        cmd = ["./gbarecomp/build/gba_recompile", "--rom", "game.gba",
+        cmd = ["./gbarecompx/build/gba_recompile", "--rom", "game.gba",
                "--config", "game.toml"]
         if seeds:
             cmd += ["--config", str(overlay)]

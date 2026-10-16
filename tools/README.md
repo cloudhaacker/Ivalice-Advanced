@@ -37,7 +37,6 @@ entry, not the play entry. For when-to-run-what (workflows, gates, CI), see
 | `android_apk_check.py` | APK content guard for built APKs (`--expect public/private`) |
 | `validate_android.sh` | On-device acceptance gate: install → launch → assertions → evidence |
 | `android_press_test.py`, `android_lifecycle_test.py`, `android_touch_test.py`, `android_trace_replay.py` | On-device gates — see [android/README.md](../android/README.md) |
-| `patches/` | Local framework patches (gbarecomp, its nested arm-recomp-core) — see [patches/README.md](patches/README.md) |
 
 The remaining scripts (`chunkprobe.py`, `hangprobe.py`, `hangrepro.py`,
 `spinhunt.py`, `pc0_hunt.py`, `eventcrawl.py`, `hle_audit.py`,

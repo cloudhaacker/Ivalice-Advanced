@@ -237,7 +237,7 @@ def win_build_exe(jobs, strip):
         print(f"windows: (re)configuring build-win/ ({reason})")
         if WIN_BUILD.exists():
             shutil.rmtree(WIN_BUILD)
-        # -static-libgcc/-static-libstdc++: engine rule (gbarecomp
+        # -static-libgcc/-static-libstdc++: engine rule (the framework
         # CMakeLists — add_link_options in the subdir cannot reach the
         # parent exe target, so it comes via CMAKE_EXE_LINKER_FLAGS).
         # -s: strip at LINK time, not post-link (binutils strip rewrites

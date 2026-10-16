@@ -1,7 +1,7 @@
 # CI tier 1 — fork-safe, no private material (no ROM/savestates; the launch
 # BIOS is committed clean-room repo material — bios/, issue #17).
-# Runs the host unit tests (C++/Python), patch integrity, and the
-# device-free Android checks on a fresh checkout. The full gate (attract,
+# Runs the host unit tests (C++/Python) and the device-free Android checks
+# on a fresh checkout. The full gate (attract,
 # widescreen smoke, route replays) needs game.gba + BIOS + the local
 # fixtures and belongs on a self-hosted runner gated to trusted events —
 # see tests/README.md § Continuous integration.
@@ -75,15 +75,19 @@ jobs:
       - name: Python deps (unit-py)
         run: python3 -m pip install "capstone==5.0.7"
 
-      # The Phase 4c default (raylib ON) is inert here: gbarecompx/ is
-      # untracked until Phase 7, so GBARECOMP_ROOT falls back to the pinned
-      # gbarecomp submodule and the raylib option is never consumed.
+      # The Phase 4c default (raylib ON) stands: the gbarecompx submodule
+      # (the framework fork) is fetched by the submodule step above, so
+      # GBARECOMP_ROOT resolves to it and the raylib gate is live.
+      # Tier-1 pins the stub backend (-DGBARECOMP_USE_RAYLIB=OFF): it is the
+      # cheap fork-safe gate (unit tests, no ROM, no raylib fetch). The
+      # raylib-backend job below runs the product configuration.
       - name: Configure
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+          -DGBARECOMP_USE_RAYLIB=OFF \
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_C_COMPILER_LAUNCHER=ccache
 
-      - name: Gate (unit-cpp, unit-py, patches, android-static)
-        run: python3 tools/check.py --only unit-cpp,unit-py,patches,android-static
+      - name: Gate (unit-cpp, unit-py, android-static)
+        run: python3 tools/check.py --only unit-cpp,unit-py,android-static
 
   raylib-backend:
     # Compiles the raylib PRODUCT backend (the default since Phase 4c) and RUNS
@@ -97,9 +101,10 @@ jobs:
     # satisfies raylib's OpenGL 3.3 core requirement with no hardware. The gate
     # picks that up automatically when there is no DISPLAY.
     #
-    # Skips cleanly (exit 0, "no gbarecompx tree") while gbarecompx/
-    # is untracked, so this job is inert until that tree is committed rather than
-    # a red build.
+    # Live since the gbarecompx fork became the gbarecompx submodule
+    # (2026-10-18): the framework — and its raylib backend — is fetched by
+    # the submodule step, so this job exercises the product configuration
+    # on every push.
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:

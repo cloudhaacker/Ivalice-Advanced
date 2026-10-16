@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """framediff.py — native-vs-oracle state comparison for FFTA (Phase 5 harness).
 
-Companion to gbarecomp/oracle/diff_cart.py, hardened for the phase offset
+Companion to gbarecompx/oracle/diff_cart.py, hardened for the phase offset
 discovered on 2026-10-06:
 
   * Both engines park at VBlank-START (scanline 159->160). The recomp runner
@@ -37,7 +37,7 @@ import sys
 import time
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
-GBARECOMP = REPO / "gbarecomp"
+GBARECOMP = REPO / "gbarecompx"
 
 # name -> (native cmd, oracle cmd, base, len)
 REGIONS = {

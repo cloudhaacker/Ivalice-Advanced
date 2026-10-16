@@ -11,7 +11,7 @@ real hours once.
   Disassemble with `tools/disarm.py <start> <end> [arm|thumb]` (hex GBA
   addresses) via `.venv/bin/python`.
 - BIOS: `[bios] hle = false` requires a real dump at
-  `gbarecomp/bios/gba_bios.bin` (user-supplied, never committed; SHA-1
+  `gbarecompx/bios/gba_bios.bin` (user-supplied, never committed; SHA-1
   `300c20df6731a33952ded8c436f7f186d25d3492`). Never download a BIOS.
 - System mGBA (`mgba-qt` 0.10.5) is for manual eyeballing only — the
   validation harness uses the framework's own oracle:
@@ -204,13 +204,6 @@ recipe below is validated there.
   (8.4M records; `<Q18I`: cycles, pc, cpsr, r0-r12, sp, lr) dumps without
   needing a clean process exit. This caught the 2026-10-09 handler-loss
   chain end to end (BRINGUP § true root).
-- **Recorded patch generation**: `git -C gbarecomp diff --no-ext-diff
-  --no-color -- <paths> > tools/patches/<name>.patch` — without both flags
-  the output is difft-rendered and/or ANSI-colored and fails `git apply`
-  (`tools/check.py --only patches` catches it). When exporting the OUTER
-  repo's consolidated patch, exclude a dirty nested submodule's gitlink
-  (`-- . ':(exclude)external/arm-recomp-core'`): GNU patch cannot apply a
-  `Subproject commit …-dirty` hunk.
 
 ## Android device forensics (no root)
 
@@ -262,8 +255,8 @@ access, which is enough:
 
 ## BIOS recompile, build, stack
 
-- BIOS recompile must run with cwd = `gbarecomp/` **and pass
-  `--config bios/gba_bios.toml`** — else output lands in the wrong
+- BIOS recompile must run with cwd = `gbarecompx/` **and pass
+  `--config ../bios/emibios_gba_bios.toml`** — else output lands in the wrong
   `src/runtime/generated_bios/`, or only 666 of 770 functions are discovered
   and strict runs abort on a miss at pc `0x300`. After generating, **re-run
   CMake configure** (not just build) so the framework re-detects
@@ -305,31 +298,35 @@ access, which is enough:
   still need `[[extra_func]]` seeds (probe with `tools/misspack.py` +
   a source-side prologue scan).
 
-## Submodules and local framework patches
+## Submodules (the framework is the gbarecompx fork)
 
-- Pins (2026-10-06): gbarecomp @ `ecc9c55` (newest main, chosen
-  deliberately); nested: arm-recomp-core @ 15fc7b7, rbengine @ 2a03e7,
-  recomp-net @ c58f125. (The recomp-ui submodule was removed in the
-  2026-10 launcher track; the pre-boot screen is the gbarecompx fork's
-  raygui launcher — see "Pre-boot launch screen" below.)
-- `tools/patches/*.patch` are working-tree edits to `gbarecomp/`. Re-apply
-  after submodule updates with the **consolidated** patches — there are two
-  since 2026-10-12: `gbarecomp-local.patch` (one pristine→dev diff of
-  gbarecomp; exports with the nested gitlink excluded) and
-  `arm-recomp-core-local.patch` (the nested `external/arm-recomp-core`
-  repo's first local patch); the per-feature files are reference diffs
-  only — their contexts interleave and do not stack in any order (verified
-  2026-10-09). `tools/check.py --only patches` validates all of them
-  (forward against the pristine pin, reverse when applied;
-  `arm-recomp-core-*` files are routed to the nested repo by filename
-  prefix) and
-  **replays pin + each consolidated patch, requiring a byte-match with the
-  corresponding dev tree** — it fails on drift or a stale consolidated
-  patch. Re-export commands: `tools/patches/README.md`.
+- The `gbarecompx` submodule points at **james2doyle/gbarecompx**
+  (`https://github.com/james2doyle/gbarecompx.git`) — the framework fork
+  carrying every former local patch as committed history (launch screen,
+  tinyfiledialogs picker, emibios default BIOS, host-stack guard, SWI
+  ledger, mmio cap, …) plus the post-fork work (LCD/menu stack). There are
+  **no working-tree patches**: framework changes are fork commits, pushed,
+  then the game repo's gitlink moves.
+- Nested pins (inside the fork's own `.gitmodules`): arm-recomp-core →
+  james2doyle/arm-recomp-core @ `cd010b5`
+  (`feat/in-body-forward-goto` — in-body forward gotos, how the split
+  vblank loop stays in one host frame; master `1f13cdf` merged
+  `fix/link-startup-cycles`), rbengine @ `2a03e7`, recomp-net @ `c58f125`.
+- Framework upstream sync = merge `mstan/gbarecomp` main into the fork,
+  re-verify (attract + strict replays), push, then move the game repo's
+  gitlink — a deliberate milestone, not a routine pull (the 2026-10-12
+  drift lesson still applies; the `check.py --fast` gates referee it).
+- Dev-box fetch/push: on boxes where `https://github.com` hangs at a
+  credential prompt (headless, no helper), set a repo-local rewrite once —
+  `git config url."git@github.com:".insteadOf "https://github.com/"` — so
+  submodule fetches AND the raylib FetchContent clone go over SSH;
+  `.gitmodules` keeps the https URL for CI and fresh clones. Beware the
+  orphaned-`ninja` trap when killing a build: kill the `ninja` child too,
+  or the next `cycle.py` build races it and loses `.o` files at link.
 
 ## Run examples
 
 - Strict smoke: `GBARECOMP_STRICT_STATIC=1 ./build/FFTARecomp --bios
-  gbarecomp/bios/gba_bios.bin --rom game.gba --frames 2400 --no-window`
+  bios/emibios_gba_bios.bin --rom game.gba --frames 2400 --no-window`
 - Session replay: `tools/resolve.py --trace <csv>`; coverage:
   `tools/coverage_report.py`.

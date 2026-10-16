@@ -195,8 +195,6 @@ cross-build/
 build-win/
 
 # -----------------------------------------------------------------------------
-# The standalone raylib-fork tree (frozen 2026-10-14 as its own repo,
-# james2doyle/gbarecompx). It stays out of this project's history until
-# Phase 7 repoints the build at the published remote.
+# (removed 2026-10-18: the gbarecompx fork became the gbarecomp submodule —
+# see BRINGUP § Phase 7 close-out; no in-tree dev tree anymore)
 # -----------------------------------------------------------------------------
-gbarecompx/

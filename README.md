@@ -148,9 +148,9 @@ troubleshooting — is documented in
 [`docs/manual-build.md`](docs/manual-build.md):
 
 ```sh
-cmake -S gbarecomp -B gbarecomp/build -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build gbarecomp/build --target gba_recompile gba_scan --parallel 8
-./gbarecomp/build/gba_recompile --rom game.gba --config game.toml \
+cmake -S gbarecomp -B gbarecompx/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build gbarecompx/build --target gba_recompile gba_scan --parallel 8
+./gbarecompx/build/gba_recompile --rom game.gba --config game.toml \
   --symbols symbols/ffta_symbols.tsv --data-symbols symbols/ffta_data_symbols.tsv \
   --out generated --max-functions 65536
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DGBARECOMP_ENABLE_MODS=ON
@@ -160,14 +160,14 @@ cmake --build build --target FFTARecomp --parallel 8
 Android build and device-validation instructions live in
 [`android/README.md`](android/README.md).
 
-> **Contributors:** the game binary currently requires an in-tree
-> `gbarecompx/` framework checkout (the framework dev fork — gitignored,
-> not distributed with the repo; see `.gitignore`). The configure prefers
-> it when present; the pinned-submodule fallback lacks the launch-screen
-> contract, so `src/main.cpp` does not compile against it. Repointing the
-> build at the published gbarecompx remote is the remaining launcher-track
-> item — details in [`BRINGUP.md`](BRINGUP.md) and
-> [`docs/manual-build.md`](docs/manual-build.md).
+> **Contributors:** the `gbarecompx` submodule **is** the framework —
+> [james2doyle/gbarecompx](https://github.com/james2doyle/gbarecompx), the
+> fork carrying the launch screen, the tinyfiledialogs picker, the emibios
+> default BIOS, and every former local patch as committed history. A plain
+> `--recurse-submodules` clone builds everything (no patches to apply).
+> Framework changes land as fork commits (pushed), then the game repo's
+> gitlink moves — see [`reference/dev-gotchas.md`](reference/dev-gotchas.md)
+> § Submodules.
 
 Generation requires the supported ROM revision — *Final Fantasy Tactics
 Advance* (USA, AFXE), SHA-1 `4ac05441f4de70a4ec3dd932116346c61b8783d9`,

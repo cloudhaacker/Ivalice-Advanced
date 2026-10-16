@@ -2,20 +2,17 @@ plugins {
     id "com.android.application"
 }
 
-// Engine / UI checkouts: the in-tree raylib framework (gbarecompx) when
-// present, else the pinned submodule — the same preference the desktop CMake
-// applies (Phase 4f made gbarecompx the Android scaffold base). A feature
-// worktree can be selected with -PgbarecompRoot=... / -PrecompUiRoot=... (or
-// the GBARECOMP_ROOT / RECOMP_UI_ROOT environment variables).
+// Engine checkout: the gbarecompx framework submodule (james2doyle/gbarecompx)
+// beside this project — the same root the desktop CMake sets as GBARECOMP_ROOT.
+// A feature worktree can be selected with -PgbarecompRoot=... (or the
+// GBARECOMP_ROOT environment variable).
 def gameRoot = rootDir.parentFile
 def pick = { String prop, String env, File fallback ->
     def v = providers.gradleProperty(prop).orNull ?: System.getenv(env)
     return v ? new File(v) : fallback
 }
-def engineDefault = new File(gameRoot, "gbarecompx")
 def engineRoot = pick("gbarecompRoot", "GBARECOMP_ROOT",
-    engineDefault.isDirectory() ? engineDefault : new File(gameRoot, "gbarecomp"))
-def recompUiRoot = pick("recompUiRoot", "RECOMP_UI_ROOT", new File(gameRoot, "recomp-ui"))
+    new File(gameRoot, "gbarecompx"))
 
 ext.gbaGame = [
     applicationId : "org.gbarecomp.fftarecomp",
@@ -52,7 +49,6 @@ ext.gbaGame = [
     ],
     gameRoot      : gameRoot,
     engineRoot    : engineRoot,
-    recompUiRoot  : recompUiRoot,
 ]
 
 apply from: new File(engineRoot, "platform/android/gbarecomp-app.gradle")

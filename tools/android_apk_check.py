@@ -59,7 +59,7 @@ ALLOWED_ENTRY = re.compile(
 
 def build_config():
     gradle = (REPO / "android/app/build.gradle").read_text(encoding="utf-8")
-    template = (REPO / "gbarecomp/platform/android/gbarecomp-app.gradle")
+    template = (REPO / "gbarecompx/platform/android/gbarecomp-app.gradle")
     template_text = template.read_text(encoding="utf-8")
     android_toml = load_toml("android/game_android.toml")
     return {

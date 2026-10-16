@@ -6,15 +6,11 @@ Wraps the newcomer setup (README § Quick start) into one idempotent script:
   1. submodules         git submodule update --init --recursive (two-pass)
   2. dumps              game.gba + BIOS present and SHA-1-verified
   3. python env         .venv with the pinned capstone (uv, else venv + pip)
-  4. framework patches  tools/patches/*.patch onto the pinned gbarecomp
-     (reverse-safe: already-applied files are skipped, so re-runs are
-     idempotent; the consolidated *-local.patch files are the canonical
-     units, per-feature files apply onto a pristine submodule)
-  5. framework tools    build gba_recompile + gba_scan
-  6. BIOS recompile     named-function corpus for the LLE BIOS
-  7. corpus regen       game.gba + game.toml + symbols -> generated/
-  8. host build         build/FFTARecomp (mods enabled, widescreen ready)
-  9. smoke              strict 2400-frame headless run, expects FULLY_STATIC
+  4. framework tools    build gba_recompile + gba_scan
+  5. BIOS recompile     named-function corpus for the LLE BIOS
+  6. corpus regen       game.gba + game.toml + symbols -> generated/
+  7. host build         build/FFTARecomp (mods enabled, widescreen ready)
+  8. smoke              strict 2400-frame headless run, expects FULLY_STATIC
 
 Runs on the system python3 (stdlib only — it exists before .venv does).
 Re-running is cheap: every step detects whether it is already done.
@@ -41,21 +37,20 @@ BIOS = REPO / "bios/emibios_gba_bios.bin"
 BIOS_SHA1 = "0c0d404d16c6b55b3071aba714f82077da132f14"
 BIOS_CONFIG = REPO / "bios/emibios_gba_bios.toml"
 CAPSTONE_PIN = "5.0.7"
-BIOS_OUT = REPO / "gbarecomp/src/runtime/generated_bios/bios_recompiled.cpp"
-PATCH_DIR = REPO / "tools/patches"
+BIOS_OUT = REPO / "gbarecompx/src/runtime/generated_bios/bios_recompiled.cpp"
 GENERATED = REPO / "generated"
 REGEN_INPUTS = [
     REPO / "game.toml",
     REPO / "symbols/ffta_symbols.tsv",
     REPO / "symbols/ffta_data_symbols.tsv",
-    REPO / "gbarecomp/build/gba_recompile",
+    REPO / "gbarecompx/build/gba_recompile",
 ]
 SUBMODULE_MARKERS = [
-    REPO / "gbarecomp/CMakeLists.txt",
+    REPO / "gbarecompx/CMakeLists.txt",
     REPO / "recomp-ui/CMakeLists.txt",
-    REPO / "gbarecomp/external/arm-recomp-core/CMakeLists.txt",
-    REPO / "gbarecomp/external/rbengine/CMakeLists.txt",
-    REPO / "gbarecomp/external/recomp-net/CMakeLists.txt",
+    REPO / "gbarecompx/external/arm-recomp-core/CMakeLists.txt",
+    REPO / "gbarecompx/external/rbengine/CMakeLists.txt",
+    REPO / "gbarecompx/external/recomp-net/CMakeLists.txt",
 ]
 N_STEPS = 9
 
@@ -189,61 +184,18 @@ def step_venv():
     return f"capstone {CAPSTONE_PIN}"
 
 
-def step_patches():
-    if not (REPO / "gbarecomp/.git").exists():
-        return "not a git submodule — skipped"
-    if not list(PATCH_DIR.glob("*.patch")):
-        die("no framework patches found in tools/patches/",
-            hint="incomplete checkout — the patches ship with this repo")
-    # Route by filename prefix (the tools/patches/README.md convention):
-    # arm-recomp-core-* targets the nested gbarecomp/external/arm-recomp-core
-    # repo; everything else targets gbarecomp itself.
-    def target_root(patch):
-        return (REPO / "gbarecomp/external/arm-recomp-core"
-                if patch.name.startswith("arm-recomp-core")
-                else REPO / "gbarecomp")
-    # Consolidated patches first: each *-local.patch is its repo's whole-tree
-    # diff, so applying it up front leaves every per-feature reference diff
-    # already in place (reverse-check below → skip). Pure name order applied
-    # per-feature files first, after which the consolidated patch no longer
-    # applied forward — fresh clones died in this step (found 2026-10-12
-    # while adding speed-toggle-ff-seam.patch; verified by replaying the old
-    # order against a pristine archive).
-    patches = sorted(PATCH_DIR.glob("*.patch"),
-                     key=lambda p: (0 if p.name.endswith("-local.patch")
-                                    else 1, p.name))
-    applied, in_place = [], 0
-    for patch in patches:
-        root = target_root(patch)
-        if run_ok(["git", "-C", root, "apply", "--check", "--reverse",
-                   patch]):
-            in_place += 1
-            continue
-        if not run_ok(["git", "-C", root, "apply", "--check", patch]):
-            die(f"patch does not apply: {patch.name}",
-                hint="the submodule likely drifted from its pin — check "
-                     "`git -C gbarecomp status`; see docs/manual-build.md "
-                     "§ Troubleshooting")
-        r = run(["git", "-C", root, "apply", patch])
-        if r.returncode != 0:
-            die(f"failed to apply {patch.name}", hint=tail(r))
-        applied.append(patch.name)
-    if applied:
-        return f"{len(applied)} applied, {in_place} already in place"
-    return f"all {in_place} already in place"
-
 
 def step_tools(jobs):
-    r = run(["cmake", "-S", "gbarecomp", "-B", "gbarecomp/build", "-G",
+    r = run(["cmake", "-S", "gbarecompx", "-B", "gbarecompx/build", "-G",
              "Ninja", "-DCMAKE_BUILD_TYPE=Release"], capture=False)
     if r.returncode != 0:
         die("framework cmake configure failed (see output above)")
-    r = run(["cmake", "--build", "gbarecomp/build", "--target",
+    r = run(["cmake", "--build", "gbarecompx/build", "--target",
              "gba_recompile", "gba_scan", "--parallel", jobs], capture=False)
     if r.returncode != 0:
         die("framework tools build failed (see output above)")
     for binary in ("gba_recompile", "gba_scan"):
-        if not (REPO / "gbarecomp/build" / binary).exists():
+        if not (REPO / "gbarecompx/build" / binary).exists():
             die(f"framework build produced no {binary}")
     return "gba_recompile + gba_scan ready"
 
@@ -254,12 +206,12 @@ def step_bios(force):
         return "up to date"
     r = run(["./build/gba_recompile", "--bios",
              str((BIOS).resolve()), "--config", str(BIOS_CONFIG.resolve())],
-            cwd=REPO / "gbarecomp")
+            cwd=REPO / "gbarecompx")
     if r.returncode != 0:
         die("BIOS recompile failed", hint=tail(r))
     if not BIOS_OUT.exists() or BIOS_OUT.stat().st_size == 0:
         die("BIOS recompile produced no output",
-            hint="it must run with cwd = gbarecomp/ (see README § Setup)")
+            hint="it must run with cwd = gbarecompx/ (see README § Setup)")
     m = re.search(r"discovered (\d+) function", r.stdout)
     return f"{m.group(1)} functions" if m else "done"
 
@@ -268,7 +220,7 @@ def step_regen(force):
     missing = [str(p.relative_to(REPO)) for p in (
         REPO / "game.toml", REPO / "symbols/ffta_symbols.tsv",
         REPO / "symbols/ffta_data_symbols.tsv",
-        REPO / "gbarecomp/build/gba_recompile") if not p.exists()]
+        REPO / "gbarecompx/build/gba_recompile") if not p.exists()]
     if missing:
         die("missing required files: " + ", ".join(missing),
             hint="incomplete checkout — re-clone, or re-run "
@@ -284,7 +236,7 @@ def step_regen(force):
                  and p.stat().st_mtime > newest]
         if not stale:
             return "up to date"
-    r = run(["./gbarecomp/build/gba_recompile", "--rom", "game.gba",
+    r = run(["./gbarecompx/build/gba_recompile", "--rom", "game.gba",
              "--config", "game.toml",
              "--symbols", "symbols/ffta_symbols.tsv",
              "--data-symbols", "symbols/ffta_data_symbols.tsv",
@@ -354,7 +306,6 @@ def main():
         ("submodules", lambda: step_submodules()),
         ("dumps", lambda: step_dumps()),
         ("python env", lambda: step_venv()),
-        ("framework patches", lambda: step_patches()),
         ("framework tools", lambda: step_tools(str(a.jobs))),
         ("BIOS recompile", lambda: step_bios(a.force)),
         ("corpus regen", lambda: step_regen(a.force)),

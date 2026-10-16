@@ -37,10 +37,11 @@ try:
 except ModuleNotFoundError:  # Python 3.10 (tomllib landed in 3.11)
     _tomllib = None
 
-# Standard GBA BIOS dump hash, mirrored by the engine template's default.
-RETAIL_BIOS_SHA1 = "300c20df6731a33952ded8c436f7f186d25d3492"
 # The committed clean-room BIOS pin (emibios main @c4d5d71,
-# https://github.com/coolbho3k/emibios — LGPL-3.0-or-later).
+# https://github.com/coolbho3k/emibios — LGPL-3.0-or-later) — the engine
+# template's default since the 2026-10-18 fork flip. The retail dump hash
+# lives in the engine (gba_bios.h kExpectedSha1) and
+# THIRD_PARTY_ATTRIBUTION.md; it is no longer a default anywhere.
 EMIBIOS_SHA1 = "0c0d404d16c6b55b3071aba714f82077da132f14"
 
 
@@ -221,8 +222,8 @@ def check_bios_pins():
     # The launch BIOS is the committed clean-room emibios (issue #17):
     # every pin — both game TOMLs, the build.gradle manifest pin, and the
     # committed bin itself — must agree, the payload must stage it, and the
-    # engine-side acceptance (launcher pin-set + public-guard exemption)
-    # must exist in the tree or the recorded patch (fresh clones).
+    # engine-side acceptance (bios pin-set + public-guard exemption) must
+    # exist in the framework tree (the gbarecompx fork submodule).
     game = load_toml("game.toml")
     android = load_toml("android/game_android.toml")
     for name, toml in (("game.toml", game), ("android/game_android.toml", android)):
@@ -256,21 +257,24 @@ def check_bios_pins():
     need("bios/emibios_gba_bios.bin\"), into: \"bios\"" in gradle,
          "android/app/build.gradle payloadDirs must stage "
          "bios/emibios_gba_bios.bin into the payload bios/ dir")
-    # Upstream's engine template keeps the retail default as the fallback
-    # for games that do not declare their own BIOS; our build.gradle
-    # override is the pin that reaches the manifest. A change here means
-    # upstream moved the default and the exemption review needs a re-look.
-    template = REPO / "gbarecomp/platform/android/gbarecomp-app.gradle"
+    # Upstream's engine template carried a retail default as the fallback
+    # for games that do not declare their own BIOS; the gbarecompx fork
+    # flipped that default to the clean-room emibios (2026-10-18). The
+    # game's build.gradle override is the pin that reaches the manifest.
+    # Any OTHER value means the default moved again — re-review the
+    # public-guard exemption (emibios-public-guard-bundled semantics).
+    template = REPO / "gbarecompx/platform/android/gbarecomp-app.gradle"
     need(template.is_file(),
          "%s missing — initialize the gbarecomp submodule"
          % template.relative_to(REPO))
     default = one(r'gbaBiosSha1:\s*g\.biosSha1\s*\?:\s*"([0-9a-f]{40})"',
                   template.read_text(encoding="utf-8"),
                   "engine biosSha1 default")
-    need(default == RETAIL_BIOS_SHA1,
-         "engine template biosSha1 default changed from the retail "
-         "fallback %s to %s — deliberate? Re-review the public-guard "
-         "exemption (emibios-public-guard-bundled.patch)" % (RETAIL_BIOS_SHA1, default))
+    need(default == EMIBIOS_SHA1,
+         "engine template biosSha1 default %s != the emibios default %s "
+         "— deliberate? Re-review the public-artifact guard exemption "
+         "(a declared pin equal to the retail hash must stay "
+         "unbundleable)" % (default, EMIBIOS_SHA1))
 
 
 def check_emibios_engine_acceptance():
@@ -281,23 +285,16 @@ def check_emibios_engine_acceptance():
     # submodule) the acceptance lives in the recorded patches, so accept
     # either form (the `patches` suite pins fidelity).
     sources = ""
-    for rel in ("gbarecomp/src/gba/gba_bios.h",
-                "gbarecomp/src/runtime/launcher_seam.h",
-                "gbarecomp/platform/android/gbarecomp-app.gradle"):
+    for rel in ("gbarecompx/src/gba/gba_bios.h",
+                "gbarecompx/src/runtime/launcher_seam.h",
+                "gbarecompx/platform/android/gbarecomp-app.gradle"):
         path = REPO / rel
         if path.is_file():
             sources += path.read_text(encoding="utf-8")
-    recorded = ""
-    for rel in ("tools/patches/gbarecomp-local.patch",
-                "tools/patches/emibios-launcher-pin-set.patch",
-                "tools/patches/emibios-public-guard-bundled.patch"):
-        path = REPO / rel
-        if path.is_file():
-            recorded += path.read_text(encoding="utf-8") + "\n"
     def present(token, what):
-        need(token in sources or token in recorded,
-             "%s missing from both the gbarecomp tree and the recorded "
-             "patches" % what)
+        need(token in sources,
+             "%s missing from the gbarecomp framework tree (the "
+             "gbarecompx fork submodule)" % what)
     present("kEmibiosSha1", "the emibios pin constant (gba_bios.h)")
     present("GbaBios::kEmibiosSha1",
             "the launcher pin-set verify (launcher_seam.h)")
@@ -374,21 +371,16 @@ def check_save_picker_wiring():
     need(save_size == android["save"]["size"] == game["save"]["size"],
          "saveSize mismatch: build.gradle=%d game_android.toml=%d game.toml=%d"
          % (save_size, android["save"]["size"], game["save"]["size"]))
-    # Engine template + manifest plumbing (working tree or recorded patch —
-    # fresh clones check out pristine submodules; see check_save_external_wiring).
-    template = read_text("gbarecomp/platform/android/gbarecomp-app.gradle")
-    manifest = read_text("gbarecomp/platform/android/AndroidManifest.xml")
+    # Engine template + manifest plumbing (the gbarecompx fork submodule —
+    # the fork carries the save-picker wiring as committed code; see
+    # check_save_external_wiring).
+    template = read_text("gbarecompx/platform/android/gbarecomp-app.gradle")
+    manifest = read_text("gbarecompx/platform/android/AndroidManifest.xml")
     config_java = read_text(
-        "gbarecomp/platform/android/java/org/gbarecomp/GbaGameConfig.java")
+        "gbarecompx/platform/android/java/org/gbarecomp/GbaGameConfig.java")
     setup_java = read_text(
-        "gbarecomp/platform/android/java/org/gbarecomp/GbaSetupActivity.java")
-    recorded = ""
-    for rel in ("tools/patches/gbarecomp-local.patch",
-                "tools/patches/android-save-picker.patch"):
-        path = REPO / rel
-        if path.is_file():
-            recorded += path.read_text(encoding="utf-8") + "\n"
-    combined = template + manifest + config_java + setup_java + recorded
+        "gbarecompx/platform/android/java/org/gbarecomp/GbaSetupActivity.java")
+    combined = template + manifest + config_java + setup_java
     for token, what in (
             ("gbaSaveFile", "engine placeholder gbaSaveFile"),
             ("gbaSaveSize", "engine placeholder gbaSaveSize"),
@@ -443,27 +435,12 @@ def check_save_external_wiring():
          "from it)")
     need("ffta_usa" in main,
          "src/main.cpp state basenames drifted from romFile ffta_usa.gba")
-    runtime = read_text("gbarecomp/src/runtime/runtime.cpp")
+    runtime = read_text("gbarecompx/src/runtime/runtime.cpp")
     runtime_ok = ('"--state-dir"' in runtime and "args->state_dir" in runtime
                   and "state_base" in runtime)
-    if not runtime_ok:
-        # Fresh clones (CI tier 1) check out pristine submodules, so the
-        # knob lives only in the recorded patches until applied. Accept
-        # the working tree or the recorded diff (the `patches` suite pins
-        # patch<->pin fidelity separately).
-        recorded = ""
-        for rel in ("tools/patches/gbarecomp-local.patch",
-                    "tools/patches/android-external-state-dir.patch"):
-            path = REPO / rel
-            if path.is_file():
-                recorded += path.read_text(encoding="utf-8") + "\n"
-        runtime_ok = ('"--state-dir"' in recorded
-                      and "args->state_dir" in recorded
-                      and "state_base" in recorded)
     need(runtime_ok,
-         "engine --state-dir knob missing from gbarecomp/src/runtime/"
-         "runtime.cpp and the recorded patches (slots/suspend would stay "
-         "app-private)")
+         "engine --state-dir knob missing from gbarecompx/src/runtime/"
+         "runtime.cpp (slots/suspend would stay app-private)")
     lifecycle = read_text("tools/android_lifecycle_test.py")
     need("/sdcard/Android/data/" in lifecycle
          and "/states/ffta_usa" in lifecycle
@@ -487,18 +464,11 @@ def check_logs_external_wiring():
                   "mobile.log_file", '/ "logs"'):
         need(token in main,
              "src/main.cpp missing diagnostics-redirect token %r" % token)
-    plat = read_text("gbarecomp/src/runtime/mobile_platform.cpp")
+    plat = read_text("gbarecompx/src/runtime/mobile_platform.cpp")
     plat_ok = ("__android_log_print" in plat and "cannot open log" in plat)
-    if not plat_ok:
-        recorded = ""
-        path = REPO / "tools/patches/gbarecomp-local.patch"
-        if path.is_file():
-            recorded = path.read_text(encoding="utf-8")
-        plat_ok = ("__android_log_print" in recorded
-                   and "cannot open log" in recorded)
     need(plat_ok,
-         "engine log-open fallback missing from gbarecomp/src/runtime/"
-         "mobile_platform.cpp and the recorded patch (silent-log class)")
+         "engine log-open fallback missing from gbarecompx/src/runtime/"
+         "mobile_platform.cpp (silent-log class)")
 
 
 # ---------------------------------------------------------------------------

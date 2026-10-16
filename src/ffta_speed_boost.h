@@ -2,8 +2,8 @@
 //
 // FFTA-owned fast-forward control: a small "FF" pill drawn top-center by the
 // game-owned host overlay. Tap toggles a session-only latch that the engine
-// polls through RunOptions::fast_forward_request (see
-// tools/patches/speed-toggle-ff-seam.patch) and ORs with the physical
+// polls through RunOptions::fast_forward_request (framework fork code,
+// gbarecompx/src/runtime/runtime.h) and ORs with the physical
 // hold paths (Tab / Assist key / pad trigger) and the runtime-menu latch.
 //
 // Pure presentation + input-edge logic lives here as inline code so the host

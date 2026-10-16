@@ -105,7 +105,7 @@ class Dual:
         self.orc = subprocess.Popen(
             [str(ORACLE), "--bios", str(BIOS), "--rom", orc_rom,
              "--port", str(self.orc_port)],
-            cwd=str(REPO / "gbarecomp"), stdout=subprocess.DEVNULL,
+            cwd=str(REPO / "gbarecompx"), stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL)
         try:
             self.n = Client(self.nat_port, timeout=timeout)

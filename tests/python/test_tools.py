@@ -336,18 +336,6 @@ class TsvGuardTests(unittest.TestCase):
                               f"{name} line {i})")
                 seen.setdefault(addr, f"{name} line {i}")
 
-    def test_patches_readme_rows_match_files(self):
-        readme = (REPO / "tools" / "patches" / "README.md").read_text()
-        listed = set()
-        for line in readme.splitlines():
-            if line.startswith("| `") and ".patch" in line:
-                listed.add(line.split("`")[1])
-        present = {p.name for p in (REPO / "tools" / "patches").glob("*.patch")}
-        self.assertTrue(present, "no *.patch files?")
-        self.assertEqual(present, listed,
-                         f"README rows vs patch files drift: "
-                         f"{sorted(present ^ listed)}")
-
 
 class BiosBytePinTests(unittest.TestCase):
     """gba_bios.bin must stay byte-stable at the contract points our engine
@@ -360,11 +348,11 @@ class BiosBytePinTests(unittest.TestCase):
     material (the launcher-accepted alternative + the oracle's default),
     no longer the launch BIOS. The launch BIOS is the committed clean-room
     emibios, pinned EVERYWHERE by EmibiosBytePinTests above. The dump is
-    ROM/BIOS-derived and never in git (gbarecomp/.gitignore bios/*.bin)
+    ROM/BIOS-derived and never in git (gbarecompx/.gitignore bios/*.bin)
     — these tests stay LOCAL-ONLY and skip on any checkout without it
     (CI included)."""
 
-    BIOS = REPO / "gbarecomp" / "bios" / "gba_bios.bin"
+    BIOS = REPO / "gbarecompx" / "bios" / "gba_bios.bin"
 
     @classmethod
     def setUpClass(cls):

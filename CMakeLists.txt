@@ -5,15 +5,13 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Use the in-tree gbarecompx checkout when present (primary build path).
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/gbarecompx/CMakeLists.txt")
-    set(_gbarecomp_default "${CMAKE_CURRENT_SOURCE_DIR}/gbarecompx")
-else()
-    set(_gbarecomp_default "${CMAKE_CURRENT_SOURCE_DIR}/gbarecomp")
-endif()
-set(GBARECOMP_ROOT "${_gbarecomp_default}"
-    CACHE PATH "Path to this game's gbarecomp worktree")
-unset(_gbarecomp_default)
+# ── Framework root ───────────────────────────────────────────────────────────
+# The gbarecomp submodule IS the framework: james2doyle/gbarecompx (the fork
+# carrying the launch screen, tinyfiledialogs picker, emibios default and the
+# former local-patch work as committed history). No in-tree preference branch,
+# no working-tree patches.
+set(GBARECOMP_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/gbarecompx"
+    CACHE PATH "Path to this game's gbarecomp framework checkout")
 if(NOT EXISTS "${GBARECOMP_ROOT}/CMakeLists.txt")
     message(FATAL_ERROR
         "GBARECOMP_ROOT is not a gbarecomp checkout: ${GBARECOMP_ROOT}")
@@ -197,10 +195,10 @@ endif()
 option(FFTA_BUILD_TESTS "Build host unit tests for src/ custom code" ON)
 if(FFTA_BUILD_TESTS AND NOT ANDROID)
     enable_testing()
-    # The host-stack-guard test targets the guard APIs from the
-    # host-stack-guard-desktop.patch work (applied on the pinned gbarecomp
-    # submodule locally, absent on a pristine checkout — CI). Probe the
-    # pinned header and compile the test only where the APIs exist.
+    # The host-stack-guard test targets the guard APIs in the framework
+    # submodule (the gbarecompx fork carries host-stack-guard-desktop as
+    # committed code). Probe the header and compile the test only where
+    # the APIs exist (a stale/foreign framework checkout skips cleanly).
     include(CheckSymbolExists)
     set(HSG_HEADER "${GBARECOMP_ROOT}/src/runtime/mobile_platform.h")
     file(READ "${HSG_HEADER}" _hsg_header_text)

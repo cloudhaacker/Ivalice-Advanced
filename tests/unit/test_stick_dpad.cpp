@@ -13,9 +13,9 @@
 #include <cstdint>
 #include <cstdio>
 
-// The helper lives in the stick-to-dpad.patch work (applied on the pinned
-// gbarecomp submodule). A pristine checkout — CI — compiles the pinned
-// input_synth.h, which does not declare it; compile this whole test away
+// The helper lives in the framework submodule (the gbarecompx fork —
+// stick-to-dpad as committed code). A checkout whose framework's
+// input_synth.h does not declare it compiles this whole test away
 // there instead of breaking the unit build (same policy as the pacer and
 // host-stack-guard probes in CMakeLists.txt).
 #ifdef STICK_DPAD_API
