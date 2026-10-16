@@ -7829,3 +7829,28 @@ mutants reports 10/10 caught, so the tests are not vacuous.
 8x (the 8-px pitch is a much coarser pattern than the old 1 px) — that needs a
 windowed run and stays open. Android ES 1.00 is transliterated, not compiled on
 any tier; `glslangValidator` validates all six sources locally and passes.
+
+## 2026-10-16 — Settings audit + persistence (menu rows wired end to end)
+
+User report: "the settings menu's View is there but changing the scale
+does nothing." Full audit of every menu row (model → apply → backend →
+runtime) found one dead row and two untested layers; all fixed red-first:
+
+- Window scale: adjust_scale only clamped (SDL's resize was dropped in
+  the port). Now resizes via RaylibApi::SetWindowSize; Android and
+  fullscreen no-op; unchanged-value early-out. Commit fc21259.
+- View: policy extracted to pure menu_view_step (host_menu.h) + runtime
+  rewire (legacy mode → ViewMode → step). Commit 5db92ba.
+- Persistence: menu_settings.h ([Menu] drop-and-rewrite; [video] LCD
+  keys merge in place so launcher-owned lines survive; unknown sections
+  byte-preserved). Loaded pre-context-seed (View starts from the saved
+  mode), applied post-open under given-flag CLI precedence
+  (scale/fullscreen/volume/linear/blend/interp/view-width), saved by the
+  host apply hook per real change. menu_settings_tests (parse/clamp/
+  round-trip/foreign-survival) + P1/P1b mutations observed. Commit
+  fca051a. README menu section documents the round-trip.
+
+Evidence: framework 68/68, FFTARecomp builds, attract 1EF4C118
+byte-identical after every commit. Open: save-state menu rows; full
+README trio. Note: lcd_shader_tests red during the audit belongs to the
+separate LCD-grid rework (see its BRINGUP entry), untouched here.
