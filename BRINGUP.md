@@ -7767,3 +7767,10 @@ Framework `ci` 38838258955 all success: stub, raylib 6 ON, rlsw headless,
 GL under Xvfb, guard. The virtual-display tier is now covered on every
 push; no deferrals remain in Phase 5/6 except the full README trio and
 Phase 7 extraction.
+
+## 2026-10-16 — gl-xvfb folded into the raylib CI job
+
+Four test groups was one too many: the standalone job compiled nothing
+new (same GL binary), so its Xvfb tier + no-early-out proof moved into
+`raylib` (net -44 lines, back to 4 jobs: stub, raylib, headless, guard).
+Plan §5.4 table/rules updated. Re-proof on next push.
