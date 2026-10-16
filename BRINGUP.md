@@ -7752,3 +7752,11 @@ rewrite trio deferred per scope call. 6.4 (`3a1fa63`, framework): SDL pass
 (9 files) + upstream banners; untouched list verified SDL-free.
 Deviations from the plan text, all user-approved: fallback kept, README
 minimal, gl-xvfb deferred. No code touched after 6.1 (none at all).
+
+## 2026-10-16 — gl-xvfb landed (framework CI, container-proven recipe)
+
+No host Xvfb or root here, so the recipe was proven in a clean
+ubuntu:24.04 podman container: contract suite early-outs without
+xvfb-run, full real-backend path + v2 suite pass with it (system pkgs:
+GL/X11 dev + xvfb + libgl1-mesa-dri). CI job mirrors exactly that,
+plus a proof step that fails on the early-out line. CI proof on push.
