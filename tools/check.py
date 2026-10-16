@@ -630,6 +630,23 @@ def check_release():
     return r.returncode == 0, line or f"exit {r.returncode}"
 
 
+def backend_default_cache_ok(cache_text):
+    """Pure predicate behind check_backend_default: the canonical build dir
+    is the raylib product build only when the effective flag is ON *and*
+    the dir was not configured headless (a Memory build reports ENABLED too,
+    but shows no window). Returns (ok, detail)."""
+    if "GBARECOMP_RAYLIB_ENABLED:INTERNAL=ON" not in cache_text:
+        return False, ("build/ is not the raylib product build: "
+                       "GBARECOMP_RAYLIB_ENABLED is not ON (Phase 4c default "
+                       "regressed, or the dir was configured with "
+                       "-DGBARECOMP_USE_RAYLIB=OFF)")
+    if "GBARECOMP_RAYLIB_HEADLESS:BOOL=ON" in cache_text:
+        return False, ("build/ is a headless Memory build "
+                       "(GBARECOMP_RAYLIB_HEADLESS is ON), not the raylib "
+                       "product build: reconfigure without the flag")
+    return True, "build/ is the raylib product build"
+
+
 def check_backend_default():
     """The canonical build dir is the raylib product build (Phase 4c).
 
@@ -644,11 +661,9 @@ def check_backend_default():
     cache = REPO / "build/CMakeCache.txt"
     if not cache.exists():
         return True, "skipped (build/ not configured)"
-    if "GBARECOMP_RAYLIB_ENABLED:INTERNAL=ON" not in cache.read_text():
-        return False, ("build/ is not the raylib product build: "
-                       "GBARECOMP_RAYLIB_ENABLED is not ON (Phase 4c default "
-                       "regressed, or the dir was configured with "
-                       "-DGBARECOMP_USE_RAYLIB=OFF)")
+    ok, detail = backend_default_cache_ok(cache.read_text())
+    if not ok:
+        return False, detail
     exe = REPO / "build/ffta_backend_select_tests"
     if not exe.exists():
         return True, "build/ is raylib (selection binary not built)"

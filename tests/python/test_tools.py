@@ -197,6 +197,37 @@ class BuildPyTest(unittest.TestCase):
         self.assertIn("--no-smoke", r.stdout)
 
 
+class BackendDefaultCacheTests(unittest.TestCase):
+    """The product-build gate must reject a headless-configured canonical
+    dir: build/ with GBARECOMP_RAYLIB_HEADLESS=ON is a windowless Memory
+    build, not the raylib product, even though GBARECOMP_RAYLIB_ENABLED is
+    still ON."""
+
+    def predicate(self):
+        import check
+        return check.backend_default_cache_ok
+
+    def test_product_cache_accepted(self):
+        ok, _ = self.predicate()("GBARECOMP_RAYLIB_ENABLED:INTERNAL=ON\n"
+                                  "GBARECOMP_RAYLIB_HEADLESS:BOOL=OFF\n")
+        self.assertTrue(ok)
+
+    def test_unset_headless_accepted(self):
+        ok, _ = self.predicate()("GBARECOMP_RAYLIB_ENABLED:INTERNAL=ON\n")
+        self.assertTrue(ok)
+
+    def test_headless_cache_refused(self):
+        ok, detail = self.predicate()(
+            "GBARECOMP_RAYLIB_ENABLED:INTERNAL=ON\n"
+            "GBARECOMP_RAYLIB_HEADLESS:BOOL=ON\n")
+        self.assertFalse(ok)
+        self.assertIn("HEADLESS", detail)
+
+    def test_non_raylib_cache_refused(self):
+        ok, _ = self.predicate()("GBARECOMP_RAYLIB_ENABLED:INTERNAL=OFF\n")
+        self.assertFalse(ok)
+
+
 class RepoHygieneTests(unittest.TestCase):
     """Tracked files must stay portable: no absolute home-directory paths
     (they leak the author's layout and break on every other checkout)."""
