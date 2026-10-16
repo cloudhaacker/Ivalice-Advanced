@@ -28,8 +28,8 @@ no Nintendo BIOS dump is required.
 - Strict fully-static execution — zero interpreter fallback on any executed
   path, kept that way by a self-healing coverage loop
 - GBA screen simulation: `raw`, `unlit`, `frontlit`, `backlit`, `classic`
-  [recomp-ui](https://github.com/mstan/recomp-ui) launcher; ROM and BIOS
-  hashes verified at launch
+- Launch screen with box art and a native file-dialog ROM picker; ROM and
+  BIOS hashes verified at launch
 
 ## Controls
 
@@ -44,13 +44,12 @@ no Nintendo BIOS dump is required.
 | In-game menu | Esc | Guide button |
 
 Controllers are detected automatically, and button mappings can be changed
-from the launcher. The left analog stick doubles as the D-Pad.
-Fast-forward runs the game faster while held; its speed
-(2–10x) and key/pad bindings are configurable in the launcher's Assist
-Tools page and the in-game menu. On Android, use the on-screen touch
-controls — tap the `FF` pill at the top of the screen to toggle the speed
-boost; open the menu with a long-press, three-finger tap, or the system
-Back gesture (Esc again steps back inside the menu).
+in the in-game menu. The left analog stick doubles as the D-Pad.
+Fast-forward runs the game faster while held; its speed (2–10x) and
+key/pad bindings are configurable in the in-game menu. On Android, use the
+on-screen touch controls — tap the `FF` pill at the top of the screen to
+toggle the speed boost; open the menu with a long-press, three-finger tap,
+or the system Back gesture (Esc again steps back inside the menu).
 
 ## Quick start
 
@@ -60,13 +59,15 @@ Grab the latest release zip from [releases](../../releases) — Linux x64
 (`FFTARecomp-*-linux-x64.zip`) or Windows x64
 (`FFTARecomp-*-windows-x64.zip`, statically linked, no DLLs) — then:
 
-1. Extract the folder anywhere **writable** — launcher settings, the ROM
-   path cache, and saves are kept beside the executable.
+1. Extract the folder anywhere **writable** — the ROM pick, menu
+   settings, and saves are kept beside the executable.
 2. Run it — `./FFTARecomp` on Linux, `FFTARecomp.exe` on Windows (no
-   DLLs to install; everything is statically linked).
-
-3. In the launcher, pick your legally obtained *Final Fantasy Tactics
-   Advance* (USA) ROM and select **Play**.
+   DLLs to install; everything is statically linked). The launch screen
+   opens; the first boot opens the native file picker right away.
+3. Pick your legally obtained *Final Fantasy Tactics Advance* (USA) ROM
+   and select **Play**. The pick is remembered, so later boots open ready
+   to play — **Select ROM** re-picks, and dropping a `.gba` file onto the
+   window works too.
 
 The launch BIOS is bundled — a clean-room, freely redistributable
 **emibios** build
@@ -74,9 +75,9 @@ The launch BIOS is bundled — a clean-room, freely redistributable
 Nintendo BIOS dump. Your ROM is hash-verified at launch: a mismatch error
 means the file is not the expected USA dump.
 
-System requirements — Linux x86-64 with SDL2, OpenGL, FreeType, and
-Harfbuzz (Debian/Ubuntu: `libsdl2-2.0-0 libopengl0 libfreetype6
-libharfbuzz0b`); Windows 10+ x86-64 with nothing extra (static exe).
+System requirements — Linux x86-64 with OpenGL and an X11/Wayland desktop
+(Debian/Ubuntu: `libgl1 libglu1-mesa libx11-6` — preinstalled on desktop
+systems); Windows 10+ x86-64 with nothing extra (static exe).
 Display and widescreen options (`--view-width 448`,
 `--resize-view`, `--scale`, fullscreen) are listed in
 [docs/README.md](docs/README.md).
@@ -99,17 +100,18 @@ Display and widescreen options (`--view-width 448`,
    python3 build.py
    ```
 
-3. Run the self-built binary. With no arguments it opens the launcher —
-   select your **Final Fantasy Tactics Advance (USA)** ROM and select
-   **Play**:
+3. Run the self-built binary. With no arguments it opens the launch
+   screen (the first boot opens the file picker) — pick your
+   **Final Fantasy Tactics Advance (USA)** ROM and select **Play**:
 
    ```sh
    ./build/FFTARecomp
    ```
 
-The launcher pre-fills the BIOS with the bundled clean-room build, remembers
-your settings, and your ROM is hash-verified at launch. Enable **Skip
-launcher** (or pass the paths directly) to start the game without the UI:
+The BIOS is pre-filled from the bundled clean-room build and your ROM is
+hash-verified at launch. Pass the paths directly — or run with any
+headless flag (`--no-window`, `--frames`, `--load-state`, `--tcp`) — to
+start the game without the launch screen:
 
 ```sh
 ./build/FFTARecomp --bios bios/emibios_gba_bios.bin --rom game.gba
@@ -136,7 +138,9 @@ are listed in [docs/README.md](docs/README.md).
 ## Building from source
 
 Desktop development requires CMake ≥ 3.20, Ninja, GCC or Clang (C++17),
-SDL2 development libraries, git, and Python 3.10+.
+git, Python 3.10+, and OpenGL + X11 development headers (Debian/Ubuntu:
+`libgl-dev libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev
+libxi-dev libxkbcommon-dev`).
 
 `python3 build.py` is the one-command route; re-running after a pull skips
 finished steps. The raw pipeline it wraps — every step by hand, with
@@ -155,6 +159,15 @@ cmake --build build --target FFTARecomp --parallel 8
 
 Android build and device-validation instructions live in
 [`android/README.md`](android/README.md).
+
+> **Contributors:** the game binary currently requires an in-tree
+> `gbarecompx/` framework checkout (the framework dev fork — gitignored,
+> not distributed with the repo; see `.gitignore`). The configure prefers
+> it when present; the pinned-submodule fallback lacks the launch-screen
+> contract, so `src/main.cpp` does not compile against it. Repointing the
+> build at the published gbarecompx remote is the remaining launcher-track
+> item — details in [`BRINGUP.md`](BRINGUP.md) and
+> [`docs/manual-build.md`](docs/manual-build.md).
 
 Generation requires the supported ROM revision — *Final Fantasy Tactics
 Advance* (USA, AFXE), SHA-1 `4ac05441f4de70a4ec3dd932116346c61b8783d9`,

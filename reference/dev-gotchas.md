@@ -65,6 +65,32 @@ real hours once.
   session-5 acceptance replay runs 112,000 frames headless). Strict runs are
   faster and are the acceptance.
 
+## Pre-boot launch screen (the 2026-10 raygui launcher)
+
+- **Bare invocation opens the launch screen** — a real raylib window. Every
+  scripted/headless run must pass an explicit path or a headless flag:
+  `--rom`, `--bios`, `--no-window`, `--frames`, `--load-state`, `--tcp`
+  each skip the screen (`gbarecomp::launcher_should_skip_screen`); anything
+  else shows it. A CI job that boots the binary bare gets a window (or a
+  GL failure) instead of a game — that is the trap, not a hang.
+- **The screen never validates a ROM itself.** Picks flow through
+  `gbarecomp::resolve_asset` (hash + CRC validation, writes `rom.cfg`).
+  **Select ROM** uses the picker's forced path (bypasses a valid cache —
+  2026-10 repick fix); the first-boot auto-open uses the normal cache
+  fast path.
+- **No dialog provider = clean failure, never stdin.** Before showing a
+  dialog the picker probes with `tinyfd_openFileDialog("tinyfd_query", …)`:
+  `no_solution` (or any console mode) returns a hard error
+  ("no file dialog available; use --rom"). Headless/SSH/CI and wine
+  bare-extraction runs fail loudly instead of blocking. The wine release
+  smoke therefore always passes `--rom`/`--bios` explicitly
+  (`tools/make_release.py wine_smoke`).
+- **Box art is optional at runtime**: the launcher loads
+  `assets/img/boxart.png` beside the executable (CMake `stage_boxart`
+  target in dev builds; release staging copies it from
+  `recomp/launcher/boxart.png`). Missing file → the text fallback renders;
+  not an error.
+
 ## Sessions and close handling
 
 - Close with **ESC in-game** (verified clean, rc≈0, ~2 s teardown). The
@@ -246,10 +272,10 @@ access, which is enough:
   (`src/main.cpp` `raise_stack_limit`; hard limit must be unlimited).
 - Windows cross build (`tools/make_release.py --windows`): the exception
   is prefix poisoning, not flags. If the exe links a third-party DLL
-  (objdump guard names it — `SDL2/libstdc++/libgcc/winpthread/freetype/
-  harfbuzz/zlib`), the cross prefix leaked a dynamic artifact: rebuild it
+  (objdump guard names it — `libstdc++/libgcc/winpthread/raylib deps`),
+  the cross prefix leaked a dynamic artifact: rebuild it
   (`tools/win_cross_deps.py build` prunes `*.dll`/`*.dll.a` after every
-  install by design), then the exe. If the game configure "loses" SDL2,
+  install by design), then the exe. If the game configure "loses" raylib,
   `GBARECOMP_MINGW_PREFIX_UNIX` must point at the prefix and
   `CMAKE_PREFIX_PATH` at the toolchain's `FFTACROSS_PREFIX` — the engine
   falls back to `C:/msys64/…` paths that don't exist on a Linux cross
@@ -282,28 +308,24 @@ access, which is enough:
 ## Submodules and local framework patches
 
 - Pins (2026-10-06): gbarecomp @ `ecc9c55` (newest main, chosen
-  deliberately), recomp-ui @ `cac2b8f` (still the pin on 2026-10-12; it now
-  carries `tools/patches/recomp-ui-local.patch` as a working-tree edit —
-  39 upstream commits behind, a deliberate milestone to bump);
-  nested: arm-recomp-core @ 15fc7b7, rbengine @ 2a03e7, recomp-net @ c58f125.
+  deliberately); nested: arm-recomp-core @ 15fc7b7, rbengine @ 2a03e7,
+  recomp-net @ c58f125. (The recomp-ui submodule was removed in the
+  2026-10 launcher track; the pre-boot screen is the gbarecompx fork's
+  raygui launcher — see "Pre-boot launch screen" below.)
 - `tools/patches/*.patch` are working-tree edits to `gbarecomp/`. Re-apply
-  after submodule updates with the **consolidated** patches — there are three
+  after submodule updates with the **consolidated** patches — there are two
   since 2026-10-12: `gbarecomp-local.patch` (one pristine→dev diff of
-  gbarecomp; exports with the nested gitlink excluded),
+  gbarecomp; exports with the nested gitlink excluded) and
   `arm-recomp-core-local.patch` (the nested `external/arm-recomp-core`
-  repo's first local patch) and `recomp-ui-local.patch` (the `recomp-ui/`
-  submodule; settings-overlay list scrolling, ffta-recomp issue #24 — the
-  runtime UI is recomp-ui code, so a menu behavior fix lives there, not in
-  `src/`); the per-feature files are reference diffs
+  repo's first local patch); the per-feature files are reference diffs
   only — their contexts interleave and do not stack in any order (verified
   2026-10-09). `tools/check.py --only patches` validates all of them
   (forward against the pristine pin, reverse when applied;
-  `arm-recomp-core-*` and `recomp-ui-*` files are routed to those repos by
-  filename prefix) and
+  `arm-recomp-core-*` files are routed to the nested repo by filename
+  prefix) and
   **replays pin + each consolidated patch, requiring a byte-match with the
   corresponding dev tree** — it fails on drift or a stale consolidated
-  patch. The recomp-ui tests that cover the patch run as suite `ui-tests`
-  (`tools/ui_check.py`). Re-export commands: `tools/patches/README.md`.
+  patch. Re-export commands: `tools/patches/README.md`.
 
 ## Run examples
 

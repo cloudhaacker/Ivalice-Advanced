@@ -21,8 +21,9 @@ live in [THIRD_PARTY_ATTRIBUTION.md](../THIRD_PARTY_ATTRIBUTION.md).
 
 - [mstan/gbarecomp](https://github.com/mstan/gbarecomp) — the
   recompilation framework (read its `PRINCIPLES.md`, `DEBUG.md`,
-  `docs/TOML_SCHEMA.md`); [recomp-ui](https://github.com/mstan/recomp-ui)
-  for the launcher/runtime UI.
+  `docs/TOML_SCHEMA.md`); the pre-boot launch screen is the framework
+  fork's ([james2doyle/gbarecompx](https://github.com/james2doyle/gbarecompx))
+  raygui launcher.
 - [mstan/EmeraldRecomp](https://github.com/mstan/EmeraldRecomp) and
   [mstan/WarioWareTwistedRecomp](https://github.com/mstan/WarioWareTwistedRecomp) —
   reference implementations for the widescreen margin/UI-anchoring model
@@ -46,9 +47,10 @@ disassembly and cited; community sources are the map, never the evidence.
 Nothing here would exist without work other people shared:
 
 - **[mstan](https://github.com/mstan)** — the
-  [gbarecomp](https://github.com/mstan/gbarecomp) framework and
-  [recomp-ui](https://github.com/mstan/recomp-ui), plus the reference-game
-  recompilations and the R.A.I.D. community around them.
+  [gbarecomp](https://github.com/mstan/gbarecomp) framework (and the
+  recomp-ui runtime UI it shipped through most of this project's life),
+  plus the reference-game recompilations and the R.A.I.D. community
+  around them.
 - **Bregalad and loveemu** — "GBA Mus Ripper" / `sappy_detector.c` behind
   the m4a engine detection ([berg8793](https://github.com/berg8793/gba-mus-ripper)
   and [CaptainSwag101](https://github.com/CaptainSwag101/gba-mus-ripper)

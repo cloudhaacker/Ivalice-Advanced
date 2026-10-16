@@ -48,11 +48,11 @@ Framework truth supersedes any summary here:
 ## Running the built game
 
 For play, run the self-built binary directly. With no arguments it opens
-the [recomp-ui](https://github.com/mstan/recomp-ui) launcher — select your
-ROM and select **Play**. The BIOS is pre-filled from `game.toml` (the
-bundled clean-room build); launcher settings persist in
-`build/config.ini`, and the **Skip launcher** toggle boots straight into
-the game. To bypass the UI entirely:
+the pre-boot launch screen — the first boot opens the native file picker;
+pick your ROM and select **Play**. The BIOS is pre-filled from `game.toml`
+(the bundled clean-room build), the pick is cached in `rom.cfg`, and the
+in-game menu's settings persist in `config.ini`/`keybinds.ini` beside the
+executable. To bypass the screen entirely:
 
 ```sh
 ./build/FFTARecomp --bios bios/emibios_gba_bios.bin --rom game.gba
@@ -97,7 +97,7 @@ step detects whether it is already done.
 | `build.py` | Fresh-clone bootstrap — submodules → dumps → venv → patches → tools → BIOS → corpus → build → smoke ([README § Quick start](../README.md#quick-start)) |
 | `build_apk.py` | Android bootstrap — preflight → private Gradle build (ROM embedded; BIOS bundled from `bios/`) → APK content guard → install + device gate ([android/README.md § Build](../android/README.md)) |
 | `game.toml` | Per-game config: identity pin + all audit seeds (evidence in `note`s) |
-| `src/` | Host integration: `main.cpp` (hooks/plugins), launcher boot, stack setup |
+| `src/` | Host integration: `main.cpp` (hooks/plugins, launch-screen boot), `ffta_ram_dispatch.h`, stack setup |
 | `android/` | Android target: Gradle project + engine-shell wiring, runtime TOML, payload defaults, device gate — guide `android/README.md` |
 | `tests/` | Host unit tests + the testing guide — playtesting, healing loop, gates, CI (`tests/README.md`) |
 | `docs/` | This guide + the manual setup route (`docs/manual-build.md`) |
@@ -109,7 +109,7 @@ step detects whether it is already done.
 | `tools/` | The harness — full list in `tools/README.md` |
 | `reference/` | Study notes, sources, and credits — `reference/README.md` |
 | `.agents/skills/` | Project-local agent skills — `gbarecomp-recomp-playbook`, a portable healing-loop/audit playbook |
-| `gbarecomp/`, `recomp-ui/` | Pinned framework submodules — do not update casually (pins + local patches: `reference/dev-gotchas.md`) |
+| `gbarecomp/` | Pinned framework submodule — do not update casually (pins + local patches: `reference/dev-gotchas.md`). The build prefers an in-tree `gbarecompx/` framework checkout when present (the framework dev fork — see `.gitignore` and BRINGUP) |
 | `BRINGUP.md` | Decision log — the project's memory; read it |
 | `AGENTS.md` | Rules of engagement for agents and contributors |
 | `THIRD_PARTY_ATTRIBUTION.md` | Third-party terms and redistribution rules |

@@ -104,7 +104,7 @@ cmake --build build --target FFTARecomp --parallel 8
 | Android static checks (device-free) | `tools/android_static_check.py` — suite `android-static` in `tools/check.py` |
 | Android APK content guard | `tools/android_apk_check.py [--apk …] [--expect public/private]` — opt-in `check.py --only android-apk` |
 | Release packager (issue #3 R-track) | `.venv/bin/python tools/make_release.py [--apk \| --windows] [--version V]` — allowlist stage → private-material sweep → deterministic portable zip (Linux zip + public APK + static Windows exe) |
-| MinGW cross prefix (R2) | `.venv/bin/python tools/win_cross_deps.py build` — pinned static zlib/freetype/harfbuzz/SDL2 into `cross-prefix/` (idempotent `.done` markers; `status`, `clean`, `purge`) |
+| MinGW cross prefix (R2) | `.venv/bin/python tools/win_cross_deps.py build` — pinned static raylib into `cross-prefix/` (idempotent `.done` markers; `status`, `clean`, `purge`) |
 | Widescreen smoke | `.venv/bin/python tools/ws_check.py` (fixtures `saves/ws_fixtures/`) |
 | Playtest (windowed, instrumented) | `tools/play.sh [--scale N \| --resize-view \| --tcp-observe PORT]` |
 | Attract golden gate | `.venv/bin/python tools/attract_check.py` (`--repin` only for deliberate changes) |
@@ -119,15 +119,15 @@ cmake --build build --target FFTARecomp --parallel 8
 | Path | What |
 |---|---|
 | `game.toml` | Per-game config: identity pin + all audit seeds (evidence in `note`s) |
-| `src/` | Host code: `main.cpp` (hooks/plugins), `ffta_ram_dispatch.h`, launcher boot |
+| `src/` | Host code: `main.cpp` (hooks/plugins), `ffta_ram_dispatch.h`, pre-boot launch-screen call |
 | `android/` | Android target: Gradle project, runtime TOML, payload defaults, device gate — guide `android/README.md` |
 | `generated/` | Recompiler output — gitignored, never edited |
 | `tools/` | The harness — key ones listed in the table above; full list: `tools/README.md` |
 | `.agents/skills/` | `gbarecomp-recomp-playbook` — portable playtest/healing/audit playbook (SKILL.md routes its references) |
 | `mods/` `inputs/` `symbols/` `reference/` | Widescreen catalog; input traces; symbol seeds; study notes |
-| `gbarecomp/`, `recomp-ui/` | Pinned submodules — do not update casually (pins + local patches: `reference/dev-gotchas.md`) |
+| `gbarecomp/` | Pinned submodule — do not update casually (pins + local patches: `reference/dev-gotchas.md`). The build prefers an in-tree `gbarecompx/` framework checkout when present (gitignored dev fork — the launch screen + tinyfd picker live there) |
 
-## Status (2026-10-11)
+## Status (2026-10-18)
 
 All phases complete; **every executed path strict-FULLY_STATIC**; corpus
 **63,134 emitted units** (device-resume healing batch, BRINGUP late);
@@ -148,34 +148,35 @@ sheet, upstream note on the bridge stop-contract, APK release-signing key
 (`release.yml` tag job still queues). History, evidence,
 crash playbooks: `BRINGUP.md`.
 
-### Launcher track (2026-10-16) — replaces recomp-ui with raygui launch screen
+### Launcher track (2026-10-16 → 2026-10-18, complete) — recomp-ui removed; raygui launch screen
 
-Plan: `.opencode/RAYGUI_LAUNCHER.md`. Decision: recomp-ui removed entirely;
-pre-boot surface is a minimal raygui screen (Play, Select ROM, drag-and-drop,
-gamepad nav) behind a swappable `LauncherBackend` contract (`src/launcher.h`).
-tinyfiledialogs vendored for native file dialogs. No pre-boot settings cards.
+Plan: `.opencode/RAYGUI_LAUNCHER.md`. recomp-ui removed entirely
+(submodule, seam flags, patches, `ui-tests` suite, SDL2/freetype/harfbuzz
+cross-deps). The pre-boot surface is **framework code in the gbarecompx
+fork** (not game-repo `src/` — plan erratum corrected 2026-10-18):
+`gbarecompx/src/runtime/launcher.h` (`LauncherBackend` contract),
+`launcher_raygui.cpp` (Play / Select ROM / drag-and-drop / gamepad nav /
+first-boot picker), `launch_screen_model.h` — with tinyfiledialogs
+v3.21.2 vendored at `gbarecompx/third_party/tinyfiledialogs/` for native
+dialogs on every platform (console fallback disabled via the
+`tinyfd_query` probe — headless fails fast, never blocks on stdin).
+`asset_picker` dialog loop ungated (Win32 impls replaced with tinyfd);
+`force_pick` fixes Select ROM silently no-op'ing on a valid cache.
+Settings live only in the in-game menu; `--rom`/`--bios`/`--no-window`/
+`--frames`/`--load-state`/`--tcp` skip the screen. Box art: Justme488 USA
+cover (license unknown, sign-off given 2026-10-16; URL + SHA-256 +
+EmuMovies credits in `THIRD_PARTY_ATTRIBUTION.md`), staged beside the exe
+as `assets/img/boxart.png` (dev: CMake `stage_boxart`; release: packager).
+Attract golden unchanged throughout (`1EF4C118…`).
 
-**Phase 0 (spikes):** S1 tinyfiledialogs — `tinyfd_query` returns `no_solution`
-+ NULL on this box (no zenity); fail-fast works, no stdin block. S2 raygui on
-raylib 6 — `GuiSetFocused`/`GuiSetState` gamepad edges usable; default font
-acceptable (no bundled TTF needed); window handoff confirmed (attract
-byte-identical when screen framed out).
-
-**Phase 1 (contract + vendoring):** `src/launcher.h` contract +
-`test_launcher_contract.cpp` (mock backend) — PASS. tinyfiledialogs v3.21.2
-vendored to `gbarecompx/third_party/tinyfiledialogs/`, `gbarecomp_tinyfiledialogs`
-target — builds clean. raygui v5.1-dev vendored to `src/vendor/raygui/`,
-`ffta_raygui_links_tests` target + test — PASS (exit 0). Box art: Justme488
-USA box art (license unknown, sign-off given 2026-10-16; commit records URL +
-SHA-256 + EmuMovies credits, no license text staged).
-
-**Phase 2 (asset picker):** `asset_picker.cpp` dialog loop ungated (all platforms
-run argv → cache → dialog → warn → loop); Win32 `GetOpenFileNameA`/`MessageBoxA`
-replaced with unified tinyfiledialogs impls; `kAssetDialogError`/`kAssetDialogWarning`
-replace Win32 `MB_OK|MB_ICON*` flags. `asset_picker_seam.h` function-pointer
-seam added; `asset_picker_tests` PASS (exit 0). `gbarecomp_tinyfiledialogs`
-linked PUBLIC into `gbarecomp_runtime`; Windows links updated to `comdlg32 ole32
-winmm`. FFTARecomp links clean; attract golden unchanged.
+**Remaining (launcher track):** repoint the build at the published
+gbarecompx remote — the `.gitignore` deferral. Until then the game binary
+requires an in-tree `gbarecompx/` checkout: the pinned-submodule fallback
+lacks `src/runtime/launcher.h`, so fresh clones cannot build FFTARecomp
+(tier-1 CI stays green only because it never builds the game binary; the
+raylib-backend CI job skips cleanly while gbarecompx is untracked).
+Framework-side follow-ups (dead `launcher_seam.h` et al. in gbarecompx,
+Flatpak XDG portal) are logged in BRINGUP, not dropped.
 
 ## Reference index (load what the task needs)
 

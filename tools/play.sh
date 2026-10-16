@@ -26,7 +26,6 @@
 #              19850   NOTE: plain --tcp is structurally headless (the TCP
 #              branch returns before window init) — never combine it with a
 #              window.
-#          tools/play.sh --launcher       run the settings UI first
 #          tools/play.sh --scale 8        bigger window: Nx240 x Nx160
 #              pixels (scale 1-8; 8 = 1920x1280 on a 4K-class display)
 #          tools/play.sh --fullscreen     borderless desktop fullscreen

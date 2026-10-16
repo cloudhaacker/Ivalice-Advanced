@@ -43,8 +43,9 @@ start, features, controls, building); running and display options live in
     service-switch + epilogue). **Local-only:** the retail dump is
     BIOS-derived and never in git (`gbarecomp/.gitignore bios/*.bin`);
     the test skips on any checkout without it (CI included). Since the
-    issue #17 swap this is REFERENCE material (the launcher-accepted
-    alternative + the oracle's default), not the launch BIOS.
+    issue #17 swap this is REFERENCE material (a user-supplied
+    alternative the picker still accepts + the oracle's default), not
+    the launch BIOS.
   - **`emibios_gba_bios.bin` byte-pin** (`EmibiosBytePinTests`) — the
     same contract-point discipline for the COMMITTED launch BIOS
     (clean-room emibios, `bios/`, LGPL): sha1/size, exception vectors,
@@ -62,12 +63,7 @@ start, features, controls, building); running and display options live in
     2026-10-11 "corpus is stale forever" lesson).
 - `tools/check.py` runs both, plus the patches check (every per-feature
   patch must also **forward-apply on the pristine pin** — the CI condition;
-  dev-based exports go INVALID there), the recomp-ui runtime-UI tests
-  (`tools/ui_check.py`, suite `ui-tests` — the in-game settings overlay is a
-  patched submodule, so its model + ImGui presentation tests run too; builds
-  with just a C/C++ compiler, no ROM. On a pristine checkout — CI — it
-  builds upstream's tests unchanged, so the patched behavior is covered
-  locally, not there), the attract gate,
+  dev-based exports go INVALID there), the attract gate,
   widescreen smoke and strict route replays (below).
 
 ---
@@ -89,7 +85,6 @@ playtests cannot clobber each other.
 | `tools/play.sh --scale N` | bigger window (1–8; 8 = 1920×1280) |
 | `tools/play.sh --resize-view` | widescreen windowed — the view follows the window (up to 448 px; fixed width: `--view-width 320\|384\|448`; default stays faithful 240) |
 | `tools/play.sh --fullscreen` | borderless desktop fullscreen |
-| `tools/play.sh --launcher` | run the settings UI first |
 | `tools/play.sh --tcp-observe PORT` | window + read-only debug port (see below) |
 | `tools/play.sh --save-path saves/copy.sav` | play a different battery save (last flag wins; work on a copy — in-game saves rewrite the file) |
 
@@ -249,7 +244,7 @@ flowchart TD
     class Abort,Fix failure
 ```
 
-**1 — Play.** `tools/play.sh [--scale 8]` and just play. The launcher
+**1 — Play.** `tools/play.sh [--scale 8]` and just play. The script
 instruments everything:
 
 | Artifact | What it is |

@@ -83,6 +83,14 @@ cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DGBARECOMP_ENABLE_MODS=
 cmake --build build --target FFTARecomp --parallel 8
 ```
 
+> **The game binary currently requires an in-tree `gbarecompx/` checkout**
+> (the framework dev fork — gitignored, not distributed; see `.gitignore`
+> and BRINGUP). The configure prefers it when present
+> (`GBARECOMP_ROOT`); the pinned-submodule fallback lacks the launch-screen
+> contract (`src/runtime/launcher.h`), so `src/main.cpp` does not compile
+> against it. Repointing the build at the published gbarecompx remote is
+> the remaining launcher-track item (BRINGUP § Phase 7).
+
 (`GBARECOMP_ENABLE_MODS=ON` links the framework's mod lifecycle APIs —
 activation/reset plugins, view-width requests — used by the game's
 widescreen hooks; verified gate-neutral.)
@@ -117,15 +125,16 @@ use `tools/play.sh` (guide: [`tests/README.md`](../tests/README.md)).
 - Launch aborts with an identity/hash error → wrong or missing dump; compare
   against the pinned SHA-1s (ROM: root README § Building from source; BIOS:
   `bios/README.md`).
-- CMake cannot find SDL2 → install the dev package (see root README
-  § Building from source).
+- CMake cannot find OpenGL/X11 development headers → install them (the
+  Debian/Ubuntu set is listed in the root README § Building from source).
 - MinGW cross (static Windows build, R2): the toolchain is
   `mingw-w64-toolchain` from pacman (`x86_64-w64-mingw32-gcc` — check with
   `command -v`); the dependency prefix is built from pinned sources, not
   packages (`tools/win_cross_deps.py build` — Arch ships no mingw binary
-  library packages, MSYS2 is Windows-only). A dynamic `libz.dll`/`SDL2.dll`
-  import in the exe means the prefix leaked a DLL and the objdump guard
-  will say so — rebuild the prefix after pruning, then the exe.
+  library packages, MSYS2 is Windows-only). A dynamic third-party DLL
+  import in the exe (libstdc++/winpthread/…) means the prefix leaked a
+  DLL and the objdump guard will say so — rebuild the prefix after
+  pruning, then the exe.
 - `import capstone` fails in tools → step 3's venv (use
   `.venv/bin/python tools/...`).
 - A submodule directory is empty after cloning → step 1's retry line.
