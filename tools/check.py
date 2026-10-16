@@ -394,6 +394,52 @@ def check_hangrepro():
     return r.returncode == 0, line or f"exit {r.returncode}"
 
 
+def check_raylib_headless():
+    """Headless tier (Phase 5, required): the standalone framework with
+    raylib on PLATFORM_MEMORY (rlsw software GL), driven with no display
+    server at all.
+
+    Configures `build-raylib-headless/` (its own dir: a dir caches its
+    source AND its flag set), builds the whole framework test set there,
+    runs full ctest, then runs the smoke binary directly with
+    DISPLAY/WAYLAND_DISPLAY scrubbed and requires the `tier=rlsw headless`
+    report line -- the gate states which tier ran, not just exit 0.
+
+    Opt-in locally (first run fetches + builds raylib, minutes; needs
+    network on first run); CI runs it every push (the `headless` job).
+    Skips cleanly when the gbarecompx tree is absent."""
+    if not (REPO / "gbarecompx/src/runtime/raylib_backend.cpp").exists():
+        return True, "skipped (no gbarecompx tree)"
+    build = REPO / "build-raylib-headless"
+    cfg = ["cmake", "-S", str(REPO / "gbarecompx"), "-B", str(build),
+           "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release",
+           "-DGBARECOMP_USE_RAYLIB=ON", "-DGBARECOMP_RAYLIB_HEADLESS=ON"]
+    r = run(cfg, timeout=900)
+    if r.returncode != 0:
+        return False, "headless configure failed (needs network on first run)"
+    r = run(["cmake", "--build", str(build), "--parallel", "4"], timeout=1500)
+    if r.returncode != 0:
+        errs = [ln for ln in (r.stdout + r.stderr).splitlines()
+                if "error:" in ln]
+        return False, (errs[0].strip() if errs else "headless build failed")
+    r = run(["ctest", "--test-dir", str(build), "--output-on-failure"],
+            timeout=900)
+    if r.returncode != 0:
+        return False, "headless ctest failed"
+    exe = build / "raylib_headless_tests"
+    env = clean_env()
+    env.pop("DISPLAY", None)
+    env.pop("WAYLAND_DISPLAY", None)
+    r = run([str(exe)], env=env, timeout=300)
+    out = r.stdout + r.stderr
+    if r.returncode != 0:
+        lines = [ln for ln in out.splitlines() if ln.strip()]
+        return False, (lines[-1][-160:] if lines else "headless smoke failed")
+    if "tier=rlsw headless" not in out:
+        return False, "smoke passed without reporting the headless tier"
+    return True, "PASS (rlsw headless, DISPLAY unset)"
+
+
 def check_raylib_compile():
     """Compile the RaylibBackend against real raylib 6 (opt-in).
 
@@ -623,6 +669,7 @@ CHECKS = {
     "raylib-backend": check_raylib_backend,
     "backend-default": check_backend_default,
     "raylib-compile": check_raylib_compile,
+    "raylib-headless": check_raylib_headless,
     "hangrepro": check_hangrepro,
     "desktop-accept": check_desktop_accept,
     "desktop-accept-window": check_desktop_accept_window,
@@ -649,7 +696,7 @@ FAST = ["unit-cpp", "unit-py", "ui-tests", "savecheck", "patches",
 # but IS run by CI: the raylib-backend job in .github/workflows/ci.yml needs no ROM
 # and no display, so it is cheap enough to gate every push. It skips cleanly while
 # gbarecompx/ is untracked.
-OPTIONAL = {"android-apk", "release", "raylib-compile"}
+OPTIONAL = {"android-apk", "release", "raylib-compile", "raylib-headless"}
 # Checks that execute the game binary (require it to exist); the others run
 # on a fresh clone without the ROM (CI tier 1: unit-cpp, unit-py, ui-tests,
 # patches).
