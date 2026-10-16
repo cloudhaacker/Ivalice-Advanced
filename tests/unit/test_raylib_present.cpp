@@ -36,6 +36,11 @@ static bool have_display() { return true; }
 #include "raylib_backend.h"
 
 #include "host_overlay.h"
+// The shaded-output checks below compare what the GPU actually put on screen
+// against the CPU mirror, so they need the same policy the shader was built
+// from: the grid, the mask, and the layout that produced them.
+#include "lcd_shader.h"
+#include "presentation_layout.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -773,6 +778,133 @@ int main() {
         check(b.video().readback(got_t, tw, th) && got_t == tick_f,
               "disabled interp tick presents nothing");
     }
+    // ---- the shaded OUTPUT, read back from the framebuffer -------------------
+    // Everything above asserts the CPU staging buffer, which is pre-shader by
+    // design. So a shader that computes a correct mask and then writes the
+    // MASK ITSELF instead of the masked texel passes every check above while
+    // the screen turns into a flat near-white wash -- observed live on the
+    // first version of the game-space grid, which is exactly why this exists.
+    //
+    // The comparison is against the CPU mirror, and it is done RELATIVELY: the
+    // same frame is read back unshaded and shaded, and only pixels that are
+    // clean in both reads are compared. That makes the check immune to whatever
+    // a compositor may have smeared over the window (a cursor, a partially
+    // redrawn region) -- an artifact moves or differs between reads, so it is
+    // skipped rather than reported as a shading failure. GL-only: rlsw compiles
+    // the shader entry points out, and there is no framebuffer to read.
+#if !defined(PLATFORM_MEMORY)
+    if (b.caps().shaders) {
+        // Isolate the grid: dither perturbs by design (+-4 LSB), deband
+        // softens, and the frame blend mixes in history. All three are covered
+        // on their own, so switch them off: this check is about the mask
+        // multiplying the frame, nothing else. Earlier sections leave some of
+        // them on.
+        set_lcd_dither(b, 0.0f);
+        set_lcd_deband(b, 0.0f);
+        set_frame_interp(b, false);
+        set_frame_blend(b, false);
+        ::unsetenv("GBARECOMP_LCD_SHADER");
+
+        const std::uint8_t level = 200;
+        const std::vector<std::uint8_t> flat(kBaseW * kBaseH * 3u, level);
+
+        // Read twice per configuration: a pixel that differs between the two
+        // reads was not ours to judge.
+        auto grab = [&](bool lcd_on, std::vector<unsigned char>& out, int& w,
+                        int& h) {
+            set_lcd(b, lcd_on);
+            b.video().present(flat.data(), true);
+            Image img = LoadImageFromScreen();
+            w = img.width;
+            h = img.height;
+            const unsigned char* bytes = static_cast<const unsigned char*>(img.data);
+            out.assign(bytes, bytes + static_cast<std::size_t>(w) * h * 4u);
+            UnloadImage(img);
+        };
+        std::vector<unsigned char> u1, u2, s1, s2;
+        int uw = 0, uh = 0, sw = 0, sh = 0;
+        grab(false, u1, uw, uh);
+        grab(false, u2, uw, uh);
+        grab(true, s1, sw, sh);
+        grab(true, s2, sw, sh);
+        check(uw == sw && uh == sh && sw > 0, "both reads are the drawable");
+
+        int dw4 = 0, dh4 = 0;
+        b.video().drawable_size(&dw4, &dh4);
+        const gbarecomp::PresentationLayout lay4 =
+            gbarecomp::compute_presentation_layout(dw4, dh4, kBaseW, kBaseH);
+        const gbarecomp::PresentGrid grid4 =
+            gbarecomp::resolve_present_grid(lay4, kBaseW, kBaseH);
+
+        if (uw == sw && uh == sh && sw > 0) {
+            auto chan = [&](const std::vector<unsigned char>& img, int x, int y,
+                            int c) {
+                return img[(static_cast<std::size_t>(y) * sw + x) * 4u +
+                           static_cast<std::size_t>(c)];
+            };
+            int compared = 0, matched = 0, brighter = 0, skipped = 0;
+            for (int y = lay4.y; y < lay4.y + lay4.height && compared < 400;
+                 y += 5) {
+                for (int x = lay4.x; x < lay4.x + lay4.width && compared < 400;
+                     x += 7) {
+                    // Clean in BOTH unshaded reads and equal to the source?
+                    bool clean = true;
+                    for (int c = 0; c < 3; ++c)
+                        clean = clean && chan(u1, x, y, c) == chan(u2, x, y, c) &&
+                                chan(u1, x, y, c) == level;
+                    for (int c = 0; c < 3; ++c)
+                        clean = clean && chan(s1, x, y, c) == chan(s2, x, y, c);
+                    if (!clean) {
+                        ++skipped;
+                        continue;
+                    }
+                    // gl_FragCoord counts from the bottom; the image is
+                    // top-left origin.
+                    const gbarecomp::LcdMask want = gbarecomp::lcd_pixel_mask_game(
+                        static_cast<float>(x) + 0.5f,
+                        static_cast<float>(sh - 1 - y) + 0.5f, grid4);
+                    const std::uint8_t want_r =
+                        static_cast<std::uint8_t>(want.r * level + 0.5f);
+                    const std::uint8_t want_g =
+                        static_cast<std::uint8_t>(want.g * level + 0.5f);
+                    const std::uint8_t want_b =
+                        static_cast<std::uint8_t>(want.b * level + 0.5f);
+                    const auto near = [](std::uint8_t a, std::uint8_t b2) {
+                        return (a > b2 ? a - b2 : b2 - a) <= 2;
+                    };
+                    ++compared;
+                    matched += near(chan(s1, x, y, 0), want_r) &&
+                                       near(chan(s1, x, y, 1), want_g) &&
+                                       near(chan(s1, x, y, 2), want_b)
+                                   ? 1
+                                   : 0;
+                    // The mask is a multiplier: nothing may come out brighter
+                    // than the frame that went in. The mask-written-as-colour
+                    // bug lands here, at ~200 -> 255 instead of ~200 -> 140.
+                    if (chan(s1, x, y, 0) > level || chan(s1, x, y, 1) > level ||
+                        chan(s1, x, y, 2) > level)
+                        ++brighter;
+                }
+            }
+            check(compared >= 100,
+                  "enough clean pixels to judge the shaded output");
+            check(matched == compared,
+                  "every shaded pixel equals the CPU mirror times the source");
+            check(brighter == 0,
+                  "the mask multiplies: no pixel comes out brighter than in");
+            // The grid is confined to the image: a bar pixel must be identical
+            // shaded and unshaded (it is never touched).
+            if (lay4.x >= 4) {
+                const int bx = lay4.x / 2, by = sh / 2;
+                const bool same = chan(s1, bx, by, 0) == chan(u1, bx, by, 0) &&
+                                  chan(s1, bx, by, 1) == chan(u1, bx, by, 1) &&
+                                  chan(s1, bx, by, 2) == chan(u1, bx, by, 2);
+                check(same, "the letterbox is unshaded");
+            }
+        }
+        set_lcd(b, false);
+    }
+#endif  // !PLATFORM_MEMORY
 
     // ---- assumption check: does the upload path actually reach the GPU? ----
     // GL-only: under rlsw (PLATFORM_MEMORY) LoadImageFromTexture cannot round-

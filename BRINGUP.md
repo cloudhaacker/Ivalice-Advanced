@@ -7854,3 +7854,36 @@ Evidence: framework 68/68, FFTARecomp builds, attract 1EF4C118
 byte-identical after every commit. Open: save-state menu rows; full
 README trio. Note: lcd_shader_tests red during the audit belongs to the
 separate LCD-grid rework (see its BRINGUP entry), untouched here.
+
+## 2026-10-16 — LCD white screen: the mask was written instead of applied
+
+**Reported from the settings menu**: turning the LCD shader on showed a white
+screen; off was fine. Root cause was mine, in `b95eec7`'s game-space rewrite:
+the shader computed the mask correctly and then wrote **the mask itself** as
+`finalColor` — the multiply by the sampled texel went missing. At 3x the mask
+is (0.6, 0.6, 1.0), so the screen became a flat near-white wash that ignored
+the frame completely. Fixed in `a170679`.
+
+**Why nothing caught it.** Every existing LCD check asserts `readback()` /
+`copy_presented_frame()`, which serve the CPU staging buffer *pre-shader by
+design* — so "the shader ran" and "the mask is right" could both be true while
+the pixels were wrong. That is a real hole in the earlier evidence, not just a
+missing assertion: the night-12 screenshots proved the reference shader (which
+multiplied) and I carried the claim forward without re-proving the composition.
+
+**Diagnosis that made it obvious** (worth repeating): present a *level sweep*
+through the real backend and read the framebuffer — 40/128/200 all produced
+153,153,255, i.e. the output was independent of the input. A single flat frame
+can hide this; three levels cannot. The first probe read red and I took
+"153,153,255" for an expected value instead of computing what it should be.
+
+**New guard** (`tests/unit/test_raylib_present.cpp`, real-GL tier): read the
+framebuffer via `LoadImageFromScreen`, twice per configuration with the same
+frame pushed unshaded and shaded, compare only pixels that are stable and equal
+to the source in both reads (which makes the check immune to compositor
+smearing over the window), and require the shade to equal
+`lcd_pixel_mask_game(...) * source` within 2 LSB — plus "nothing may come out
+brighter than it went in". Negative control: re-introducing the missing
+multiply fails exactly these two assertions; the fix passes them. The pure
+tier also asserts the composition textually (`tex.rgb * mask`) in both
+dialects, since that is the one-token mistake.
