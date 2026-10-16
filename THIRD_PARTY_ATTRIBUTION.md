@@ -121,11 +121,8 @@ art from [Justme488/3-D-Box-Art](https://github.com/Justme488/3-D-Box-Art)
 `third_party/` directory to build the frame-diff oracle. Not tracked, not
 redistributed here.
 
-## Ported tool
-
-| Our file | Upstream | What | Terms |
-|---|---|---|---|
-| `tools/m4a_detect.py` | Bregalad & loveemu — `sappy_detector.c` ("GBA Mus Ripper" lineage; forks: [berg8793](https://github.com/berg8793/gba-mus-ripper), [CaptainSwag101](https://github.com/CaptainSwag101/gba-mus-ripper)) | Faithful Python port of the Sappy/m4a engine-detection logic | Upstream states: "GBAMusRipper is free and open source software. Anyone is free to redistribute it ... but just give me (Bregalad) credit." Credit is given in the file header; no formal upstream license text exists. |
+(The `m4a_detect.py` ported-tool credit moved with the tool into the
+framework's `gbarecompx/THIRD_PARTY_ATTRIBUTION.md`, 2026-10-18.)
 
 ## Patterns (approach credited; no code copied)
 
