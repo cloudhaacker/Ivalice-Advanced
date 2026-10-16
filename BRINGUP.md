@@ -7774,3 +7774,9 @@ Four test groups was one too many: the standalone job compiled nothing
 new (same GL binary), so its Xvfb tier + no-early-out proof moved into
 `raylib` (net -44 lines, back to 4 jobs: stub, raylib, headless, guard).
 Plan §5.4 table/rules updated. Re-proof on next push.
+
+## 2026-10-16 — Fold re-proof on push (both repos green)
+
+Framework `ci` 38838990626: 4/4 (folded raylib+Xvfb tier green).
+FFTA tier-1 38839313117: success (covers the backend-default HEADLESS
+guard, 6.1/6.2, fold log). No open CI items.
