@@ -7887,3 +7887,14 @@ brighter than it went in". Negative control: re-introducing the missing
 multiply fails exactly these two assertions; the fix passes them. The pure
 tier also asserts the composition textually (`tex.rgb * mask`) in both
 dialects, since that is the one-token mistake.
+
+**Measured after the fix** (synthetic flat card through the real backend,
+readback via `LoadImageFromScreen`, harness in `/tmp` like the night-12 one):
+stripe transitions measure 2.975 per game pixel at 3x/4.1625/6/6.75/8 (i.e.
+one triad per game pixel, the 0.025 being the sampling window), dark/striped
+bands alternate one per game row, and the dark-row delta on mid-grey (128) is
+**4.0 LSB at 3x, 6x and 8x and 3.9 LSB at fractional scales** — so the 0.7 row
+level that replaced 0.5 still holds at the 8-px pitch the game-space rows
+produce at 8x. That closes the open item from the grid change ("the 8x
+dark-row LSB measurement still needs a windowed run"): the pitch got coarser,
+the amplitude did not.
