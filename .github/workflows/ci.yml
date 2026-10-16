@@ -34,7 +34,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            ninja-build libsdl2-dev libgl-dev libfreetype-dev libharfbuzz-dev
+            ninja-build libgl-dev
 
       # unit-py imports tools/misspack.py, which needs capstone. Local runs
       # always use .venv (docs/manual-build.md); the runner needs the same dep on
@@ -54,8 +54,8 @@ jobs:
       - name: Configure
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 
-      - name: Gate (unit-cpp, unit-py, ui-tests, patches, android-static)
-        run: python3 tools/check.py --only unit-cpp,unit-py,ui-tests,patches,android-static
+      - name: Gate (unit-cpp, unit-py, patches, android-static)
+        run: python3 tools/check.py --only unit-cpp,unit-py,patches,android-static
 
   raylib-backend:
     # Compiles the raylib PRODUCT backend (the default since Phase 4c) and RUNS
