@@ -8238,3 +8238,108 @@ fallback if the file is absent.
 `.opencode/RAYGUI_LAUNCHER.md` except the repoint (item 1 above), with
 the after-shots and hash deltas recorded here. The launcher track is
 hand-back ready.
+
+## 2026-10-18 — The fork becomes the framework: gbarecompx rename + repoint, emibios default, patch-suite retirement
+
+**Action.** Three entangled structural changes, landed as one migration
+commit (`0d6b0c1`) plus this entry:
+
+1. **Submodule rename + repoint.** `git mv gbarecomp gbarecompx`;
+   `.gitmodules` section + path renamed, URL = the published
+   `james2doyle/gbarecompx.git` (https, for CI/fresh clones); gitlink =
+   `8144ab2`. Mechanics beyond `git mv`: the module gitdir moved
+   (`.git/modules/gbarecomp` → `gbarecompx`), the submodule `.git`
+   pointer file and all three nested submodule gitdir pointers
+   (arm-recomp-core, rbengine, recomp-net) re-pointed by hand, the
+   stale `submodule.gbarecomp` config section replaced via
+   `submodule init`/`sync`, and the leftover untracked
+   `platform/android/third_party/SDL` skeleton from the transient
+   `ecc9c55` checkout deleted. Post-state: `gbarecompx` @ `8144ab2`
+   initialized, clean, on `heads/main`; nested arm-recomp-core @
+   `cd010b5`.
+2. **emibios default (fork-side `baf31ab`).** Runtime pin, asset-picker
+   fallback, netplay lockstep gate (`kEmibiosSha1`), Gradle templates
+   ×2 + `GbaGameConfig.java`. Game side: `android_static_check` now
+   expects the emibios template default (`RETAIL_BIOS_SHA1` constant
+   removed). The game's own `[bios]` config was already emibios since
+   issue #17 — this closes the framework half.
+3. **Patch-suite retirement.** `tools/patches/` (17 files) deleted —
+   feature-by-feature audit first proved the fork subsumes all of them;
+   the `patches` suite removed from `check.py` (registry/FAST/help);
+   `build.py` step_patches removed; CI gate string →
+   `unit-cpp,unit-py,android-static`; recorded-patch fallbacks deleted
+   from `android_static_check`; the patches-parity unit test deleted;
+   the unit-test guards (`host_stack_guard`, `frame_pacer`,
+   `stick_dpad`) reworded to reference the fork as committed code.
+
+**Supporting moves.** `GBARECOMP_ROOT` resolves straight to the
+submodule (no in-tree preference); `.gitignore` carve-out removed;
+Android engine root defaults to `gbarecompx/` (dead `-PrecompUiRoot`/
+`RECOMP_UI_ROOT` plumbing deleted); CI tier-1 pins the stub
+(`-DGBARECOMP_USE_RAYLIB=OFF`) so the cheap gate stays cheap while the
+raylib-backend job now runs LIVE against the fetched fork (its "inert
+until committed" comment retired; `hashFiles('gbarecompx/CMakeLists.txt')`
+cache key finally true); ~45 `gbarecomp/` path references flipped across
+build/docs/tools — `gbarecomp::` namespace, `# gbarecomp-keyinput-v1`
+trace header, `gbarecomp_*` target names, `org.gbarecomp`, skill name,
+and upstream URLs deliberately unchanged.
+
+**Fork-side commits (this session):** `78d28af` (gba_bios.h comment),
+`baf31ab` (emibios default), `52c73d9` (nested pin → cd010b5),
+`9a862e8` (retire the fork's own frozen patch machinery — its CI's
+"Submodule patches" step stopped applying once the pin carried the
+work), `8144ab2` (tail-transfer macro contract, below). Fork CI green
+through `8144ab2`; fork ctest 72/72.
+
+**The cd010b5 codegen contract catch.** The nested bump carries upstream
+`a8802bb` (guaranteed tail transfers emitted as `GBARECOMP_TAIL_CALL` /
+`GBARECOMP_TAIL_DISPATCH` / `_WITH_EXCHANGE` / `_TAIL_SWI`) and
+`c626f4e` (far-branch BLs lowered frameless through the tail form).
+Upstream defines those macros in the CONSUMER's `runtime_arm.h`
+(`7aad900` + `b3e7789` thread-local slot) — the fork had never adopted
+them, so every generated TU failed (`GBARECOMP_TAIL_DISPATCH was not
+declared in this scope`); the two runs in between were cancelled/failed
+early, so no compile signal surfaced until the CI fix run. Ported
+verbatim into `gbarecompx/src/armv4t/runtime_arm.h` (+ the
+`g_runtime_tail_arg` slot and three `void(void)` tail entry points in
+`runtime_arm.cpp`); native expansion is the historical `call; return`
+text. Also fixed the fork's stale `link_branch_test.cpp` far-BL
+assertion (`runtime_dispatch(0x08000100u);` →
+`GBARECOMP_TAIL_DISPATCH(0x08000100u);`) to the current contract.
+
+**Result.** `cycle.py` PASS — regen 63,134 functions (count unchanged),
+dispatch sanity OK, build OK, **attract `1EF4C118…` unchanged** (the
+referee holds: the codegen change is behavior-preserving on real
+frames, as upstream's token-for-token claim predicted). `check.py
+--fast` ALL PASS 7/7. `--only release` PASS. The android-static suite
+caught one real migration bug: a mass path-flip over-turned the Java
+package segment (`java/org/gbarecompx/` → the fork's actual
+`java/org/gbarecomp/`) — fixed, 24/24. Lesson recorded in dev-gotchas
+§ Submodules together with the dev-box github-https hang workaround
+(repo-local `url.insteadOf` → SSH) and the orphaned-`ninja` trap (a
+killed build's ninja child kept running and raced the next cycle's
+build, losing one parallel batch of `.o` files at link — 27 of 32
+shards present, exactly 008–015 missing).
+
+**Corrections to the sweep worth remembering:** (a) a bare-string path
+(`set(GBARECOMP_ROOT ... "/gbarecomp"`) has no trailing slash, so a
+slash-anchored sed misses it — the configure failure caught it;
+(b) an audit grep whose exclusion pattern (`GBARECOMP_`) also matches
+the same line hides exactly the bare-path miss on that line; (c) the
+same exclusion hides over-flips (`org/gbarecomp/` package dirs) because
+the flipped line contains the desired `gbarecompx` too. Audit greps
+after mechanical renames need patterns that match the TOKEN, not the
+line.
+
+**Supersedes.** The v1.6 release artifact hash pins in the release-track
+entry (`92a4eb9f…`/`d9564173…`) — the framework identity changed; the
+next tagged release re-pins. The launcher-track entry's open item 1
+(gbarecompx repoint) is CLOSED by this entry; items 2–4 stand.
+
+**Open items (unchanged set):** framework-side dead launcher files in
+the fork; Flatpak/XDG portal; APK release-signing key; runner
+registration for the tag workflow; offline-push re-trial; f6000+ contact
+sheet; upstream note on the bridge stop-contract. Stale build dirs
+(`build-headless`, `build-raylib-stub`, `build-raylib-headless`,
+`build-win`) hold caches pointing at the pre-rename path — reconfigure
+lazily on next use.
