@@ -7898,3 +7898,11 @@ level that replaced 0.5 still holds at the 8-px pitch the game-space rows
 produce at 8x. That closes the open item from the grid change ("the 8x
 dark-row LSB measurement still needs a windowed run"): the pitch got coarser,
 the amplitude did not.
+
+**Dither relocation measured live too** (same harness, dither on / grid off):
+inside one game pixel every drawable pixel carries the *same* offset (0 of 4 at
+3x, 0 of 49 at 8x differ from the block value — the property that only holds
+once the cell is indexed in game space), 14 of the 16 cells in a 4x4
+game-pixel neighbourhood differ from each other, and the cell mean is 127.6
+against a source of 128: the grain moved to the game-pixel cadence with the
+brightness preserved.
