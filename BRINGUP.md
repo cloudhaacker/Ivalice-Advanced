@@ -8610,3 +8610,20 @@ The pixel-level assertion needs a screen-capture tier: an xvfb CI proof
 that screenshots the window while a menu-open present loop holds it up
 (mirroring the gl-xvfb job's proof-step pattern). Logged as the open
 follow-up.
+
+**Test-tier follow-up (same day): the raygui engine is testable headless
+now.** The On/Off wording change exposed the remaining gap — the wording
+was pinned for the legacy engine only; the raygui engine could never be
+asserted (draw needs a raygui frame context; the real build's raygui is
+welded to raylib). `60cf649`: the RAYGUI_STANDALONE path gives the engine
+a headless harness — raygui's implementation over recording primitives
+(this snapshot bottoms GuiDrawText/GuiDrawRectangle out in DrawRectangle +
+per-codepoint DrawTextCodepoint; runs assemble into readable strings).
+Five raylib functions the snapshot calls without declaring/defining under
+STANDALONE (GetCodepoint, GetGlyphIndex, GetScreenWidth, GetScreenHeight,
+UnloadTexture) are bridged; a dummy font is installed into guiFont at
+static-init (the STANDALONE path never loads one — measuring a zero font
+is a null deref). `menu_engine_raygui_test` pins the toggle wording
+(On/Off, both flips), labels, title, chrome, repeat-draw purity, and
+closed-silence; `menu_draw_test` gains the Off half of the legacy
+assertion. Fork 75/75; all seven menu suites green in the game build.
