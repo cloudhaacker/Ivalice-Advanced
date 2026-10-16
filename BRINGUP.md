@@ -8627,3 +8627,24 @@ is a null deref). `menu_engine_raygui_test` pins the toggle wording
 (On/Off, both flips), labels, title, chrome, repeat-draw purity, and
 closed-silence; `menu_draw_test` gains the Off half of the legacy
 assertion. Fork 75/75; all seven menu suites green in the game build.
+
+**Launch-screen restyle (2026-10-16): desktop launcher adopts the Android
+setup activity's visual language, semantics included.** Five red-first
+sub-steps (fork `2078f30`…`310af0a`, each guard-verified + unit-pinned in
+`launcher_style.h`/`launcher_skip.h`, headless-testable by construction):
+(1) palette transcribed constant-for-constant from `GbaSetupActivity` +
+the shared ROM status line (green path / amber prompt, exact wording);
+(2) title row, the placeholder IS the title (`wrap_words` provides the
+TextView wrapping DrawText lacks), privacy footnote; (3) action buttons —
+`GuiButton` retired from the screen (vendored raygui has no corner-radius
+style property), rounded cyan/navy via `DrawRectangleRounded`, focus ring
+that survives dimming; (4) the box-art panel card (10px inset, stroke);
+(5) the skip checkbox with FULL Android semantics (user's call): same
+wording, default ON, read before any window opens — checked + validated
+cached ROM returns Launch with no window flash (the cache is validated,
+never resolved, so the skip path cannot open a picker). Escape hatch for
+the known deadlock: `build/skip_launcher_on_boot` / `build/rom.cfg` are
+plain files beside the exe. Guard extension: `check_launch_screen_wiring.py`
+now source-pins the shared style (palette hexes, required usages, retired
+literals incl. `"FFTA"`/`GuiButton(`/`DrawRectangleRec(`) with self-test
+fixtures. Fork ctest 77/77; all launcher suites green in the game build.
