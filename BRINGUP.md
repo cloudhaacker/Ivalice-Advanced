@@ -8539,3 +8539,35 @@ decision the fork is hands-off pending coordination; this commit lands
 game-side only, gitlink unchanged. Open item: land both fork workstreams
 as separate commits after coordination, then bump the gitlink and run the
 full gate.
+
+**Resolution (same day, continued):** the parallel menu-engine session's
+work was finished and landed with the user's go-ahead ("finish off that
+unfinished work — move the settings overlay into full raygui").
+
+- The fork's earlier "green" desktop build was **vacuous**: the fork
+  standalone configure has `GBARECOMP_USE_RAYLIB=OFF`, so none of the
+  raygui TUs (`raygui_impl.cpp`, `menu_engine_raygui.cpp`) had ever
+  compiled anywhere — the game build was their first real compile.
+- Three vendored-raygui defects surfaced in sequence, all in the 5.1-dev
+  snapshot the launcher track committed (e779ab8): (1) the menu engine
+  used the `SPINNER` control id — raygui 5.x removed it (the spinner
+  draws through BUTTON + VALUEBOX properties); (2) `GuiFontIconBaking`
+  was defined unguarded while its constants live in the
+  `!RAYGUI_NO_ICONS` block; (3) `GuiGetTextWidth` was defined INSIDE the
+  `!RAYGUI_NO_ICONS` block while its 20+ callers are not — NO_ICONS
+  builds failed to link. (2) and (3) are LOCAL PATCHes in
+  `src/vendor/raygui/raygui.h`, each with an in-file comment; the
+  NO_ICONS path had never been exercised before (raygui_impl.cpp is new).
+- **Lesson (process):** uncommitted work bypasses every gate — the fork
+  CI `raylib` job exists and would have caught all three on push; the
+  tree sat uncommitted for a day. Land early, land often.
+
+Landed: fork `06c0669` (menu engine + vendor patches + `launchBoxartRes`
+template) and `e15020a` (launcher fixes + guard), pushed to
+james2doyle/gbarecompx main; game gitlink bumped to `e15020a`;
+`check.py --fast` green; attract golden unchanged (`1EF4C118...`,
+cycle `attract_verify=PASS`).
+
+Remaining: APK repackage + device QA (`launchBoxartRes` boxart on the
+setup screen — the settings overlay itself is desktop-only, so the
+device artifact changes only by the boxart drawable).
