@@ -219,8 +219,7 @@ def win_configure_needed():
 def win_build_exe(jobs, strip):
     """Configure (if needed) + build the static release exe."""
     marker = CROSS_PREFIX / ".done"
-    missing = [d for d in ("zlib", "freetype", "harfbuzz", "sdl2", "raylib")
-               if not any(marker.glob(f"{d}-*"))]
+    missing = [d for d in ("raylib",) if not any(marker.glob(f"{d}-*"))]
     if missing:
         die("cross prefix incomplete: " + ", ".join(missing),
             hint="run .venv/bin/python tools/win_cross_deps.py build "
@@ -543,7 +542,7 @@ def stage_windows(version, strip=True, jobs=8):
 
     # Runtime layout beside the exe (mods land in build-win/ via
     # PostBuild staging).
-    for sub in ("mods"):
+    for sub in ("mods",):
         src = WIN_BUILD / sub
         if not src.is_dir():
             die(f"windows build produced no {sub}/ beside the exe",
