@@ -30,15 +30,19 @@ config (`bios/emibios_gba_bios.toml`) documents the source URL and commit.
   any rebuild of emibios flows through `build.py`'s BIOS recompile step
   into the linked corpus without touching game code.
 
-## Framework submodules
+## Framework
 
 | Component | Upstream | License |
 |---|---|---|
-| `gbarecomp/` | <https://github.com/mstan/gbarecomp> | PolyForm Noncommercial 1.0.0, © 2026 Matthew Stanley |
-| `recomp-ui/` | (same author) | MIT, © 2026 Matthew Stanley |
+| `gbarecomp/` (pinned submodule) | <https://github.com/mstan/gbarecomp> | PolyForm Noncommercial 1.0.0, © 2026 Matthew Stanley |
+| `gbarecompx/` (framework dev tree, not distributed with this repo) | <https://github.com/james2doyle/gbarecompx> (fork of the above) | Same terms as gbarecomp upstream |
 
-Working-tree patches in `tools/patches/` modify gbarecomp sources; patched
-copies remain under gbarecomp's terms (see `tools/patches/README.md`).
+The recomp-ui submodule (former launcher/runtime UI, MIT) was removed in
+the 2026-10 launcher track: the pre-boot surface is now the framework's
+raygui launch screen (`gbarecompx/src/runtime/launcher*.cpp`), and the
+in-game settings UI is the framework's generic menu. Working-tree patches
+in `tools/patches/` modify gbarecomp sources; patched copies remain under
+gbarecomp's terms (see `tools/patches/README.md`).
 
 ## Runtime HLE (mGBA-derived)
 
@@ -50,40 +54,60 @@ links into every build (the hook installs only when HLE is on); unhandled
 SWIs fall through to the recompiled LLE BIOS. No mGBA sources are vendored
 here.
 
-## Cross dependencies (statically linked into the Windows release)
+## Cross dependencies (statically linked into the release binaries)
 
-The Windows artifact (`FFTARecomp-*-windows-x64.zip`, built by
-`tools/make_release.py --windows` via `tools/win_cross_deps.py`) is a
-static MinGW build: the libraries below are **compiled in**, so their
-code ships to players who download the zip. That is redistribution, and
-the Linux build links the same libraries dynamically from distro
-packages. All five are permissive-licensed; none taints the game's
-PolyForm Noncommercial 1.0.0 terms. The pinned versions live as
-tarball-sha256 pins in `tools/win_cross_deps.py` (verify any time by
-rebuilding the prefix and re-hashing - determinism is gated in BRINGUP
-section "R-track: R2").
+The desktop release artifacts (`FFTARecomp-*-linux-x64.zip`,
+`FFTARecomp-*-windows-x64.zip`, built by `tools/make_release.py` via
+`tools/win_cross_deps.py`) link the libraries below. On Windows they are
+**compiled in** (static MinGW build) and so ship inside the exe; on Linux
+the same libraries come from distro packages. All are permissive-licensed;
+none taints the game's PolyForm Noncommercial 1.0.0 terms. Versions live as
+tarball-sha256 pins in `tools/win_cross_deps.py` (raylib is fetched by
+pinned SHA at configure time — `gbarecompx/CMakeLists.txt`) or as vendored
+files with recorded SHA-256s.
 
-| Library | Source built | License |
-|---|---|---|
-| zlib (compression, via freetype) | madler/zlib @ v1.3.2 | zlib/libpng license (permissive; attribution in `LICENSES/` below) |
-| FreeType 2 (launcher font raster, via the engine's `recomp-ui` layer - `find_package(Freetype ...)`, color-emoji path) | freetype/freetype @ VER-2-14-3 | **FreeType License (FTL)** - the license's BSD-style permissive branch (we do not take the GPL branch); dual-licensing notice retained by the FTL terms |
-| HarfBuzz (text shaping, via `recomp-ui` - `pkg_check_modules(harfbuzz)`) | harfbuzz/harfbuzz @ 14.6.0 | **MIT** |
-| SDL2 (the recomp-ui launcher's windowing/input - `libSDL2.a`+`libSDL2main.a`) | libsdl-org/SDL @ release-2.32.10 | **zlib license** |
-| raylib (the game's window/input/audio backend since Phase 4e - `libraylib.a`, `find_package(raylib CONFIG)`) | raysan5/raylib @ 6.0 | **zlib license** |
+| Library | Source | License | Role |
+|---|---|---|---|
+| raylib | <https://github.com/raysan5/raylib> @ 6.0 | **zlib license**, © Ramon Santamaria (@raysan5) | window/input/audio backend (`src/runtime/raylib_backend.cpp`), since the 4c backend flip |
+| tinyfiledialogs | <https://tinyfiledialogs.sourceforge.net> v3.21.2 | **zlib license**, © Guillaume Vareille | native open-file/message dialogs for the asset picker (`src/runtime/asset_picker.cpp`); vendored at `gbarecompx/third_party/tinyfiledialogs/`, unmodified |
+| raygui | <https://github.com/raysan5/raygui> (5.1-dev) | **zlib license**, © Ramon Santamaria (@raysan5) | the pre-boot launch screen (`src/runtime/launcher_raygui.cpp` behind `src/runtime/launcher.h`); vendored at `gbarecompx/src/vendor/raygui/`, unmodified |
 
-- License texts: [`LICENSES/ZLIB.txt`](LICENSES/ZLIB.txt),
-  [`LICENSES/FTL.txt`](LICENSES/FTL.txt), [`LICENSES/MIT-harfbuzz.txt`](LICENSES/MIT-harfbuzz.txt),
-  [`LICENSES/ZLIB-SDL2.txt`](LICENSES/ZLIB-SDL2.txt),
-  [`LICENSES/ZLIB-raylib.txt`](LICENSES/ZLIB-raylib.txt) - each is the
+- License texts: [`LICENSES/ZLIB-raylib.txt`](LICENSES/ZLIB-raylib.txt),
+  [`LICENSES/ZLIB-tinyfiledialogs.txt`](LICENSES/ZLIB-tinyfiledialogs.txt),
+  [`LICENSES/ZLIB-raygui.txt`](LICENSES/ZLIB-raygui.txt) - each is the
   verbatim upstream license document (permissive-license documents are
   redistributed as-is by their own terms, same exception class as the
   GFDL/LGPL documents above). `tools/make_release.py` stages `LICENSES/`
   into every artifact.
-- Windows-DLL note: SDL2's and raylib's static builds depend on Windows
-  system libraries only (kernel32/user32/gdi32/winmm/opengl32/... - OS
-  components, not third-party redistributables); the objdump import-table
-  guard in `make_release.py --windows` fails the build on any non-system
-  DLL.
+- Windows-DLL note: raylib's static build depends on Windows system
+  libraries only (kernel32/user32/gdi32/winmm/opengl32/... - OS components,
+  not third-party redistributables); the objdump import-table guard in
+  `make_release.py --windows` fails the build on any non-system DLL.
+- The launcher's in-app file dialog is tinyfiledialogs with the
+  console-input fallback disabled at runtime via the `tinyfd_query` probe
+  (headless environments fail with a message instead of blocking on stdin).
+
+## Launch-screen box art
+
+`recomp/launcher/boxart.png` (also staged beside the release binaries as
+`assets/img/boxart.png`) is the *Final Fantasy Tactics Advance* (USA) box
+art from [Justme488/3-D-Box-Art](https://github.com/Justme488/3-D-Box-Art)
+(`Nintendo - Game Boy Advance/Named_Boxarts/Final Fantasy Tactics Advance
+(USA).png`).
+
+- **License: none upstream.** The repository publishes no license text; the
+  README states the images were not created by its maintainer and credits
+  the EmuMovies Community. Provenance is therefore **unknown** and no
+  license can be asserted for the image.
+- **SHA-256:** `b375d9884033d55995bacc93cd8dfe34d48bfbac85d5e81fb2a9064b2f7db766`
+  (the committed file must stay byte-identical to the upstream download; no
+  re-encodes).
+- **Posture decision:** this repo's default posture is "no game content in
+  this repository". Shipping retail cover art of unknown provenance is a
+  deliberate, explicitly signed-off exception (2026-10-16) made for the
+  launch screen, with the upstream credits disclosed above. Rights holders
+  who want the image removed can ask, and the launch screen degrades to its
+  text fallback when the file is absent.
 
 ## Oracle tooling
 

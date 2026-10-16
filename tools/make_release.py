@@ -8,11 +8,12 @@ produces a deterministic, portable archive (fixed timestamps, sorted
 entries, forward-slash names, permissions preserved).
 
 Layout — everything resolves beside the executable at runtime
-(launcher_seam state_path + GBARECOMP_DEFAULT_GAME_CONFIG="game.toml"):
+(GBARECOMP_DEFAULT_GAME_CONFIG="game.toml"; the pre-boot launch screen and
+the asset picker use the same sidecar chain):
 
     FFTARecomp-<version>-linux-x64/
       FFTARecomp                    stripped copy of build/FFTARecomp
-      assets/                       recomp-ui launcher fonts/img
+      assets/img/boxart.png         launch-screen box art
       mods/                         preloaded mod catalog (default-enabled)
       game.toml
       bios/emibios_gba_bios.bin     committed clean-room BIOS (LGPL)
@@ -20,8 +21,9 @@ Layout — everything resolves beside the executable at runtime
       README.md                     generated, self-contained (no dead links)
       LICENSE, LICENSES/, THIRD_PARTY_ATTRIBUTION.md
 
-config.ini/keybinds.ini/rom.cfg and saves/ are created beside the
-executable at runtime — extract to a writable folder.
+rom.cfg (the ROM pick's cache), config.ini/keybinds.ini (in-game menu
+state) and saves/ are created beside the executable at runtime — extract
+to a writable folder.
 
 Sweep (sweep_stage, unit-tested in tests/python/test_tools.py):
   - forbidden extensions .gba/.agb/.sav/.srm/.apk
@@ -30,7 +32,7 @@ Sweep (sweep_stage, unit-tested in tests/python/test_tools.py):
     under ANY name
   - no symlinks (a staged link could point outside the tree)
   - the required set present: binary (+ exec bit), config, pinned BIOS,
-    assets, mod manifest, README, LICENSE, LICENSES/LGPL, THIRD_PARTY
+    box art, mod manifest, README, LICENSE, LICENSES/LGPL, THIRD_PARTY
 
 Refuses a stale artifact (the build_apk.py gate, mirrored): no regen stamp
 → refuse; any regen input newer than generated/.regen_stamp → refuse (a
@@ -78,9 +80,9 @@ REQUIRED_FILES = [
     "README.md",
     "LICENSE",
     "LICENSES/LGPL-3.0-or-later.txt",
-    "LICENSES/ZLIB.txt",
-    "LICENSES/FTL.txt",
     "LICENSES/ZLIB-raylib.txt",
+    "LICENSES/ZLIB-tinyfiledialogs.txt",
+    "LICENSES/ZLIB-raygui.txt",
     "THIRD_PARTY_ATTRIBUTION.md",
     "mods/packages/ffta.enhancement.widescreen/1.0.1/manifest.toml",
 ]
@@ -97,8 +99,9 @@ def licenses_required():
     """Every license document required in every staged artifact (module
     helper so the sweep AND the unit test read the same contract)."""
     return ["LICENSE", "LICENSES/LGPL-3.0-or-later.txt",
-            "LICENSES/ZLIB.txt", "LICENSES/FTL.txt",
-    "LICENSES/ZLIB-raylib.txt"]
+            "LICENSES/ZLIB-raylib.txt",
+            "LICENSES/ZLIB-tinyfiledialogs.txt",
+            "LICENSES/ZLIB-raygui.txt"]
 
 
 def required_files(platform):
@@ -123,17 +126,20 @@ Linux x86-64, plus system libraries (packages):
 
 | Distro | Packages |
 |---|---|
-| Debian/Ubuntu | `libsdl2-2.0-0 libopengl0 libfreetype6 libharfbuzz0b` |
-| Fedora | `mesa-libGL` |
-| Arch | `sdl2 libgl freetype2 harfbuzz` |
+| Debian/Ubuntu | `libgl1 libglu1-mesa libx11-6` (any desktop install already has these) |
+| Fedora | `mesa-libGL mesa-libGLU` |
+| Arch | `mesa` (OpenGL; the X11 client libs are part of every desktop install) |
 
 ## Run
 
-1. Extract the folder anywhere **writable** — launcher settings and saves
-   are kept beside the executable.
-2. Run `./FFTARecomp`.
-3. In the launcher, pick your legally obtained *Final Fantasy Tactics
-   Advance* (USA) ROM, then **Play**.
+1. Extract the folder anywhere **writable** — your ROM pick, menu
+   settings, and saves are kept beside the executable.
+2. Run `./FFTARecomp` — the launch screen opens; the first boot opens the
+   native file picker right away.
+3. Pick your legally obtained *Final Fantasy Tactics Advance* (USA) ROM,
+   then **Play**. The pick is remembered (`rom.cfg`), so later boots open
+   ready to play; **Select ROM** re-picks, and passing `--rom <file>`
+   skips the screen entirely.
 
 The launch BIOS is bundled (`bios/emibios_gba_bios.bin` — a clean-room,
 freely redistributable build, LGPL-3.0-or-later). You never need a Nintendo
@@ -150,8 +156,8 @@ window-aspect-driven view; `--scale N` sets the window size
 
 ## Where files land (beside the executable)
 
-- `config.ini`, `keybinds.ini`, `rom.cfg` — launcher state, created on
-  first run
+- `rom.cfg` — the ROM pick's sidecar cache (created on first run)
+- `config.ini`, `keybinds.ini` — in-game menu settings and key bindings
 - `saves/ffta_us.sav` — the cartridge battery save
 
 ## Legal
@@ -277,15 +283,22 @@ def check_static_link(exe):
         die("static release exe imports third-party DLLs: "
             + ", ".join(bad),
             hint="GBARECOMP_STATIC_RELEASE=ON fell back to dynamic "
-                 "(libSDL2.dll.a won over libSDL2.a?) — see the prefix "
-                 "prune_dynamic() rule in tools/win_cross_deps.py")
+                 "linking — see the prune_dynamic() rule in "
+                 "tools/win_cross_deps.py")
     return len(parse_import_dlls(r.stdout))
 
 
 def wine_smoke(zip_path, folder):
-    """Boot the packaged exe from a bare extraction under wine: launcher
-    config files beside the binary, --no-window headless, strict
-    FULLY_STATIC assertion (mirrors the desktop_accept acceptance shape).
+    """Boot the packaged exe from a bare extraction under wine: config
+    files beside the binary, --no-window headless, strict FULLY_STATIC
+    assertion (mirrors the desktop_accept acceptance shape).
+
+    The run passes the ROM explicitly (--rom/--bios): under wine there is
+    no native file dialog provider (no zenity/GetOpenFileName provider is
+    guaranteed), so a bare-extraction run would hard-fail at the picker's
+    fail-fast probe, not block — that is the designed behavior, not a
+    regression. Seeding rom.cfg into the extraction would also work; the
+    explicit flags are the simpler seed.
     """
     import tempfile
     tmp = Path(tempfile.mkdtemp(prefix="win-smoke-"))
@@ -300,8 +313,6 @@ def wine_smoke(zip_path, folder):
         env["WINEARCH"] = "win64"
         env["WINEPREFIX"] = str(tmp / "winehome")
         env["WINEDLLOVERRIDES"] = "mscoree,mshtml="
-        env["SDL_VIDEODRIVER"] = "dummy"
-        env["SDL_AUDIODRIVER"] = "dummy"
         r = subprocess.run(
             ["wine", str(root / "FFTARecomp.exe"),
              "--bios", "bios/emibios_gba_bios.bin",
@@ -502,9 +513,9 @@ def readme_for(platform):
         body = rep(body,
             """| Distro | Packages |
 |---|---|
-| Debian/Ubuntu | `libsdl2-2.0-0 libopengl0 libfreetype6 libharfbuzz0b` |
-| Fedora | `mesa-libGL` |
-| Arch | `sdl2 libgl freetype2 harfbuzz` |
+| Debian/Ubuntu | `libgl1 libglu1-mesa libx11-6` (any desktop install already has these) |
+| Fedora | `mesa-libGL mesa-libGLU` |
+| Arch | `mesa` (OpenGL; the X11 client libs are part of every desktop install) |
 """,
             "")
         body = rep(body, "./FFTARecomp", "FFTARecomp.exe")
@@ -516,8 +527,9 @@ def stage_windows(version, strip=True, jobs=8):
     """Cross-configure (if needed) + build the static release exe, guard it,
     strip it in-stage, and stage the Windows layout (issue #3, R2).
 
-    The launcher boots from game.toml beside the exe; the ROM pick is the
-    player's own dump (issue #3 "bring your own ROM"). No ROM is embedded —
+    The launch screen boots from game.toml beside the exe; the ROM pick is
+    the player's own dump (issue #3 "bring your own ROM"). No ROM is
+    embedded —
     the sweep below proves it. build-win/ is preserved for inspection.
     """
     exe = win_build_exe(jobs, strip)
@@ -557,6 +569,11 @@ def stage_windows(version, strip=True, jobs=8):
     cp_file(REPO / "THIRD_PARTY_ATTRIBUTION.md", "THIRD_PARTY_ATTRIBUTION.md")
     (stage / "README.md").write_text(readme_for("windows"),
                                      encoding="utf-8")
+
+    # Launch-screen box art — the raygui launcher loads assets/img/boxart.png
+    # beside the exe via GetApplicationDirectory() (the dev build stages the
+    # same file from the same source via CMake's stage_boxart target).
+    cp_file(REPO / "recomp/launcher/boxart.png", "assets/img/boxart.png")
 
     violations = sweep_stage(stage, platform="windows")
     if violations:
@@ -676,6 +693,11 @@ def stage_release(version, strip=True):
     os.chmod(stage / "FFTARecomp", 0o755)
 
     shutil.copytree(BUILD / "mods", stage / "mods")
+
+    # Launch-screen box art — the raygui launcher loads assets/img/boxart.png
+    # beside the exe via GetApplicationDirectory() (the dev build stages the
+    # same file from the same source via CMake's stage_boxart target).
+    cp_file(REPO / "recomp/launcher/boxart.png", "assets/img/boxart.png")
 
     cp_file(REPO / "game.toml", "game.toml")
     cp_file(REPO / "bios/emibios_gba_bios.bin", "bios/emibios_gba_bios.bin")

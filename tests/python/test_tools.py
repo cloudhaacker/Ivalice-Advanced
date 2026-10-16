@@ -876,17 +876,20 @@ vma:            Hint    Time      Forward  DLL       First
                                 for x in v), v)
 
     def test_sweep_requires_license_bundle(self):
-        # The Windows release redistributes statically-linked code, so its
-        # license documents ship (the set grew to 4 cross-library LICENSES
-        # + LGPL + root LICENSE). Missing exactly one → named failure.
+        # The release redistributes statically-linked code, so its license
+        # documents ship (the set: root LICENSE + LGPL + one document per
+        # linked third-party library). Missing exactly one → named failure.
+        # The victim is picked from the module contract (licenses_required())
+        # so a future license-set change edits one place, not this test.
         import tempfile
         with tempfile.TemporaryDirectory(dir="/tmp") as td:
             root = self._stage(td)
-            (root / "LICENSES/FTL.txt").unlink()
+            victim = next(p for p in self.mr.licenses_required()
+                          if p.startswith("LICENSES/"))
+            (root / victim).unlink()
             v = self.mr.sweep_stage(root)
             self.assertTrue(
-                any("missing required file: LICENSES/FTL.txt" in x
-                    for x in v), v)
+                any(f"missing required file: {victim}" in x for x in v), v)
             # ...and the synthetic helper itself builds the bundle from the
             # module contract, so the next license addition fails loudly
             # instead of drifting:
