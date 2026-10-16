@@ -8671,3 +8671,10 @@ sizes shear the glyphs ragged. Fix: title + PLAY label 22→20 (uniform
 fix was fetched, wired, then removed unlanded after the call to keep the
 raylib font. Sizes are NOT test-pinned (taste iteration loop) — wording
 pins remain the binding assertions.
+
+**Size pins (same day, user's standard).** "Tests passed after a big
+font tweak → coverage insufficient": right — the size fix was
+taste-silent. Text sizes are now value-pinned in launcher_raygui_test
+(per element + a closed set over every frame-0 record + the checkbox
+codepoint size); negative-controlled with the pre-fix 22. Amends the
+prior entry's "sizes deliberately not pinned" — overruled.
