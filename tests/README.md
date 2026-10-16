@@ -500,6 +500,13 @@ Two tiers, split by what may leave your machine:
   because `generated/` is gitignored and anything linking `gbarecomp_runtime`
   cannot link on a fresh checkout. It reports which display it used, and skips
   cleanly while `gbarecompx/` is untracked.
+- The **`raylib-headless` suite** (`tools/check.py --only raylib-headless`,
+  opt-in) is the display-free counterpart: it configures a standalone
+  `build-raylib-headless/` with `-DGBARECOMP_RAYLIB_HEADLESS=ON`
+  (raylib on `PLATFORM_MEMORY`, rlsw software GL — no X11/GL dev packages),
+  runs the full framework ctest there, then runs the smoke with
+  `DISPLAY`/`WAYLAND_DISPLAY` scrubbed and requires the `tier=rlsw headless`
+  report line. First run fetches raylib (network); reruns take seconds.
 - The **Android device gate** (`tools/validate_android.sh`) is device-bound
   and manual — no phone in CI — so it is not part of either tier. The
   **APK content guard** is device-free but needs a Gradle build (SDK/NDK),

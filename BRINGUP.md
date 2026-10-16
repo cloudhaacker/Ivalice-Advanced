@@ -7702,3 +7702,24 @@ device gate: tag every capture and settle ≥4.
   the feature enabled (build/mods/state.toml); device move state renders
   true ring margins on the final build (screenshot check, clip off +
   mods 1.0.1).
+
+## 2026-10-16 — V2 Phase 5 COMPLETE (headless tier + fakes; CI proof pending push)
+
+Slices (framework `bd8acbc` pre-work excluded — Delete/menu-trigger reliability
+landed first as its own commit): 5.1 FakeRaylibApi+injection (`ea0c906`),
+5.2 headless variant+smoke (`b18036b`+`ff2a392`), 5.3 present tier-3
+(`104d26f`, FFTA-side), 5.4 gate+CI (FFTA `f2cfd76`, framework `2d644b5`),
+5.5 docs/accept (this entry). Each red-first; mutations M1-M5, H1-H3, T1-T2,
+G1 all observed failing their exact guards then restored.
+
+Evidence: stub ctest 67/67; headless full ctest 67/67 with DISPLAY unset
+(contract suite takes the full path, no Err::Window early-out); present
+PASS tier=rlsw headless and tier=GL display; check.py raylib-headless PASS
+4.5 s cached; attract 1EF4C118 byte-identical throughout; yaml parsed
+(`stub, raylib, headless, guard`).
+
+Notes: rlsw cannot round-trip VRAM (LoadImageFromTexture garbage) — that
+probe stays GL-only by documented design, not a product gap. gl-xvfb
+deferred (no verified Xvfb recipe). CI headless job runs on next push.
+Remaining Phase 5 accept: CI green proof. Next: Phase 6 docs (5.5 ticked
+the headless checkbox; RAYLIB_PLAN stale claims still open).
