@@ -8648,3 +8648,17 @@ plain files beside the exe. Guard extension: `check_launch_screen_wiring.py`
 now source-pins the shared style (palette hexes, required usages, retired
 literals incl. `"FFTA"`/`GuiButton(`/`DrawRectangleRec(`) with self-test
 fixtures. Fork ctest 77/77; all launcher suites green in the game build.
+
+**Launcher draw-loop harness (same day, `03ffe92`).** The raygui launcher
+TU — compile-checked only until now — runs headless against a recording
+raylib stub (`stub_raylib/raylib.h` needs no raylib fetch, so the tier
+runs in the DEFAULT ctest run, not just the raylib CI job): recorded
+draws, scripted per-frame input, `run()` steppable frame by frame,
+raygui's implementation carried in the stub TU. Six scenarios pin the
+screen and the loop (skip opens no window; frame-0 full draw incl. dimmed
+PLAY; Escape; focus ring; click/Enter launch). Negative-controlled: a
+scratch break of the dimmed-PLAY behavior fails at exactly that
+assertion. Harness lessons (same as the menu harness): dummy font into
+`guiFont` at static-init; raygui draws no space glyphs — the run
+assembler reconstructs word gaps. Fork 78/78; launcher+menu suites green
+in the game build.
