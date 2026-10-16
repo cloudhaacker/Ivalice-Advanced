@@ -13,8 +13,8 @@ build, and self-tests the device gate script against a fake `adb`:
             stay gitignored
   scaffold  the Android base is the raylib/NativeActivity scaffold: no SDL
             submodule entry/gitlink, no SDLActivity, no SDL CMake subproject,
-            no sdlRoot in the Gradle plugin (Phase 4f). The desktop launcher's
-            SDL2 (Track L) is out of scope.
+            no sdlRoot in the Gradle plugin (Phase 4f). The retired desktop
+            SDL stack (Track L) is out of scope.
   gate      tools/validate_android.sh passes a clean fake-device run (evidence
             pulled) and fails SELF-HEAL / missing-log / crash-buffer /
             setup-still-resumed runs; usage errors exit 2
@@ -275,10 +275,11 @@ def check_bios_pins():
 
 def check_emibios_engine_acceptance():
     # The engine must actually accept the clean-room BIOS on both surfaces:
-    # the launcher's bios_verify (pin set {retail, emibios}) and the Android
-    # public-artifact guard (declared-bundled-BIOS exemption). On a fresh
-    # clone (pristine submodule) the acceptance lives in the recorded
-    # patches, so accept either form (the `patches` suite pins fidelity).
+    # the bios pin-set (gba_bios.h kEmibiosSha1 — pin set {retail, emibios},
+    # recognized by the asset picker) and the Android public-artifact guard
+    # (declared-bundled-BIOS exemption). On a fresh clone (pristine
+    # submodule) the acceptance lives in the recorded patches, so accept
+    # either form (the `patches` suite pins fidelity).
     sources = ""
     for rel in ("gbarecomp/src/gba/gba_bios.h",
                 "gbarecomp/src/runtime/launcher_seam.h",
@@ -607,8 +608,8 @@ def check_scaffold_sdl_free():
     Scans the framework's platform/android scaffold and the game's android/
     project for SDL: submodule entry/gitlink, SDLActivity, the SDL CMake
     subproject, sdlRoot. Build outputs, artifacts and the framework's
-    third_party tree are excluded; the desktop launcher's SDL2 (Track L,
-    recomp-ui) is out of scope."""
+    third_party tree are excluded; the retired desktop SDL stack (Track L,
+    recomp-ui — removed in the 2026-10 launcher track) is out of scope."""
     engine = REPO / "gbarecompx"
     if not (engine / "platform/android").is_dir():
         return  # the raylib tree is absent (CI before Phase 7): nothing to scan
@@ -849,7 +850,7 @@ CHECKS = [
      "staging)", check_bios_pins),
     ("identity: committed emibios bin matches its TOML pin (16 KiB)",
      check_emibios_integrity),
-    ("identity: engine accepts the clean-room BIOS (launcher pin-set + "
+    ("identity: engine accepts the clean-room BIOS (bios pin-set + "
      "public-guard exemption)", check_emibios_engine_acceptance),
     ("identity: save type/size mirror the desktop config", check_save_config),
     ("identity: optional .sav import on setup (issue #20)",

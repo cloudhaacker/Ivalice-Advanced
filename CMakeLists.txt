@@ -149,7 +149,6 @@ target_compile_definitions(${FFTA_TARGET} PRIVATE
     GBARECOMP_WINDOW_TITLE="FFTARecomp"
     GBARECOMP_DEFAULT_GAME_CONFIG="${FFTA_DEFAULT_GAME_CONFIG}")
 
-option(GBAGAME_RECOMP_UI "Build the recomp-ui pre-boot launcher" ON)
 option(GBAGAME_BUNDLED_ROM "Private build: ROM is staged/bundled, setup UI may be skipped" OFF)
 
 if(ANDROID)

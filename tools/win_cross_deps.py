@@ -10,9 +10,9 @@ Builds the MinGW-x64 static libraries the release exe links (issue #3, R2):
                                                 raylib-only target since Phase 5.
 
 Why source builds: Arch ships no mingw-w64 binary library packages (AUR
-satellite packages are unmaintained), and MSYS2 is Windows-only. Versions
-mirror the MSYS2 repo (SDL2 2.32.10 = msys2 mingw64; harfbuzz 14.6.0) so the
-result matches what the engine's reference recipe would link.
+satellite packages are unmaintained), and MSYS2 is Windows-only. The
+single remaining dependency is raylib, pinned to the same 6.0 SHA the
+engine's FetchContent clone builds.
 
 Consumed by tools/make_release.py --windows via the CMAKE_TOOLCHAIN_FILE
 (tools/mingw-x64.cmake), which points CMAKE_PREFIX_PATH at this prefix.
@@ -175,40 +175,6 @@ def build_cmake(dep, extra):
     prune_dynamic()
 
 
-def build_meson(dep):
-    work = extract_dir(dep)
-    if work.exists():
-        shutil.rmtree(work)
-    with tarfile.open(tarball_path(dep)) as tf:
-        member = tf.getnames()[0]
-    with tarfile.open(tarball_path(dep)) as tf:
-        tf.extractall(SRC)  # noqa: S202 - pin-verified tarball
-    src_dir = (SRC / member).resolve()
-    src_dir.rename(work)
-    cross = BUILD / "harfbuzz-cross.ini"
-    cross.write_text(f"""[binaries]
-c = 'x86_64-w64-mingw32-gcc'
-cpp = 'x86_64-w64-mingw32-g++'
-ar = 'x86_64-w64-mingw32-ar'
-strip = 'x86_64-w64-mingw32-strip'
-pkg-config = 'pkg-config'
-
-[host_machine]
-system = 'windows'
-cpu_family = 'x86_64'
-cpu = 'x86_64'
-endian = 'little'
-""", encoding="utf-8")
-    env = dict(**__import__("os").environ)
-    env["PKG_CONFIG_PATH"] = str(PREFIX / "lib" / "pkgconfig")
-    run(["meson", "setup", work / "out", work, f"--cross-file={cross}",
-         f"--prefix={PREFIX}"]
-        + dep["meson"], env=env)
-    run(["meson", "compile", "-C", work / "out"], env=env)
-    run(["meson", "install", "-C", work / "out"], env=env)
-    prune_dynamic()
-
-
 def cmd_fetch():
     for dep in DEPS:
         fetch(dep)
@@ -219,10 +185,7 @@ def build(dep):
         print(f"{dep['name']}: up to date ({dep['tag']})")
         return
     print(f"{dep['name']}: building {dep['tag']} ...")
-    if "meson" in dep:
-        build_meson(dep)
-    else:
-        build_cmake(dep, [])
+    build_cmake(dep, [])
     (PREFIX / ".done").mkdir(parents=True, exist_ok=True)
     marker_path(dep).write_text(
         f"{dep['repo']} @ {dep['tag']}\nsha256 {dep['sha256']}\n",
