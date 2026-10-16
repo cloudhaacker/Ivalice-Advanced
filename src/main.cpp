@@ -19,9 +19,7 @@
 #include <system_error>
 #endif
 
-#if defined(GBAGAME_RECOMP_UI)
-#include "game_launcher_boot.h"
-#endif
+#include "launcher.h"
 
 #if !defined(_WIN32) && !defined(__ANDROID__)
 #include <sys/resource.h>
@@ -314,8 +312,10 @@ int ffta_main(int argc, char** argv) {
     // these are its first lines.
     if (on_mobile) ffta_log_manifest(external_log);
 #endif
-#if defined(__ANDROID__) && !defined(GBAGAME_RECOMP_UI)
-#if defined(GBAGAME_BUNDLED_ROM)
+#if defined(__ANDROID__)
+    // Mobile args carry --no-launcher, so nothing is lost on device:
+    // the raylib launcher is not built on Android; go straight to setup.
+    #if defined(GBAGAME_BUNDLED_ROM)
     // Private build with the ROM staged: drop the vacuous flag and boot.
     // (Public builds stop at the #else below — skipping setup is only valid
     // with a bundled ROM.)
@@ -417,9 +417,30 @@ int ffta_main(int argc, char** argv) {
         opts.ui_touch_friendly = true;
     }
 
-#if defined(GBAGAME_RECOMP_UI)
-    // Mobile args carry --no-launcher, so this returns false on device.
-    if (game_launcher_preboot(args, opts)) return 0;
+#include "launcher.h"
+
+#if defined(GBARECOMP_USE_RAYLIB)
+    // Skip the pre-boot launcher for headless / explicit-path invocation
+    // (--rom/--bios/--no-window/--frames/--load-state/--tcp). Bare invocation
+    // shows the screen. Constraint 7.
+    if (!gbarecomp::launcher_should_skip_screen(argc, argv)) {
+        if (auto backend = gbarecomp::create_launcher_backend()) {
+            gbarecomp::LauncherConfig cfg;
+            cfg.argv0 = argc > 0 ? argv[0] : nullptr;
+            cfg.first_boot_pick = true;
+            auto res = backend->run(cfg);
+            if (res.kind == gbarecomp::LauncherResult::Kind::Quit)
+                return 0;
+            if (res.kind == gbarecomp::LauncherResult::Kind::Launch) {
+                args.push_back("--rom");
+                args.push_back(res.rom);
+                if (!res.bios.empty()) {
+                    args.push_back("--bios");
+                    args.push_back(res.bios);
+                }
+            }
+        }
+    }
 #endif
     std::vector<char*> av;
     av.reserve(args.size());

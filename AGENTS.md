@@ -148,6 +148,35 @@ sheet, upstream note on the bridge stop-contract, APK release-signing key
 (`release.yml` tag job still queues). History, evidence,
 crash playbooks: `BRINGUP.md`.
 
+### Launcher track (2026-10-16) — replaces recomp-ui with raygui launch screen
+
+Plan: `.opencode/RAYGUI_LAUNCHER.md`. Decision: recomp-ui removed entirely;
+pre-boot surface is a minimal raygui screen (Play, Select ROM, drag-and-drop,
+gamepad nav) behind a swappable `LauncherBackend` contract (`src/launcher.h`).
+tinyfiledialogs vendored for native file dialogs. No pre-boot settings cards.
+
+**Phase 0 (spikes):** S1 tinyfiledialogs — `tinyfd_query` returns `no_solution`
++ NULL on this box (no zenity); fail-fast works, no stdin block. S2 raygui on
+raylib 6 — `GuiSetFocused`/`GuiSetState` gamepad edges usable; default font
+acceptable (no bundled TTF needed); window handoff confirmed (attract
+byte-identical when screen framed out).
+
+**Phase 1 (contract + vendoring):** `src/launcher.h` contract +
+`test_launcher_contract.cpp` (mock backend) — PASS. tinyfiledialogs v3.21.2
+vendored to `gbarecompx/third_party/tinyfiledialogs/`, `gbarecomp_tinyfiledialogs`
+target — builds clean. raygui v5.1-dev vendored to `src/vendor/raygui/`,
+`ffta_raygui_links_tests` target + test — PASS (exit 0). Box art: Justme488
+USA box art (license unknown, sign-off given 2026-10-16; commit records URL +
+SHA-256 + EmuMovies credits, no license text staged).
+
+**Phase 2 (asset picker):** `asset_picker.cpp` dialog loop ungated (all platforms
+run argv → cache → dialog → warn → loop); Win32 `GetOpenFileNameA`/`MessageBoxA`
+replaced with unified tinyfiledialogs impls; `kAssetDialogError`/`kAssetDialogWarning`
+replace Win32 `MB_OK|MB_ICON*` flags. `asset_picker_seam.h` function-pointer
+seam added; `asset_picker_tests` PASS (exit 0). `gbarecomp_tinyfiledialogs`
+linked PUBLIC into `gbarecomp_runtime`; Windows links updated to `comdlg32 ole32
+winmm`. FFTARecomp links clean; attract golden unchanged.
+
 ## Reference index (load what the task needs)
 
 | Topic | Load |

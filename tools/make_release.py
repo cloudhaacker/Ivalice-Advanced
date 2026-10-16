@@ -80,15 +80,11 @@ REQUIRED_FILES = [
     "LICENSES/LGPL-3.0-or-later.txt",
     "LICENSES/ZLIB.txt",
     "LICENSES/FTL.txt",
-    "LICENSES/MIT-harfbuzz.txt",
-    "LICENSES/ZLIB-SDL2.txt",
     "LICENSES/ZLIB-raylib.txt",
     "THIRD_PARTY_ATTRIBUTION.md",
-    "mods/packages/ffta.enhancement.widescreen/1.0.0/manifest.toml",
+    "mods/packages/ffta.enhancement.widescreen/1.0.1/manifest.toml",
 ]
 REQUIRED_DIRS = [
-    "assets/fonts",
-    "assets/img",
 ]
 
 
@@ -102,8 +98,7 @@ def licenses_required():
     helper so the sweep AND the unit test read the same contract)."""
     return ["LICENSE", "LICENSES/LGPL-3.0-or-later.txt",
             "LICENSES/ZLIB.txt", "LICENSES/FTL.txt",
-            "LICENSES/MIT-harfbuzz.txt", "LICENSES/ZLIB-SDL2.txt",
-            "LICENSES/ZLIB-raylib.txt"]
+    "LICENSES/ZLIB-raylib.txt"]
 
 
 def required_files(platform):
@@ -129,7 +124,7 @@ Linux x86-64, plus system libraries (packages):
 | Distro | Packages |
 |---|---|
 | Debian/Ubuntu | `libsdl2-2.0-0 libopengl0 libfreetype6 libharfbuzz0b` |
-| Fedora | `SDL2 mesa-libGL freetype harfbuzz` |
+| Fedora | `mesa-libGL` |
 | Arch | `sdl2 libgl freetype2 harfbuzz` |
 
 ## Run
@@ -188,7 +183,7 @@ WINE_FRAMES = 240
 # to dynamic (the exact regression D. static-release machinery exists to
 # prevent — and it fails silently at configure/link, so this is the gate).
 STATIC_FORBIDDEN_DLLS = frozenset({
-    "SDL2.DLL", "LIBSTDC++-6.DLL", "LIBGCC_S_SEH-1.DLL",
+"LIBSTDC++-6.DLL", "LIBGCC_S_SEH-1.DLL",
     "LIBWINPTHREAD-1.DLL", "FREETYPE-6.DLL", "HARFBUZZ-0.DLL",
     "ZLIB1.DLL",
 })
@@ -509,7 +504,7 @@ def readme_for(platform):
             """| Distro | Packages |
 |---|---|
 | Debian/Ubuntu | `libsdl2-2.0-0 libopengl0 libfreetype6 libharfbuzz0b` |
-| Fedora | `SDL2 mesa-libGL freetype harfbuzz` |
+| Fedora | `mesa-libGL` |
 | Arch | `sdl2 libgl freetype2 harfbuzz` |
 """,
             "")
@@ -546,9 +541,9 @@ def stage_windows(version, strip=True, jobs=8):
     cp_file(exe, "FFTARecomp.exe")
     os.chmod(stage / "FFTARecomp.exe", 0o755)
 
-    # Runtime layout beside the exe (assets + mods land in build-win/ via
-    # the engine's POST_BUILD staging, exactly like build/ on Linux).
-    for sub in ("assets", "mods"):
+    # Runtime layout beside the exe (mods land in build-win/ via
+    # PostBuild staging).
+    for sub in ("mods"):
         src = WIN_BUILD / sub
         if not src.is_dir():
             die(f"windows build produced no {sub}/ beside the exe",
@@ -681,7 +676,6 @@ def stage_release(version, strip=True):
             die("strip failed: " + r.stderr.strip(), hint="--no-strip skips it")
     os.chmod(stage / "FFTARecomp", 0o755)
 
-    shutil.copytree(BUILD / "assets", stage / "assets")
     shutil.copytree(BUILD / "mods", stage / "mods")
 
     cp_file(REPO / "game.toml", "game.toml")

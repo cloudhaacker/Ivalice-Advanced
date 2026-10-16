@@ -6,11 +6,8 @@ Builds the MinGW-x64 static libraries the release exe links (issue #3, R2):
   cross-prefix/lib/libraylib.a                  engine window backend (the
                                                 game's product backend since
                                                 Phase 4c; found via
-                                                find_package(raylib CONFIG))
-  cross-prefix/lib/libSDL2.a + libSDL2main.a    the recomp-ui launcher (Track L)
-  cross-prefix/lib/libfreetype.a                recomp-ui color emoji (QUIET find)
-  cross-prefix/lib/libharfbuzz.a                recomp-ui shaping (pkg-config)
-  cross-prefix/lib/libzlib.a                    freetype compressed fonts
+                                                find_package(raylib CONFIG)).
+                                                raylib-only target since Phase 5.
 
 Why source builds: Arch ships no mingw-w64 binary library packages (AUR
 satellite packages are unmaintained), and MSYS2 is Windows-only. Versions
@@ -50,64 +47,6 @@ TOOLCHAIN = REPO / "tools" / "mingw-x64.cmake"
 # The tarball's sha256 is the pin; a tag retag/force-push changes it and
 # fails here loudly.
 DEPS = [
-    {
-        "name": "zlib",
-        "repo": "madler/zlib",
-        "tag": "v1.3.2",
-        "sha256": "b99a0b86c0ba9360ec7e78c4f1e43b1cbdf1e6936c8fa0f6835c0cd694a495a1",
-        "cmake": [
-            # zlib's own option names (not BUILD_TESTING/BUILD_SHARED_LIBS):
-            # ZLIB_BUILD_TESTING kills test/infcover (needs libgcov; tests
-            # are upstream business), ZLIB_BUILD_SHARED kills libz.dll so
-            # every consumer links the static archive (prune_dynamic stays
-            # as belt-and-braces).
-            "-DZLIB_BUILD_SHARED=OFF",
-            "-DZLIB_BUILD_TESTING=OFF",
-        ],
-    },
-    {
-        "name": "freetype",
-        "repo": "freetype/freetype",
-        "tag": "VER-2-14-3",
-        "sha256": "dc49de6b01a266eef4876a4dd34d9842c475d3e28ff2eff63bd2fb760ab56261",
-        "cmake": [
-            "-DBUILD_SHARED_LIBS=OFF",
-            "-DFT_DISABLE_PNG=ON",        # no libpng cross-build; irrelevant
-                                           # for the launcher font paths
-            "-DFT_DISABLE_BZIP2=ON",
-            "-DFT_DISABLE_BROTLI=ON",
-            "-DFT_DISABLE_HARFBUZZ=ON",   # linked at the recomp-ui level,
-                                           # not inside freetype
-        ],
-    },
-    {
-        "name": "harfbuzz",
-        "repo": "harfbuzz/harfbuzz",
-        "tag": "14.6.0",
-        "sha256": "eca8581e5ad8e21dbda31556c0363f764b1a754c9c1bb33ca7cd56ca1c07ddc9",
-        "meson": [
-            # harfbuzz 14.x has no "fontconfig" toggle anymore (removed);
-            # freetype is deliberately off here too (linked at the
-            # recomp-ui level, not inside harfbuzz).
-            "-Ddefault_library=static",
-            "-Dglib=disabled", "-Dgobject=disabled", "-Dcairo=disabled",
-            "-Dicu=disabled", "-Dfreetype=disabled",
-            "-Dintrospection=disabled", "-Dtests=disabled", "-Ddocs=disabled",
-            "-Dutilities=disabled",
-        ],
-    },
-    {
-        "name": "sdl2",
-        "repo": "libsdl-org/SDL",
-        "tag": "release-2.32.10",
-        "sha256": "03f9d7c191a837525c9cda6406af2f2e48be02b5e7eb03d949cc9f1e9ca41c8b",
-        "cmake": [
-            "-DBUILD_SHARED_LIBS=OFF",
-            "-DSDL_SHARED=OFF",
-            "-DSDL_STATIC=ON",
-            "-DSDL_TEST=OFF",
-        ],
-    },
     {
         "name": "raylib",
         "repo": "raysan5/raylib",

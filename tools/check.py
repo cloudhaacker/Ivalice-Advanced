@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """One-command regression gate for the FFTA recomp worktree.
 
-Runs: host unit tests (C++ + Python) -> recomp-ui runtime-UI tests (the
-patched settings overlay) -> patch validity -> device-free Android checks ->
-attract golden gate -> widescreen smoke (margin census / center-crop / stale
+Runs: host unit tests (C++ + Python) -> patch validity -> device-free Android
+checks -> attract golden gate -> widescreen smoke (margin census / center-
+crop / stale
 guard, needs the local game.state1/state2 fixtures) -> render-path cadence
 gate (60 Hz scheduler invariants + no every-other-frame consumer on the
 presented surfaces) -> strict route replays
@@ -29,7 +29,7 @@ Usage:
 
 CI tier 1 runs the no-private-material subset (no ROM/savestates needed;
 the launch BIOS is committed clean-room repo material since the emibios
-swap): `--only unit-cpp,unit-py,ui-tests,patches,android-static` — see
+swap): `--only unit-cpp,unit-py,patches,android-static` — see
 tests/README.md § Continuous integration.
 
 Opt-in suite (not in the default run): `android-apk` — the content guard for
@@ -182,15 +182,6 @@ def check_cadence():
     return r.returncode == 0 and "cadence_probe: PASS" in line, line
 
 
-def check_ui_tests():
-    """recomp-ui's runtime-UI tests (tools/ui_check.py): the settings overlay
-    is a patched submodule, so its model + ImGui presentation tests must run,
-    not just the diff be validated by the patches check."""
-    r = run([sys.executable, "tools/ui_check.py"], timeout=900)
-    line = (r.stdout.strip().splitlines() or [""])[-1]
-    return r.returncode == 0 and "ui_check: OK" in line, line
-
-
 def check_savecheck():
     r = run([sys.executable, "tools/savecheck.py", str(FIXTURE_SAVE)], timeout=120)
     line = (r.stdout.strip().splitlines() or [""])[-1]
@@ -202,7 +193,7 @@ def check_patches():
     apply-able forward to a pristine tree, or reversible from the patched dev
     tree. Catches mangled/empty exports (2026-10-08 regression). Patches named
     arm-recomp-core-* target the nested external/arm-recomp-core repo and
-    recomp-ui-* the recomp-ui submodule; all others target gbarecomp itself."""
+    patches targeting gbarecomp (including emibios) and arm-recomp-core (nested)."""
     details = []
     ok = True
     names = sorted(p.name for p in (REPO / "tools" / "patches").glob("*.patch"))
@@ -216,8 +207,6 @@ def check_patches():
             continue
         if name.startswith("arm-recomp-core"):
             root = "gbarecomp/external/arm-recomp-core"
-        elif name.startswith("recomp-ui"):
-            root = "recomp-ui"
         else:
             root = "gbarecomp"
         fwd = run(["git", "-C", root, "apply", "--check", str(p)])
@@ -266,8 +255,7 @@ def check_patches():
     for root, cons_name, label in (
             ("gbarecomp", "gbarecomp-local.patch", "gbarecomp-local"),
             ("gbarecomp/external/arm-recomp-core",
-             "arm-recomp-core-local.patch", "arm-recomp-core-local"),
-            ("recomp-ui", "recomp-ui-local.patch", "recomp-ui-local")):
+             "arm-recomp-core-local.patch", "arm-recomp-core-local")):
         cons = REPO / "tools" / "patches" / cons_name
         if not cons.exists():
             continue
@@ -677,7 +665,6 @@ def check_backend_default():
 CHECKS = {
     "unit-cpp": check_unit_cpp,
     "unit-py": check_unit_py,
-    "ui-tests": check_ui_tests,
     "savecheck": check_savecheck,
     "patches": check_patches,
     "android-static": check_android_static,
@@ -701,7 +688,7 @@ CHECKS = {
                                           REG / "battle_move_start.state",
                                           REG / "battle_move.sav", 5600),
 }
-FAST = ["unit-cpp", "unit-py", "ui-tests", "savecheck", "patches",
+FAST = ["unit-cpp", "unit-py", "savecheck", "patches",
         "android-static", "raylib-backend", "backend-default", "attract"]
 # Opt-in suites, left out of the default run (they need local artifacts a
 # desktop-only worktree may not have); --only NAME runs them explicitly.
@@ -713,8 +700,7 @@ FAST = ["unit-cpp", "unit-py", "ui-tests", "savecheck", "patches",
 # gbarecompx/ is untracked.
 OPTIONAL = {"android-apk", "release", "raylib-compile", "raylib-headless"}
 # Checks that execute the game binary (require it to exist); the others run
-# on a fresh clone without the ROM (CI tier 1: unit-cpp, unit-py, ui-tests,
-# patches).
+# on a fresh clone without the ROM (CI tier 1: unit-cpp, unit-py, patches).
 NEEDS_EXE = {"attract", "hle-audit", "ws_smoke", "user_load", "route_G",
              "route_K", "route_B", "cadence"}
 

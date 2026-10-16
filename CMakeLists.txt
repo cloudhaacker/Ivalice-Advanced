@@ -5,8 +5,7 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Prefer the in-tree raylib experiment copy when present; otherwise fall back
-# to the pinned SDL2 submodule so the normal build keeps working.
+# Use the in-tree gbarecompx checkout when present (primary build path).
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/gbarecompx/CMakeLists.txt")
     set(_gbarecomp_default "${CMAKE_CURRENT_SOURCE_DIR}/gbarecompx")
 else()
@@ -20,26 +19,18 @@ if(NOT EXISTS "${GBARECOMP_ROOT}/CMakeLists.txt")
         "GBARECOMP_ROOT is not a gbarecomp checkout: ${GBARECOMP_ROOT}")
 endif()
 
-set(RECOMP_UI_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/recomp-ui"
-    CACHE PATH "Path to the shared recomp-ui checkout")
-
 # FFTA always builds the mod runtime: the widescreen feature installs through
 # the trusted-plugin lifecycle (src/main.cpp), and the Android shell's Gradle
 # build passes no mods flag of its own. Mirrors the reference repos.
 set(GBARECOMP_ENABLE_MODS ON CACHE BOOL
     "Build the GBA mod package loader and trusted-plugin runtime" FORCE)
-set(GBARECOMP_RUNTIME_UI_ROOT "${RECOMP_UI_ROOT}"
-    CACHE PATH "recomp-ui root used by the live GBA runtime adapter")
 
-# raylib Android: no launcher and no in-game runtime UI — recomp-ui's UI is
-# not ported to the raylib path (the generic menu is the in-game surface), and
-# the runtime-UI symbols are carried by the launcher target, which is off
-# there. Clearing the root before the framework's add_subdirectory keeps it
-# from defining GBARECOMP_RUNTIME_UI; with the launcher off the link would
-# otherwise fail on recomp_runtime_ui_* (observed).
-if(ANDROID AND GBARECOMP_USE_RAYLIB)
-    set(GBARECOMP_RUNTIME_UI_ROOT "")
-endif()
+# recomp-ui is removed (Phase 5): the runtime launcher overlay lives in
+# gbarecomp_runtime via its own renderer-agnostic sources elsewhere; keep the
+# root explicitly empty so the framework's GBARECOMP_RUNTIME_UI EXISTS guard
+# self-fails rather than pointing at a now-deleted checkout.
+set(GBARECOMP_RUNTIME_UI_ROOT ""
+    CACHE PATH "recomp-ui root (removed in Phase 5; left empty on purpose)")
 
 # ── Window backend (Phase 4c) ────────────────────────────────────────────────
 # raylib is the product backend. Declared here so a plain
@@ -160,35 +151,6 @@ target_compile_definitions(${FFTA_TARGET} PRIVATE
 
 option(GBAGAME_RECOMP_UI "Build the recomp-ui pre-boot launcher" ON)
 option(GBAGAME_BUNDLED_ROM "Private build: ROM is staged/bundled, setup UI may be skipped" OFF)
-# Raylib Android has no SDL/ImGui-SDL backend yet (rlImGui is a separate
-# TODO): the launcher cannot build there. Mobile args carry --no-launcher
-# anyway, so nothing is lost on device.
-if(GBARECOMP_RAYLIB_ENABLED AND ANDROID)
-    set(GBAGAME_RECOMP_UI OFF)
-    message(STATUS "ffta: launcher off (raylib Android; rlImGui pending)")
-endif()
-if(GBAGAME_RECOMP_UI)
-    include(${RECOMP_UI_ROOT}/recomp_ui.cmake)
-    add_library(game_launcher_ui STATIC src/game_launcher_boot.cpp)
-    target_include_directories(game_launcher_ui PRIVATE
-        "${GBARECOMP_ROOT}/src/runtime"
-        "${GBARECOMP_ROOT}/src/gba"
-        src)
-    recomp_target_launcher_ui(game_launcher_ui
-        CONSOLE gba
-        BOXART ${CMAKE_CURRENT_SOURCE_DIR}/recomp/launcher/boxart.tga)
-    # Android builds provide SDL2 from the shared shell's SDL subproject.
-    if(NOT TARGET SDL2::SDL2)
-        find_package(SDL2 REQUIRED)
-    endif()
-    target_link_libraries(game_launcher_ui PUBLIC SDL2::SDL2)
-    if(WIN32)
-        target_link_libraries(game_launcher_ui PUBLIC opengl32)
-    endif()
-    target_link_libraries(${FFTA_TARGET} PRIVATE game_launcher_ui)
-    set_property(SOURCE src/main.cpp APPEND PROPERTY
-        COMPILE_DEFINITIONS GBAGAME_RECOMP_UI)
-endif()
 
 if(ANDROID)
     # The game runs on mobile_run_with_stack()'s 256 MiB pthread; the SDL
@@ -213,6 +175,23 @@ if(NOT ANDROID AND EXISTS "${FFTA_PRELOADED_MODS}/packages")
             "${FFTA_PRELOADED_MODS}"
             "$<TARGET_FILE_DIR:${FFTA_TARGET}>/mods"
         COMMENT "Preloading the FFTA mod catalog")
+endif()
+
+# Ship the launcher box art beside the executable (raygui launcher loads
+# assets/img/boxart.png next to the exe via GetApplicationDirectory()).
+# Tracked as a build input: changing the PNG re-runs staging, even if the
+# game binary is otherwise up to date.
+set(FFTA_BOXART_SRC "${CMAKE_CURRENT_SOURCE_DIR}/recomp/launcher/boxart.png")
+if (NOT ANDROID)
+    add_custom_target(stage_boxart ALL
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+            "$<TARGET_FILE_DIR:${FFTA_TARGET}>/assets/img"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${FFTA_BOXART_SRC}"
+            "$<TARGET_FILE_DIR:${FFTA_TARGET}>/assets/img/boxart.png"
+        DEPENDS "${FFTA_BOXART_SRC}"
+        COMMENT "Staging launcher box art")
+    add_dependencies(${FFTA_TARGET} stage_boxart)
 endif()
 
 # ── host unit tests for src/ custom code ────────────────────────────
@@ -296,15 +275,12 @@ if(FFTA_BUILD_TESTS AND NOT ANDROID)
         ${GAME_GENERATED_SOURCES})
     target_include_directories(ffta_host_window_tests PRIVATE
         "${GBARECOMP_ROOT}/src/runtime" src)
-    # game_launcher_ui carries the ImGui + runtime-UI symbols host_window.cpp
-    # references when GBARECOMP_RUNTIME_UI is on.
     target_link_libraries(ffta_host_window_tests PRIVATE
         "-Wl,--start-group"
         gbarecomp_runtime
         gbarecomp_debug
         gbarecomp_gba
         gbarecomp_armv4t
-        game_launcher_ui
         "-Wl,--end-group")
     target_compile_options(ffta_host_window_tests PRIVATE -UNDEBUG)
     add_test(NAME host_window_closed COMMAND ffta_host_window_tests)
@@ -326,7 +302,6 @@ if(FFTA_BUILD_TESTS AND NOT ANDROID)
         gbarecomp_debug
         gbarecomp_gba
         gbarecomp_armv4t
-        game_launcher_ui
         "-Wl,--end-group")
     target_compile_options(ffta_host_window_delegation_tests PRIVATE -UNDEBUG)
     add_test(NAME host_window_delegation
@@ -355,7 +330,6 @@ if(FFTA_BUILD_TESTS AND NOT ANDROID)
         gbarecomp_debug
         gbarecomp_gba
         gbarecomp_armv4t
-        game_launcher_ui
         "-Wl,--end-group")
     target_compile_options(ffta_backend_select_tests PRIVATE -UNDEBUG)
     add_test(NAME backend_select COMMAND ffta_backend_select_tests)
@@ -381,4 +355,5 @@ if(FFTA_BUILD_TESTS AND NOT ANDROID)
         add_test(NAME raylib_present COMMAND ffta_raylib_present_tests)
         set_tests_properties(raylib_present PROPERTIES TIMEOUT 120)
     endif()
+
 endif()

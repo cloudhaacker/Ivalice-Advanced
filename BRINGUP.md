@@ -7934,7 +7934,140 @@ incremental-repackaging junk class) and the APK guard rejects it; a clean
 `app/build` (native `.cxx` survives) rebuilds in ~50 s and passes. The guard
 is doing its job; expect this every time Gradle repackages over a stale dir.
 
-## 2026-10-16 — Manual device pass: LCD/dither/deband OK on Adreno (last path closed)
+## 2026-10-16 — Baseline: RAYGUI_LAUNCHER plan start (drop recomp-ui)
+
+Plan `.opencode/RAYGUI_LAUNCHER.md` created (Phase 0–7, contract + raygui
+first backend + tinyfiledialogs picker). Phase 0 baseline frozen:
+- `build/` (raylib ON, recomp-ui still ON): app tests ram_dispatch /
+  host_window_closed / backend_select = 3/3 pass.
+- `build-raylib-stub` (raylib OFF): gbarecomp_raylib_backend target builds.
+- Attract golden byte-identical: `1EF4C118A8438CADE6E5847DC6716A7A800D157A568DECB272F2F7052EF321C1`
+  (frames=1200, PASS) — referee for the whole removal; never --repin.
+- Box art: Justme488 USA box art selected for `recomp/launcher/boxart.png`
+  (license unknown — sign-off given; commit records source URL + SHA-256 +
+  EmuMovies credits, no license text staged).
+- Launcher is a contract (`src/launcher.{h,cpp}`) with raygui as the first
+  backend (`src/launcher_raygui.cpp`).
+
+## 2026-10-16 — Phase 1 Step 1.0: Launcher contract (complete)
+
+- `src/launcher.h` — abstract `LauncherBackend` interface (`run() → LauncherResult`),
+  `LauncherConfig`, `create_launcher_backend()` factory; no raygui include.
+- `tests/unit/test_launcher_contract.cpp` — mock-backend test for Skip/Launch/Quit,
+  wired into `test_ram_dispatch.cpp`'s `main()` driver. PASS (0 failures).
+- gbarecompx/CMakeLists.txt: `gbarecomp_tinyfiledialogs` static target vendored
+  (v3.21.2, zlib); attribution recorded in gbarecompx/THIRD_PARTY_ATTRIBUTION.md
+  with SHA-256 pins.
+
+## 2026-10-16 — Phase 1 Step 1.2: raygui vendored (complete)
+
+- `src/vendor/raygui/raygui.h` + `LICENSE` (v5.1-dev / v5.0, zlib,
+  SHA-256 `8b19249c…`); attribution in gbarecompx/THIRD_PARTY_ATTRIBUTION.md.
+- CMakeLists.txt: `ffta_raygui_links_tests` target (links raylib via
+  `gbarecomp_raylib_backend`), registered as `raygui_links` ctest.
+- `tests/unit/test_raygui_links.cpp` — `#define RAYGUI_IMPLEMENTATION` +
+  `GuiButton` link check + `GuiGetStyle`/`GuiSetStyle` style accessors.
+  **PASS (exit 0)**, links raylib/OpenGL. Runs headless.
+
+## 2026-10-16 — Phase 2 Step 2.1: asset_picker dialog-seam test (RED observed)
+
+- `gbarecompx/tests/runtime/asset_picker_test.cpp` written against the target
+  seam shape (includes `asset_picker_seam.h`, overrides
+  `asset_picker_seam::pick_with_dialog` / `show_dialog`).
+- `gbarecompx/CMakeLists.txt`: `asset_picker_tests` target (standalone recipe:
+  asset_picker.cpp + crc32 + sha1 by source, no engine link).
+- **RED observed**: `fatal error: asset_picker_seam.h: No such file or directory`
+  — the seam header does not exist yet, so the test cannot compile. This is the
+  expected failure; Step 2.2 adds the seam.
+
+## 2026-10-16 — Phase 2 Step 2.2: seam added, runtime RED observed
+
+- `gbarecompx/src/runtime/asset_picker_seam.h` — inline function-pointer seam
+  (`pick_with_dialog`, `show_dialog`), null in production.
+- `asset_picker.cpp`: real impls renamed to `pick_with_dialog_impl` /
+  `show_dialog_impl`; seam-checked wrappers `pick_with_dialog` / `show_dialog`
+  route through the seam when set, else fall back to the impl.
+- `asset_picker_tests` now compiles + links (added `host_platform.cpp` for
+  `read_file`).
+- **Runtime RED observed** (Linux): `Assertion 'g_dialog_offered' failed` —
+  resolve_asset early-returns before offering the dialog on non-Windows. This is
+  the expected behavioral RED; Step 2.3 ungates the dialog loop.
+
+## 2026-10-16 — Phase 2 Step 2.3: dialog loop ungated, tinyfd wired (complete)
+
+- `asset_picker.cpp`: removed `#if defined(_WIN32)` / `#else` around the dialog
+  loop and the non-Windows early return; all platforms now run
+  argv → cache → dialog(→warn) → loop.
+- Replaced Win32 `GetOpenFileNameA`/`MessageBoxA` impls with unified
+  **tinyfiledialogs** impls (`tinyfd_openFileDialog` / `tinyfd_messageBox`) for
+  all platforms. `kAssetDialogError`/`kAssetDialogWarning` constants replace the
+  Win32 `MB_OK|MB_ICON*` flags.
+- `gbarecompx/CMakeLists.txt`: `gbarecomp_tinyfiledialogs` linked PUBLIC into
+  `gbarecomp_runtime`; Windows link set updated to `comdlg32 ole32 winmm`
+  (tinyfd needs Ole32 on Windows).
+- `asset_picker_tests` **PASS** (exit 0): dialog offered + picked path +
+  hash-mismatch warn + cancel error. Test removes stale `rom_seam_test.cfg`
+  from prior crashed runs and sets `persist_cache=false` so the cache path
+  never short-circuits the dialog.
+- `FFTARecomp` links clean with tinyfd in the runtime.
+
+## 2026-10-16 — Phase 3 Step 3.1: launch-screen state model test (RED observed)
+
+- `tests/unit/test_launch_screen_model.cpp` written against the target model
+  shape (includes `launch_screen_model.h`, drives the state machine through
+  RomPicked/RomDropped/PlayPressed/QuitPressed, validates via real
+  `gbarecomp::resolve_asset`).
+- `CMakeLists.txt`: standalone `ffta_launch_screen_model_tests` target
+  (asset_picker.cpp + host_platform.cpp + crc32 + sha1 by source, links
+  `gbarecomp_tinyfiledialogs`), registered as `launch_screen_model` ctest.
+- **RED observed**: `fatal error: launch_screen_model.h: No such file or
+  directory` — the model header does not exist yet, so the test cannot
+  compile. Expected failure; Step 3.2 adds the model header.
+- Model shape encoded in the test (signed off via the test):
+  - States `{NeedRom, Ready}`; inputs `{RomPicked, RomDropped, PlayPressed,
+    QuitPressed}`; outputs `{None, PickRom, Launch, Quit}`.
+  - Fresh → NeedRom; PlayPressed in NeedRom ignored; RomPicked/RomDropped
+    valid → Ready; PlayPressed in Ready → Launch; QuitPressed → Quit;
+    invalid pick → PickRom (stays NeedRom); bios_path surfaced unchanged.
+- **MUT:** `src/launch_screen_model.h` — header-only state machine (no raylib).
+  Model test **PASS** (exit 0): all 8 cases green. Model shape signed off
+  (question tool, 2026-10-16).
+- Test hang fix: `resolve_asset` on the invalid-path case opened a real tinyfd
+  dialog (stdin block). Injected `asset_picker_seam` (fake_pick returns empty =
+  instant cancel) so the dialog loop exits cleanly headless.
+
+## 2026-10-16 — Phase 3 Step 3.2: raygui backend (complete, unwired)
+
+- `src/launcher_raygui.cpp` — concrete `LauncherBackend` impl per the Step 1.0
+  contract. raylib window (720×480), box art texture (PNG), raygui Play/Select
+  ROM buttons, gamepad nav (d-pad + face buttons), drag-and-drop (.gba filter),
+  first-boot auto-open of the ROM picker. Drives `LaunchScreenModel` for
+  state; `run()` returns `LauncherResult` (Launch/Quit). No raygui types leak
+  past the contract boundary.
+- `src/launcher.h` — `LauncherConfig` extended with `argv0` (cache root) +
+  `staged_bios` (resolved BIOS path).
+- `CMakeLists.txt` — `src/launcher_raygui.cpp` added to `FFTA_HOST_SOURCES`
+  when `GBARECOMP_USE_RAYLIB`; `gbarecomp_raylib_backend` linked + define +
+  `src/vendor/raygui` include dir.
+- **DIFF:** model test PASS (exit 0); asset picker test PASS; ffta_unit_tests
+  PASS (0 failures); FFTARecomp links clean; attract golden unchanged
+  (`1EF4C118…`) — the unwired leg proves nothing else moved. No `main.cpp`
+  wiring yet (Phase 4).
+
+## 2026-10-16 — Phase 0 Step 0.2: tinyfiledialogs spike (confirmed)
+
+- `tinyfiledialogs` v3.21.2 (zlib, Guillaume Vareille) fetched to
+  `/tmp/opencode/smallfd_spike` (throwaway, not in repo).
+- **No compile macro exists** to disable console fallback — `tinyfd_forceConsole`
+  is a runtime global. Mechanism is the `tinyfd_query` probe:
+  `tinyfd_openFileDialog("tinyfd_query", ...)` never shows a dialog; it sets
+  `tinyfd_response` to `zenity`/`kdialog`/…/`no_solution` and returns NULL on
+  console/no_solution.
+- Empirical result on this dev box (no zenity/kdialog/matedialog/yad/xmessage):
+  `tinyfd_response='no_solution'`, `ret_ptr=NULL` → fail-fast path confirmed;
+  headless/CI will never block on stdin.
+- Plan `Constraint 2` and `Step 0.2` corrected to describe the probe pattern
+  (replacing the erroneous "compile macro" language).
 
 User manual test on the Poco X3 Pro (M2102K1AC, Android 14/API 34) with the
 fixed private APK: no crash on any graphics toggle (the be257ef hook fix),
@@ -7947,3 +8080,37 @@ consistent with report-only self-heal + no dispatch misses). That closes the
 game-space grid change — every path in the change is now verified end to end
 on both platforms: desktop (real-GL tier + measurements) and Android (device
 gate + manual pass).
+
+---
+
+## 2026-10-17 — Phase 5 removal sweep (recomp-ui gone)
+
+- Removed the `recomp-ui` submodule (deinit + git rm + .gitmodules entry); recomp-ui is no longer a dependency. Launcher is the raygui screen in `gbarecompx/src/runtime/`.
+- Root `CMakeLists.txt`: dropped `RECOMP_UI_ROOT`, cleared `GBARECOMP_RUNTIME_UI_ROOT` to `""` (doc-only), removed stale SDL2 comment; Build no longer references `GBAGAME_RECOMP_UI` (already removed in Phase 4.3). No `SDL2` references remain.
+- Removed `game_launcher_ui` from the three host test link lists; host window delegation test expectations updated to the no-runtime-ui result (interp calls 0), matching the new reality.
+- Patch re-baseline: deleted `tools/patches/launcher-force-ui.patch` and `tools/patches/recomp-ui-local.patch`, dropped the `recomp-ui` replay target, stripped the recomp-ui bios-verify half from `emibios-launcher-pin-set.patch`, remaining only `gba_bios.h` kEmibiosSha1.
+- Stale `frame-pacer-banked-wait.patch` removed (current tree has evolved beyond its context); README row dropped.
+- `tools/check.py`: dropped `ui-tests` suite and `check_ui_tests` (and reference); deleted `tools/ui_check.py`. CI workflow apt list and gate command pruned for SDL/freetype/harfbuzz & ui-tests.
+- Dead-code audit: `RECOMP_LAUNCHER`/`RECOMP_UI_*` defines are not referenced in product code; netplay CMake does not depend on a recomp-ui UI. Framework files (launcher_seam.h etc.) left for later framework cleanup, per rule 5.8.
+- Verify: `check.py --fast` ALL PASS (8/8); attract hash `1EF4C118A8438CADE6E5847DC6716A7A800D157A568DECB272F2F7052EF321C1` unchanged.
+
+
+---
+
+## 2026-10-18 — Phase 6 packaging
+
+- `tools/win_cross_deps.py`: cross-prefix recipes dropped to raylib only (SDL2, freetype, harfbuzz, zlib removed); status shows only raylib 6.0.
+- `tools/make_release.py`: required set no longer includes `assets/fonts`, `assets/img`; harfbuzz/SDL2 license staging and `SDL2.DLL` guard removed; mod manifest path updated to 1.0.1; release succeeds (`check.py --only release` PASS).
+- Wine smoke already passes explicit ROM via `--rom`, so bare-extraction seeding is documented in the runner.
+- Verify: `check.py --fast` ALL PASS; attract hash unchanged `1EF4C118…`.
+
+---
+
+## 2026-10-16 — Launcher public/product close-out (Phase 6 + fixes)
+
+- Product runtime now ships only the raylib/raygui launch surface; recomp-ui is gone.
+- COMMISSION CODE / NEEDED: Launcher ROM cache fast-path bug: `resolve_asset(force_pick)` default behavior meant Select ROM/keys/gamepad silently no-op when a valid `rom.cfg` existed. Added `force_pick` to `gbarecompx` and route all explicit pick actions through it; first-boot auto-open keeps sidecar-cache fast path.
+- Regression test added in gbarecompx: forced re-pick bypasses a valid cache and calls the picker seam.
+- Phase 7 asset (box art, attributions, screenshots) unchanged; launcher UI now has status/error reporting after each pick.
+- Verify: `.venv/bin/python tools/check.py --fast` ALL PASS (8/8); asset picker tests PASS; attract hash `1EF4C118A8438CADE6E5847DC6716A7A800D157A568DECB272F2F7052EF321C1`.
+- Nested framework repo backed up and committed separately as `launcher: raygui contract, repick cache fix, asset picker tests`.

@@ -2,8 +2,6 @@
 
 Working-tree edits kept applied on top of the pinned `gbarecomp/`
 submodule — and, for `arm-recomp-core-*` patches, its nested
-`external/arm-recomp-core` submodule; `recomp-ui-*` patches target the
-`recomp-ui/` submodule instead. Patches are routed by that filename prefix;
 everything else targets `gbarecomp` itself.
 
 **Re-apply after a submodule update with the consolidated patches:**
@@ -12,7 +10,6 @@ everything else targets `gbarecomp` itself.
 git -C gbarecomp apply ../tools/patches/gbarecomp-local.patch
 git -C gbarecomp/external/arm-recomp-core apply \
   ../../../tools/patches/arm-recomp-core-local.patch
-git -C recomp-ui apply ../tools/patches/recomp-ui-local.patch
 ```
 
 Each `*-local.patch` is one pristine→dev diff of its repo's whole tracked
@@ -38,7 +35,6 @@ patch to re-apply; use these files to see what each change was for.
 | Patch | Target | Upstream? | Purpose |
 |---|---|---|---|
 | `gbarecomp-local.patch` | whole dev tree (canonical re-apply unit) | — | Consolidated pristine→dev diff; replay-verified byte-identical to the dev tree by `check.py` `patches` |
-| `recomp-ui-local.patch` | `recomp-ui/` (canonical re-apply unit) | **Yes** (high) | Runtime settings overlay list scrolling (ffta-recomp issue #24): the host drives the selection (`recomp_runtime_ui_handle_input`) with `ImGuiWindowFlags_NoNavInputs` set, so nothing scrolled the list child when a d-pad/arrow press moved the highlight past the fold (`Scroll.y` frozen while the row walked 284 px below it), and ImGui children scroll only from the wheel or their scrollbar, so a touch swipe did nothing (`recomp-ui`'s SDL backends hand fingers to the UI as a mouse). The patch adds a minimal scroll-follow for host-driven selection plus a touch drag-scroll with a fling; drags mute row hover/click so a swipe cannot activate what it started on. Generic: any host that drives the menu's selection. Regression tests: `recomp-ui` `tests/runtime_ui_imgui_test.cpp` (`list_scroll_case`, `desktop_nav_scroll_case`), run by `tools/check.py --only ui-tests`. |
 | `arm-recomp-core-local.patch` | nested repo `gbarecomp/external/arm-recomp-core` (canonical re-apply unit) | **Yes** (high) | In-body forward gotos (2026-10-09): a direct branch whose target lies inside the current function's extent AND carries a label (backward target, or a gap block rolled in as an alias) lowers to `goto L_<addr>` instead of a C call — how the split vblank loop stays in one host frame (see `BRINGUP.md` § split-loop gap roll-in). General codegen improvement for any game with split loops. |
 | `oracle-save-autoload.patch` | `gbarecomp/oracle/main.cpp` | **Yes** (low) | Make the oracle autoload `<rom>.sav` next to the ROM (via `mCoreLoadFile` + `mCoreAutoloadSave`) instead of a raw `loadROM`, aligning it with standard mGBA frontend behavior so save/load-flow comparisons work. |
 | `selfheal-journal-close-hardening.patch` | `gbarecomp/src/runtime/{runtime_arm_default_aborts,overlay_loader,runtime}.cpp` | **Yes** (medium) | Durable live miss-frag journal (written per-miss, env-gated) + bounded heal-worker shutdown (stop abandons queue; only in-flight compile finishes). Both are crash-safety/robustness fixes. |
@@ -51,8 +47,6 @@ patch to re-apply; use these files to see what each change was for.
 | `speed-toggle-ff-seam.patch` | `gbarecomp/src/runtime/{runtime.h,runtime.cpp}` | **Feature** (low) | Game-driven fast-forward latch (`RunOptions::fast_forward_request`, ffta-recomp issue #11): a game-owned control (FFTA's touch pill in `src/ffta_speed_boost.cpp`) requests the same boost as the Assist hold/latch under the same Assist-enable gate. Null (all other games) leaves the input path byte-identical. |
 | `swi-return-ledger.patch` | `gbarecomp/src/armv4t/runtime_arm.cpp` | **Yes** (high; the issue #30 R1 root containment) | SWI-return continuation ledger: `runtime_swi`'s LLE entry records the SVC-return continuation (`return_address` — the SWI site + instruction width); every SVC-mode exception return (`runtime_exception_return` + the interpreted note) validates `new_pc` against the ledger top and keeps the recorded continuation on mismatch (loud log). Ring-proven root (2026-10-09): the BIOS SWI epilogue (`0x184 pop {fp,ip,lr}` / `0x188 movs pc,lr`, disarm-verified) returned to the IRQ-interrupted PC (`0x080033BA`) instead of the recorded veneer continuation (`0x814186E`) when the shared R[14] slot was clobbered mid-drive — on hardware LR_svc is banked and untouchable, so this pins the recomp divergence, not guest behavior. Ledger cleared at every machine-reset / savestate-load origin (`runtime_fp_reset`); SoftReset's never-returned SWI leaves only a harmless stale entry. |
 | `android-external-state-dir.patch` | `gbarecomp/src/runtime/runtime.cpp` | Feature (low) | `--state-dir <dir>` (ffta-recomp issue #6): save-state slots (`.stateN`) and the mobile suspend state/marker (`.suspend.state`/`.suspend.pending`) are written under the given directory (ROM basename kept) instead of next to the ROM. Empty (desktop default) preserves historical behavior. The game side (`src/main.cpp`, Android only) points it at the user-visible external app directory with a one-time migration from app-private storage. |
-| `launcher-force-ui.patch` | `gbarecomp/src/runtime/launcher_seam.h` | Proposal (medium) | `--launcher` forces the pre-boot UI even when headless-classified flags (`--rom`, `--frames`, …) are present (ffta-recomp issue #5: `play.sh` always passes `--rom`, so the flag never took effect). Without `--launcher`, headless detection still skips silently. Behavior-change proposal for upstream: the previous contract only forced past a persisted skip. |
-| `frame-pacer-banked-wait.patch` | `gbarecomp/src/runtime/{host_platform.h,host_platform.cpp,runtime.cpp}` | **Yes** (high) | Banked-frame pacer wait (ffta-recomp issue #8 fix): `FramePacer::wait_for_next_frame(frames=1)` advances the deadline by the banked count, and both present sites pass `frame - last_presented_frame`. Stale-frame present skips used to let banked frames escape throttling (+5% guest wall-clock in battle, audio-bridge flood); one wait now paces all of them. `frames==1` is the old path exactly; fast-forward (k==1 per wait) and the behind-resync are unchanged. |
 | `emibios-launcher-pin-set.patch` | `gbarecomp/src/{gba/gba_bios.h,runtime/launcher_seam.h}` | Feature (medium) | Accept the clean-room emibios BIOS (LGPL-3.0-or-later, coolbho3k/emibios; ffta-recomp issue #17) alongside the retail dump: `GbaBios::kEmibiosSha1` pin + the launcher's `bios_verify` hook tries retail, then emibios. The per-config `[bios].sha1` pin stays the runtime's real gate; this only lets the launcher recognize a config-pinned clean-room BIOS (and a user-supplied emibios) instead of demanding retail. |
 | `emibios-bios-dispatch-table.patch` | `gbarecomp/src/runtime/generated_bios/bios_dispatch_table.cpp` | Data (large, mechanical) | The BIOS regeneration for emibios (issue #17) overwrites the upstream-provenance retail `bios_dispatch_table.cpp` with the emibios table (5339 rows vs retail's 5156 — the table is committed upstream "for provenance and overwritten by BIOS regeneration" per its `.gitignore`). Data-only: address/name rows, no code. Regenerate with `build.py` step_bios; the delta must stay in the consolidated patch for the `patches` replay to byte-match. |
 | `emibios-public-guard-bundled.patch` | `gbarecomp/platform/android/gbarecomp-app.gradle` | **Conditional** (medium) | Public-artifact guard exemption: a 16 KiB `.bin` whose SHA-1 equals the game-declared `biosSha1` pin (which must differ from the retail default) is declared clean-room BIOS material, staged on purpose for every build including public ones. The retail filename `gba_bios.bin` is never exempt; retail dumps stay unbundleable. Needed by any game bundling a redistributable replacement BIOS in its Android payload. |
@@ -69,7 +63,6 @@ recovery (a handler that lost its iret anyway is closed coherently);
 
 Recommended order for proposing to gbarecomp:
 
-1. `frame-pacer-banked-wait` — pacing correctness: stale-frame present
    skips let banked guest frames escape throttling (measured +5% fast
    clock with an audio-bridge flood on FFTA battle). Small, game-agnostic,
    behavior-identical for the common single-frame case.
@@ -97,21 +90,16 @@ Recommended order for proposing to gbarecomp:
 10. `stick-to-dpad` — game-agnostic input courtesy (GBA titles have no
     analog input, so every d-pad-driven game benefits); upstream may want a
     launcher-exposed deadzone/off switch before it lands.
-11. `recomp-ui-local` — the recomp-ui runtime-UI fix (a *different* upstream
-    repo, `mstan/recomp-ui`; propose there, then bump the pin and drop the
     patch). High value, small and self-contained: it is a presentation bug in
     the shared in-game menu, so every host that drives the menu's selection
     with a d-pad and every touch host hit it.
 
-### Upstream drift (checked 2026-10-09; recomp-ui 2026-10-12)
 
-The `recomp-ui` pin (`cac2b8f`, master) is 39 upstream commits behind as of
 2026-10-12 (nested runtime pages via `/`-separated section paths, standard
 "Game dimming"/"Menu opacity"/"State slot"/"Pause in menu" rows, confirm-exit
 items, launcher pipeline/resolution work). Checked that wave for this fix:
 `src/common/backends/imgui/runtime_ui_imgui.cpp` there still has no scroll
 handling at all — upstream does not fix issue #24, so the patch is not
-subsumed. A `recomp-ui` pin bump would need the same discipline as
 `gbarecomp`'s (rebase/re-export, re-run `ui-tests` + the desktop smoke).
 
 The `gbarecomp` pin (`ecc9c55`, 2026-10-03) is ~30 upstream commits behind (the
@@ -134,8 +122,6 @@ git --no-pager -C gbarecomp diff --no-ext-diff --no-color -- . \
   ':(exclude)external/arm-recomp-core' > tools/patches/gbarecomp-local.patch
 git --no-pager -C gbarecomp/external/arm-recomp-core diff --no-ext-diff \
   --no-color > tools/patches/arm-recomp-core-local.patch
-git --no-pager -C recomp-ui diff --no-ext-diff --no-color \
-  > tools/patches/recomp-ui-local.patch
 ```
 
 A plain `git diff` piped through a pager/formatter produces non-apply-able
@@ -145,6 +131,5 @@ nested submodule's gitlink out of gbarecomp-local.patch (GNU patch cannot
 apply a submodule-commit hunk; the nested repo is covered by its own
 consolidated patch).
 
-`gbarecomp` is licensed **PolyForm Noncommercial 1.0.0** and `recomp-ui` is
 **MIT** (both © 2026 Matthew Stanley); patched copies remain under their
 terms. These files are diffs only — no upstream source is vendored here.

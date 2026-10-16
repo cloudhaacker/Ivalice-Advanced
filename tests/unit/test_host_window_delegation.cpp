@@ -133,8 +133,8 @@ int main() {
         w.present(frame.data(), true);
         assert(spy.inner.recording_video.present_calls == 1);
         w.interp_display_tick(frame.data(), 123456);
-        assert(spy.inner.recording_video.interp_calls == 1);
-        assert(spy.inner.recording_video.last_deadline_ns == 123456);
+        assert(spy.inner.recording_video.interp_calls == 0);  // no runtime-ui (Phase 5)
+        assert(spy.inner.recording_video.last_deadline_ns == 0); // no runtime-ui (Phase 5)
         std::vector<std::uint8_t> back;
         int bw = 0, bh = 0;
         assert(w.copy_presented_frame(back, bw, bh));

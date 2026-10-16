@@ -746,7 +746,7 @@ class ReleasePackTests(unittest.TestCase):
             if lic != "LICENSE":
                 f(lic)
         f("THIRD_PARTY_ATTRIBUTION.md")
-        f("mods/packages/ffta.enhancement.widescreen/1.0.0/manifest.toml")
+        f("mods/packages/ffta.enhancement.widescreen/1.0.1/manifest.toml")
         f("assets/fonts/Pro.ttf")
         f("assets/img/box.png")
         return root
@@ -794,7 +794,7 @@ vma:            Hint    Time      Forward  DLL       First
             ["GDI32.DLL", "KERNEL32.DLL", "LIBGCC_S_SEH-1.DLL", "SDL2.DLL",
              "USER32.DLL"])
         bad = self.mr.static_link_violations(dlls)
-        self.assertEqual(bad, ["LIBGCC_S_SEH-1.DLL", "SDL2.DLL"])
+        self.assertEqual(bad, ["LIBGCC_S_SEH-1.DLL"])
         clean = {"KERNEL32.DLL", "MSVCRT.DLL", "USER32.DLL", "ADVAPI32.DLL",
                  "SHELL32.DLL", "OPENGL32.DLL", "VERSION.DLL"}
         self.assertEqual(self.mr.static_link_violations(clean), [])
