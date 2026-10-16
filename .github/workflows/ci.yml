@@ -34,7 +34,34 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            ninja-build libgl-dev
+            ninja-build libgl-dev ccache
+
+      # Cache pip so the capstone wheel isn't re-downloaded every run.
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ffta-pip-${{ runner.os }}-py312-${{ hashFiles('.venv/pyvenv.cfg') }}
+          restore-keys: |
+            ffta-pip-${{ runner.os }}-py312-
+
+      # Cache ccache so C++ compiles reuse prior objects across runs.
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ffta-ccache-${{ runner.os }}-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: |
+            ffta-ccache-${{ runner.os }}-
+
+      # Cache the CMake build dir so `ffta_unit_tests` rebuilds incrementally.
+      - name: Cache CMake build dir
+        uses: actions/cache@v4
+        with:
+          path: build
+          key: ffta-build-${{ runner.os }}-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: |
+            ffta-build-${{ runner.os }}-
 
       # unit-py imports tools/misspack.py, which needs capstone. Local runs
       # always use .venv (docs/manual-build.md); the runner needs the same dep on
@@ -52,7 +79,8 @@ jobs:
       # untracked until Phase 7, so GBARECOMP_ROOT falls back to the pinned
       # gbarecomp submodule and the raylib option is never consumed.
       - name: Configure
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_C_COMPILER_LAUNCHER=ccache
 
       - name: Gate (unit-cpp, unit-py, patches, android-static)
         run: python3 tools/check.py --only unit-cpp,unit-py,patches,android-static
@@ -91,7 +119,17 @@ jobs:
             libgl-dev libx11-dev libxrandr-dev libxinerama-dev \
             libxcursor-dev libxi-dev libxkbcommon-dev \
             libfreetype-dev libharfbuzz-dev libsdl2-dev \
-            xvfb libgl1-mesa-dri
+            xvfb libgl1-mesa-dri ccache
+
+      # Cache ccache across runs; the raylib _deps cache (below) stays keyed on
+      # gbarecompx/CMakeLists.txt so a pin bump re-clones cleanly.
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ffta-ccache-raylib-${{ runner.os }}-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: |
+            ffta-ccache-raylib-${{ runner.os }}-
 
       # Configures build/ with default flags (raylib is the product default
       # since Phase 4c), builds gbarecomp_raylib_backend, then builds and runs
@@ -110,4 +148,4 @@ jobs:
           key: ffta-raylib-deps-${{ runner.os }}-${{ hashFiles('gbarecompx/CMakeLists.txt') }}
 
       - name: "Gate (raylib-compile: build + run headless under Xvfb)"
-        run: python3 tools/check.py --only raylib-compile
+        run: CC="ccache gcc" CXX="ccache g++" python3 tools/check.py --only raylib-compile
