@@ -369,7 +369,7 @@ GBARECOMP_INPUT_REPLAY=logs/playthrough.csv ./build/FFTARecomp ...` — expect
   subset. `tools/savecheck.py` validates raw/RTN5 saves offline.
   The `saves/regress/` fixtures are local-only (never redistributed), so a
   fresh clone has nothing to replay: use
-  `--only unit-cpp,unit-py,patches,android-static` (the CI subset — no dumps
+  `--only unit-cpp,unit-py,android-static` (the CI subset — no dumps
   needed) or
   `--only attract` (dumps but no fixtures) until you have regenerated routes
   by playing + resolving; `--fast` also needs the fixture for its
@@ -462,10 +462,9 @@ Two tiers, split by what may leave your machine:
   Runs on GitHub-hosted runners for every push/PR: checks out the pinned
   submodules (**pristine at the pin** — local framework edits live only in
   working trees, never pushed), installs the build packages, configures, and
-  runs `tools/check.py --only unit-cpp,unit-py,patches,android-static` —
-  the host unit tests (C++/Python), patch integrity (per-feature patches
-  forward-validated against the **pristine pin**, so it works on a fresh
-  clone), and the device-free Android checks (identity pins, payload
+  runs `tools/check.py --only unit-cpp,unit-py,android-static` —
+  the host unit tests (C++/Python), the device-free Android checks (identity
+  pins, payload
   contract, tracked-file hygiene, a fake-`adb` self-test of the device gate
   script; no SDK needed). It needs no ROM or savestates, and therefore
   cannot run the game itself (the ROM byte-pin and stack-guard tests skip
