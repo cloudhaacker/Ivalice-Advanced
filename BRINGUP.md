@@ -8415,3 +8415,63 @@ the fix dies with it, silently. Anything that must always exist goes
 OUTSIDE the gate; and a class-level test cannot see product wiring —
 only a wiring-level check (source shape or an overlay-opening smoke)
 can.
+
+## 2026-10-18 — tools/ audited: the framework-protocol tools move into gbarecompx (user direction)
+
+**Report.** "Make sure the scripts in tools are actually FFTA-specific
+and not just gbarecompx tools in the wrong place" — the same
+misplacement class as the menu-wiring guard, at directory scale.
+
+**Method.** Every tool classified by WHAT IT SPEAKS, not by where it
+lives: docstrings + argument surfaces + hardcoded-constant counts +
+the caller graph (code callers vs docs-only mentions). The dividing
+line: a tool that talks a FRAMEWORK format or surface (the mGBA oracle,
+the self-heal loop/fragments/cache, `GBARECOMP_FP_SAVE` rings,
+`# gbarecomp-keyinput-v1` traces, the runner's TCP close/watchdog
+protocol, generic GBA disassembly/engine detection) is framework
+content; a tool that talks FFTA (attract corridor, ws catalog, route
+fixtures, the save/truth audits, device gates, release identity,
+bring-up probes pinned to FFTA RAM layout) stays.
+
+**Moved (11, fork `2d7c2d7`):** framediff, dualrun (oracle drivers —
+the oracle itself already lives fork-side), resolve + misspack +
+cache_harvest (the playtest→healing loop the playbook calls portable),
+ringscan, trace_split (framework artifact formats), quit, livewatch
+(runner TCP protocol), disarm, m4a_detect (generic GBA analysis).
+Path semantics made explicit in each: the GAME checkout = the cwd
+(game.toml/game.gba/bios/generated/logs defaults), the FRAMEWORK root
+= the tool's own location (the oracle binary). That rework also fixed a
+latent rename bug: dualrun's oracle default still pointed at the
+pre-rename `gbarecomp/build/...` path — deriving framework paths from
+the tool's own root kills the whole bug class.
+
+**Kept (FFTA-specific):** attract/ws/route/savecheck/truth suites, the
+Android gates, cycle/check/play, release packaging + cross-prefix,
+coverage_report (the FFTA accuracy-burndown presentation), and the
+bring-up probes — including hangprobe, whose "generic-looking" TCP spin
+dump actually reads the FFTA vblank wake flag (0x03000E10) and IRQ
+vector (0x03007FF0): game forensics, stays.
+
+**Wiring.** Fork: `tools/tests/` (trace_split/cache_harvest/misspack —
+6 tests, stdlib unittest) run by the guard job, which now installs
+capstone==5.0.7; `tools/README.md` documents the set + the
+run-from-game-checkout convention. Game: the 11 files deleted; AGENTS
+(ground rule 1's disarm path, the commands table), tools/README (rows
+out, a framework-tools pointer in), tests/README, reference/*
+(oracle-harness, dev-gotchas, event-vm, widescreen), the playbook
+skill's references, cycle.py/play.sh hint strings, and
+tests/python/test_tools.py (the three moved classes removed; the suite
+is now capstone-free, so CI tier 1 dropped its pip install).
+
+**Result.** Game `check.py --fast` ALL PASS 7/7 (attract unchanged);
+the moved tools verified live from the game root (`disarm` decodes the
+real crt0 branch; misspack/ringscan load + parse). Fork CI green
+through `2d7c2d7` (guard job exercising the new tests). Old
+`release-stage/` snapshots mentioning the old paths are UNTRACKED
+historical artifacts — deliberately untouched.
+
+**Lesson.** "Whose tool is this?" is answerable by protocol, not by
+residence: if the tool parses a format the framework defines or drives
+a surface the framework exposes, it belongs to the framework — and its
+tests move with it. Consumer repos keep the tools that encode THEIR
+content (routes, identities, RAM-layout forensics, release identity).
