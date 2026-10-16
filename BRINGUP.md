@@ -7739,3 +7739,16 @@ working-tree doc): SetAudioStreamCallback era (≥4.5, not 6.0-addition),
 windowless notes (rlsw/PLATFORM_MEMORY supersede, GL caveat kept), API-notes
 section title, tier-3 table row, and the two `gbarecomp-raylib tree` skip
 strings (-> `gbarecompx`, matching check.py). No code touched.
+
+## 2026-10-16 — V2 Phase 6 COMPLETE (docs + cleanup, scoped)
+
+6.1 (`0323617`): removed tracked spike-s1/ + untracked build-raylib/,
+build-raylib-scaffold/; kept build-raylib-stub (live gate), both headless
+dirs, and the gbarecomp/ fallback (public CI needs it until Phase 7).
+6.2 (`41dd9c4`, doc-only): RAYLIB_PLAN stale claims fixed (#3911 verified
+closed/declined; era + windowless + tier-3 + skip strings).
+6.3 (`3fdd7f3`, framework): minimal README + raylib attribution; full
+rewrite trio deferred per scope call. 6.4 (`3a1fa63`, framework): SDL pass
+(9 files) + upstream banners; untouched list verified SDL-free.
+Deviations from the plan text, all user-approved: fallback kept, README
+minimal, gl-xvfb deferred. No code touched after 6.1 (none at all).
