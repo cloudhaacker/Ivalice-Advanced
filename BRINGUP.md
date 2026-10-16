@@ -8571,3 +8571,42 @@ cycle `attract_verify=PASS`).
 Remaining: APK repackage + device QA (`launchBoxartRes` boxart on the
 setup screen — the settings overlay itself is desktop-only, so the
 device artifact changes only by the boxart drawable).
+
+**Follow-up (same day): the settings overlay stopped rendering on Delete.**
+
+First regression from the menu-engine landing. Root cause: MenuImpl's
+constructor assigned its own PRIVATE engine member; draw_pending_menu() —
+a free function that cannot reach MenuImpl's privates — read
+Impl::menu_engine, which nothing ever assigned. The menu OPEN path ran
+completely (model open, `suppress_game_input` flipped, guest input
+masked) and the null guard silently skipped the draw: Delete opened an
+invisible menu. Found with the TCP KEYINPUT observer (input masked on
+Delete, no visible overlay), confirmed by a grep for the member's
+assignment. Fix: `52c04c7` — Impl owns the engine; the null draw path
+fails loudly (one-shot stderr) if ever re-broken.
+
+**Why the tests missed it (the user asked; recorded here so the answer
+survives):** every layer was tested in isolation and the seam between
+them had no executable coverage. `menu_engine_tests` drives the engine
+over a recording overlay — never RaylibBackend. The host-loop suites run
+fakes — never the real backend. The raylib CI job compiles the real
+backend but its tests cannot reach the draw path (present() early-outs
+without a live window; draw_pending_menu runs inside a real frame
+context). The one end-to-end gate that runs the real binary — the
+attract golden — never opens the menu. And the process failure on top:
+~800 lines landed including a rewrite of that glue, pushed without
+pressing Delete once.
+
+**What now catches this class:** (1) structurally, the engine is owned in
+one place (MenuImpl ctor assigns the Impl member) and a null draw path
+fails loudly instead of silently; (2) functionally,
+`menu_render_contract_tests` walks the real-backend menu seams through
+the contract — available(), real-backend readback fidelity (previously
+only pinned for the fake), and the plan §3.4 no-upload-leak invariant —
+display-gated like backend_contract_test. **Honest limit:** the contract
+cannot observe the composited screen (readback is the guest-frame upload
+by design), so a silent no-draw remains invisible to headless tests.
+The pixel-level assertion needs a screen-capture tier: an xvfb CI proof
+that screenshots the window while a menu-open present loop holds it up
+(mirroring the gl-xvfb job's proof-step pattern). Logged as the open
+follow-up.
