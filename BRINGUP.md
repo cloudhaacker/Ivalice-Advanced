@@ -8678,3 +8678,19 @@ taste-silent. Text sizes are now value-pinned in launcher_raygui_test
 (per element + a closed set over every frame-0 record + the checkbox
 codepoint size); negative-controlled with the pre-fix 22. Amends the
 prior entry's "sizes deliberately not pinned" — overruled.
+
+**Settings-menu dead text after launcher boot (same day).** Root cause:
+raygui's once-per-process lazy style init fired inside the LAUNCHER's GL
+context; CloseWindow destroyed that font texture; raylib reloads the
+default font per InitWindow but raygui never re-copies, so the overlay
+sampled the dead texture (shapes fine — the shape texture is re-set from
+the CURRENT font each InitWindow — text invisible). Predates the font-
+size change; --rom paths never hit it. Fix: the menu engine re-runs
+GuiLoadStyleDefault per draw before its theme block (stale binding
+healed, current one a no-op, styles land on defaults — also fixes a
+latent first-frame style wipe). Pinned red-first in the menu harness via
+a font-corruption seam; test dummy fonts now heap-allocated/96-glyph
+(the swap path frees recs/glyphs and reads recs[95]). Remaining honest
+gap: GL-context lifetime itself is invisible to the recording tier —
+pixel truth after context churn still needs the parked xvfb tier or the
+user's eyes.
