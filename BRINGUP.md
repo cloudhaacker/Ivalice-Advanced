@@ -7906,3 +7906,30 @@ once the cell is indexed in game space), 14 of the 16 cells in a 4x4
 game-pixel neighbourhood differ from each other, and the cell mean is 127.6
 against a source of 128: the grain moved to the game-pixel cadence with the
 brightness preserved.
+
+## 2026-10-16 — On-device crash in the menu apply hook (dangling HookCtx)
+
+**Reported**: the private APK crashes when turning on ANY graphics setting
+(SIGSEGV at 0xe48, Thread-2). Not the LCD change: the tombstone's frame #00
+symbolized (unstripped libmain.so, llvm-nm/llvm-objdump) to the menu-settings
+apply-hook lambda `run_game::$_388::__invoke`, faulting at +0x24 on
+`ldr w25, [x22, #0xe48]` with x22 = 0 — `model().row_count` through a null
+`host` pointer. That pointer comes from `HookCtx`, which `fca051a` declared
+INSIDE the `if (menu_available)` block that registers the hook; the captured
+`&hook_ctx` outlives the block by the whole run. arm64's stack-slot reuse
+zeroed it (deterministic crash); x86-64 left the original valid bytes (desktop
+appeared fine — the UB was there all along, silently dereferenced on every
+settings change since the persistence commit). Fixed in gbarecompx `be257ef`
+by moving `HookCtx`/`hook_ctx` to function scope; registration stays gated.
+
+Rebuilt the private APK (38.3 MiB, guard 8/8), installed, `validate_android.sh`
+GATE PASSED. Lesson: symbolize against OUR unstripped build (the APK is ours,
+so offsets resolve) before reading the backtrace shape — the 200 identical
+`gf_tfunc_080003A2` frames were unwinder noise from the guest crt0 loop and
+nearly sent the investigation at the frame loop.
+
+Packaging note, second occurrence: rebuilding without cleaning
+`android/app/build` leaves 32.1 MB of unaccounted zip slack (the
+incremental-repackaging junk class) and the APK guard rejects it; a clean
+`app/build` (native `.cxx` survives) rebuilds in ~50 s and passes. The guard
+is doing its job; expect this every time Gradle repackages over a stale dir.
