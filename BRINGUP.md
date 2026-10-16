@@ -7723,3 +7723,10 @@ probe stays GL-only by documented design, not a product gap. gl-xvfb
 deferred (no verified Xvfb recipe). CI headless job runs on next push.
 Remaining Phase 5 accept: CI green proof. Next: Phase 6 docs (5.5 ticked
 the headless checkbox; RAYLIB_PLAN stale claims still open).
+
+## 2026-10-16 — Phase 5 CI proof (push complete)
+
+Framework `ci` 38833664107 all success (stub, raylib 6 ON, rlsw headless,
+guard); FFTA tier-1 38833598904 success. The headless tier runs green on a
+runner with no display. Phase 5 accept fully closed except gl-xvfb
+(deferred, no verified recipe).
