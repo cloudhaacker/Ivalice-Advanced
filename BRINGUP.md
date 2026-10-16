@@ -7933,3 +7933,17 @@ Packaging note, second occurrence: rebuilding without cleaning
 incremental-repackaging junk class) and the APK guard rejects it; a clean
 `app/build` (native `.cxx` survives) rebuilds in ~50 s and passes. The guard
 is doing its job; expect this every time Gradle repackages over a stale dir.
+
+## 2026-10-16 — Manual device pass: LCD/dither/deband OK on Adreno (last path closed)
+
+User manual test on the Poco X3 Pro (M2102K1AC, Android 14/API 34) with the
+fixed private APK: no crash on any graphics toggle (the be257ef hook fix),
+and all three shader passes compile AND present on-device — runtime log shows
+`dither shader enabled`, `LCD shader enabled`, `deband shader enabled`
+(ES 1.00 variants on Adreno 740, previously never compiled outside
+glslangValidator). Crash buffer clean, no miss journal produced (no bridges,
+consistent with report-only self-heal + no dispatch misses). That closes the
+"Android ES 1.00 transliterated, never executed on a device" caveat from the
+game-space grid change — every path in the change is now verified end to end
+on both platforms: desktop (real-GL tier + measurements) and Android (device
+gate + manual pass).
