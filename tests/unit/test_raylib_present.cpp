@@ -156,11 +156,20 @@ int main() {
 #else
 
     if (!have_display()) {
+#if defined(PLATFORM_MEMORY)
+        std::printf("raylib_present_tests: no display; running headless tier "
+                    "(rlsw + PLATFORM_MEMORY) instead of skipping\n");
+#else
         std::printf("raylib_present_tests: SKIP (no DISPLAY/WAYLAND_DISPLAY)\n");
         return 0;
+#endif
     }
 
+#if defined(PLATFORM_MEMORY)
+    std::printf("raylib_present_tests: running headless tier (rlsw, no shaders)\n");
+#else
     std::printf("raylib_present_tests: running against a real GL context\n");
+#endif
 
     // Hermetic LCD-shader default: a stray GBARECOMP_LCD_SHADER in the
     // environment would enable the shader at every open() below.
@@ -252,6 +261,12 @@ int main() {
         // Forward declarations mirror the backend's (same GLFW 3.4
         // signatures); no GLFW headers needed. Declared at file scope
         // above; block scope cannot carry extern "C".
+        // On PLATFORM_MEMORY there is no GLFW and no input system at all
+        // (plan §4.2): the backend reports no pad, full stop.
+#if defined(PLATFORM_MEMORY)
+        check(!b.input().gamepad_connected(),
+              "no gamepad on the memory platform (no input system)");
+#else
         bool standard_present = false;
         for (int jid = 0; jid <= 15; ++jid) {
             if (glfwJoystickPresent(jid) && glfwJoystickIsGamepad(jid)) {
@@ -261,6 +276,7 @@ int main() {
         }
         check(b.input().gamepad_connected() == standard_present,
               "gamepad presence agrees with GLFW standard mapping");
+#endif
 #endif
         const auto ev1 = b.pump();
         check(ev1.keyinput == 0x03FFu, "pump baseline keyinput all-released");
@@ -759,6 +775,12 @@ int main() {
     }
 
     // ---- assumption check: does the upload path actually reach the GPU? ----
+    // GL-only: under rlsw (PLATFORM_MEMORY) LoadImageFromTexture cannot round-
+    // trip VRAM (114k mismatches at either stride — the software framebuffer
+    // has no texture storage to read back), so this probe is meaningless
+    // there. The backend serves readback from the CPU staging buffer on every
+    // tier, which the exact round-trips above already prove.
+#if !defined(PLATFORM_MEMORY)
     // copy_presented_frame() above reads the CPU staging buffer, so it proves
     // the call sequence ran and the bookkeeping is right -- NOT that raylib
     // interpreted our RGB888 bytes as we intended. This closes that gap by
@@ -834,6 +856,7 @@ int main() {
         UnloadImage(back);
         UnloadTexture(tex);
     }
+#endif  // !defined(PLATFORM_MEMORY): no VRAM to round-trip under rlsw
 
     // ---- close, then reopen ----------------------------------------------
     // Reopening is the end-to-end check that close() released everything,
@@ -864,8 +887,14 @@ int main() {
     b.close();
     check(!b.is_open(), "is_open() false after final close");
 
-    std::printf("raylib_present_tests: %s (%d failure(s))\n",
-                failures ? "FAIL" : "PASS", failures);
+    std::printf("raylib_present_tests: %s (%d failure(s), tier=%s)\n",
+                failures ? "FAIL" : "PASS", failures,
+#if defined(PLATFORM_MEMORY)
+                "rlsw headless"
+#else
+                "GL display"
+#endif
+                );
     return failures ? 1 : 0;
 #endif
 }
