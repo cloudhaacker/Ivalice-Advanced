@@ -8343,3 +8343,75 @@ sheet; upstream note on the bridge stop-contract. Stale build dirs
 (`build-headless`, `build-raylib-stub`, `build-raylib-headless`,
 `build-win`) hold caches pointing at the pre-rename path — reconfigure
 lazily on next use.
+
+## 2026-10-18 — The View row vanished again: a dead define ate the Oct-15 fix (user report, closed same day)
+
+**Report.** "The View with the Native, Adaptive, and Fixed is missing in
+the settings overlay again." The Display section of the settings overlay
+had no View row.
+
+**Root cause (one line).** The View row's endpoint wiring —
+`host_menu.set_view_mode_endpoint(...)` — sat INSIDE
+`#if defined(GBARECOMP_RUNTIME_UI)` in `runtime.cpp`, and no build has
+defined that macro since recomp-ui retired (the game CMake pins
+`GBARECOMP_RUNTIME_UI_ROOT` empty on purpose): the entire hand-off, and
+therefore the row, compiled out of every product build. The Oct-15
+episode ("the generic menu lost the retired recomp-ui UI's view-mode
+control — adding a View choice row") fixed the SYMPTOM in the right
+place (the generic menu) but wired it inside the dying guard; the
+guard then died with the recomp-ui removal and took the row with it.
+The `#if` block even carried a leftover `[dbg] startup:` fprintf from
+that session — debugging evidence fossilized in the dead branch.
+
+**How it eluded every gate (the part worth remembering):**
+1. No automated gate opens the settings overlay: attract hashes
+   attract-loop frames; the ws smoke drives view geometry through CLI
+   flags and fixture state, not the menu; the strict route replays are
+   gameplay routes. A row's PRESENCE in the product menu is exercised
+   by no frame-level referee.
+2. The menu-class unit test (fork `host_menu_test.cpp` §22) pins the
+   right CLASS contract — endpoint set → row present, endpoint unset →
+   row absent — but it SETS the endpoint itself, so it cannot observe
+   that the product's `run()` stopped calling it.
+3. Every build — fork ctest included — compiles with
+   `GBARECOMP_RUNTIME_UI` off, so the dead wiring is dead everywhere;
+   there was no configuration in which a test could have caught the
+   product wiring being skipped.
+
+**Fix (fork-side `f2ba1b5`, game gitlink `19f59ef`).** Decoupled the
+view hand-off from the retired recomp-ui: `RuntimeViewContext`
+(`opts` + `gbarecomp::ViewMode view_mode` + dirty flag) is
+unconditional; the recomp-ui era EXTENDS it under the define (item
+callbacks, `.ui` pointer, extras vector — all dead-but-compiling since
+`recomp_runtime_ui.h` exists only in a removed checkout; they join the
+fork's dead-code follow-up for deletion). `view_mode` now holds
+`gbarecomp::ViewMode` directly, retiring the `RECOMP_RUNTIME_UI_VIEW_*`
+indirection at every use site; `sync_resize_driven_view`'s
+legacy→framework switch collapses to a pass-through. The endpoint call
+is unconditional (runtime availability still gates the row:
+`opts.resize_driven_view && opts.max_resize_view_width > 240` — the
+widescreen opt-in, same as before). The `[dbg]` fprintf is gone.
+
+**The net (fork-side `1462915`, per user direction: framework
+invariants live in framework gates).** The fork's `guard` CI job — a
+placeholder since the port — now runs
+`tools/check_menu_view_wiring.py`: a preprocessor-conditional scanner
+over `runtime.cpp` with PRODUCT semantics (`defined(GBARECOMP_RUNTIME_UI)`
+evaluates false — the scanner initially had this inverted and its own
+self-test caught it before first real use), asserting the endpoint call
+is NOT behind that macro and passes the real availability expression
+(not a stubbed `true`). Self-test covers gated / ungated /
+stubbed-availability snippets. Game-side registration was drafted and
+then removed — the game repo keeps behavioral referees only.
+
+**Result.** Fork ctest 72/72; fork CI on `1462915` (guard job live);
+game `cycle.py` PASS with **attract `1EF4C118…` unchanged**;
+`check.py --fast` ALL PASS 7/7. User to confirm the row visually on
+next launch.
+
+**Lesson.** A fix that lands inside a conditional guard inherits the
+guard's lifetime — when the guard's condition is a retired subsystem,
+the fix dies with it, silently. Anything that must always exist goes
+OUTSIDE the gate; and a class-level test cannot see product wiring —
+only a wiring-level check (source shape or an overlay-opening smoke)
+can.
