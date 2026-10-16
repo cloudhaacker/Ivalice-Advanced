@@ -8662,3 +8662,12 @@ assertion. Harness lessons (same as the menu harness): dummy font into
 `guiFont` at static-init; raygui draws no space glyphs — the run
 assembler reconstructs word gaps. Fork 78/78; launcher+menu suites green
 in the game build.
+
+**Launch-screen font fix (same day).** "Font is ugly now / looked better
+before": the restyle drew raylib's bitmap default font (native 10px,
+POINT filter — verified in the fetched rtext.c) at 22/28px; off-multiple
+sizes shear the glyphs ragged. Fix: title + PLAY label 22→20 (uniform
+2×), placeholder 28→30 (3×), small text 12/14/16 unchanged. A Roboto TTF
+fix was fetched, wired, then removed unlanded after the call to keep the
+raylib font. Sizes are NOT test-pinned (taste iteration loop) — wording
+pins remain the binding assertions.
