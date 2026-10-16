@@ -17,29 +17,32 @@ entry, not the play entry. For when-to-run-what (workflows, gates, CI), see
 | `win_cross_deps.py` | Pinned static cross-dependency prefix for `--windows`: raylib only (raylib-only since the 2026-10 launcher track) into `cross-prefix/` (idempotent markers; sha256-pinned tarballs). Why source builds: Arch has no mingw binary library packages (and MSYS2 is Windows-only). `fetch` / `build` / `status` / `clean` / `purge` |
 | `mingw-x64.cmake` | CMake cross toolchain for `--windows` (x86_64-w64-mingw32, prefix-first search) |
 | `cycle.py` | Change cycle after `game.toml`/`src/` edits: cold regen → dispatch sanity → build → attract gate |
-| `resolve.py` | Strict-replay miss seeder — seeds a trace's misses through a temp overlay, repeats until FULLY_STATIC (`--trace <csv>`, `--load-state`) |
-| `cache_harvest.py` | Post-crash miss harvesting (`--out logs/proposal.frag`) |
-| `misspack.py` | Evidence pack for a miss fragment (`--stubs`, `--pc 0x...`) |
 | `attract_check.py` | Attract golden gate (`--repin` only for deliberate changes) |
 | `ws_check.py` | Widescreen smoke test (fixtures `saves/ws_fixtures/`) |
 | `savecheck.py` | Save-image validation |
 | `desktop_accept.py` | Headless free-run acceptance scoring (`--mode tcp` / `--mode window`) |
 | `coverage_report.py` | Coverage report, three lenses |
-| `framediff.py` / `dualrun.py` | Oracle frame-diff / lockstep differential runs |
 | `cadence_probe.py` | Render-path update-cadence gate (the compute-at-60/read-at-30 detector): pauses the pacer on `--tcp`, steps exactly one VBlank at a time, asserts the 60 Hz scheduler invariants (frame_step parities, `gVblankCounter`) and no every-other-frame consumer on the presented surfaces (io/oam/pal/vram + display-reg shadow; IWRAM staging alternation is the double-buffer slot write and only reported). `--strict`, `--regions`, `--json`; `check.py --only cadence` |
-| `ringscan.py` | Instruction-ring query (`--file`, `--pc`, `--reg-range`) |
 | `keyprobe.py` | Live debug-port inspector |
 | `audio_session.py` | Live audio-fault triage around a play session: samples `audio_state`+`frame` (20 Hz) and `audio_trace` (4 Hz; launch the game with `GBARECOMP_AUDIO_FIFO_TRACE=1`), records the sink monitor, then prints a report (producer rate vs 65536 Hz, frame cadence, FIFO fill/empty events, broadband-transient + 0.3-5 Hz modulation scan). Use with `play.sh --tcp-observe PORT`; `--max-seconds`, `--no-record`, `--sink` |
-| `trace_split.py` | Split mid-session reload traces |
-| `disarm.py` | ROM disassembler — the evidence source behind every address claim in the project |
-| `m4a_detect.py` | m4a audio-engine detection (Bregalad lineage) |
+| `hangprobe.py` | Read-only hang probe for the `--tcp-observe` channel (FFTA-tuned: dumps the vblank wake flag + IRQ vector) |
 | `android_static_check.py` | Device-free Android checks: identity pins, payload contract, hygiene (CI tier 1) |
 | `android_apk_check.py` | APK content guard for built APKs (`--expect public/private`) |
 | `validate_android.sh` | On-device acceptance gate: install → launch → assertions → evidence |
 | `android_press_test.py`, `android_lifecycle_test.py`, `android_touch_test.py`, `android_trace_replay.py` | On-device gates — see [android/README.md](../android/README.md) |
 
+**Framework-protocol tools live in the framework:** the rings/traces/TCP/
+heal-loop/oracle tooling (`framediff.py`, `dualrun.py`, `resolve.py`,
+`misspack.py`, `cache_harvest.py`, `ringscan.py`, `trace_split.py`,
+`quit.py`, `livewatch.py`, `disarm.py`, `m4a_detect.py`) moved into
+`gbarecompx/tools/` (2026-10-18) — they speak framework formats, serve
+any gbarecomp game, and are tested in the fork's own CI guard job. Run
+them from THIS repo root (the framework convention: `game.toml`,
+`game.gba`, `bios/`, `generated/`, `logs/` in the cwd), e.g.
+`.venv/bin/python gbarecompx/tools/misspack.py logs/missN.frag`.
+
 The remaining scripts (`chunkprobe.py`, `hangprobe.py`, `hangrepro.py`,
 `spinhunt.py`, `pc0_hunt.py`, `eventcrawl.py`, `hle_audit.py`,
-`livewatch.py`, `readseq_probe.py`, `derail_loop.sh`, `quit.py`, …) are
+`readseq_probe.py`, `derail_loop.sh`, …) are
 one-off probes from bring-up sessions; the table above is the maintained
 harness.

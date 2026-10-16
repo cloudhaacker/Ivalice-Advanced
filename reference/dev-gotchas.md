@@ -8,7 +8,7 @@ real hours once.
 ## Environment
 
 - Linux (Arch). No `pip3`/`arm-none-eabi-*`: use `uv` + `.venv/` (capstone).
-  Disassemble with `tools/disarm.py <start> <end> [arm|thumb]` (hex GBA
+  Disassemble with `gbarecompx/tools/disarm.py <start> <end> [arm|thumb]` (hex GBA
   addresses) via `.venv/bin/python`.
 - BIOS: `[bios] hle = false` requires a real dump at
   `gbarecompx/bios/gba_bios.bin` (user-supplied, never committed; SHA-1
@@ -16,7 +16,7 @@ real hours once.
 - System mGBA (`mgba-qt` 0.10.5) is for manual eyeballing only — the
   validation harness uses the framework's own oracle:
   `reference/oracle-harness.md`.
-- `tools/disarm.py` halts silently at the first undecodable halfword — use
+- `gbarecompx/tools/disarm.py` halts silently at the first undecodable halfword — use
   narrow windows anchored on known boundaries, and always state the mode
   (`arm`/`thumb`): wrong-mode output reads as plausible garbage.
 - Data-vs-code traps: pointer tables masquerade as code (cross-check the
@@ -54,7 +54,7 @@ real hours once.
   IWRAM miss), `GBARECOMP_IWRAM_DUMP` (exit state), `GBARECOMP_WRAM_TRACE`
   +`_LO/_HI` (per-frame write diff), `GBARECOMP_INSN_TRACE=1` +
   `GBARECOMP_FP_SAVE` (per-instruction ring, ~8.4 M-insn window — size
-  `--frames` so the event lands inside; query with `tools/ringscan.py`).
+  `--frames` so the event lands inside; query with `gbarecompx/tools/ringscan.py`).
 - Pinned TCP surface: `step`/`run_frames`/`set_keyinput`/`screenshot`/
   `registers`/`state_hash` + memory reads exist; `run_to_pc`/`get_registers`/
   `call_stack`/`rdb_*` do not.
@@ -97,7 +97,7 @@ real hours once.
   titlebar X / Alt+F4 close request is NOT delivered under the current SDL
   stack (binary links `sdl2-compat` = an SDL3 shim; BRINGUP § "Close-hang
   investigation"); SIGTERM/SIGINT are not close mechanisms either. Scripted
-  fallback: `.venv/bin/python tools/quit.py <tcp-observe port>` — play.sh
+  fallback: `.venv/bin/python gbarecompx/tools/quit.py <tcp-observe port>` — play.sh
   archives savestates/traces and flushes the miss frag on either path.
 - The `--tcp-observe` server serves ONE client at a time — disconnect
   watchers before probing or commands will time out.
@@ -139,7 +139,7 @@ recipe below is validated there.
   flag-read=1 count == exit count), then diff pc histograms between two
   dumps bracketing the event — a new/vanishing pc population is the
   behavioral delta (the SWI-family diff pinned the 2026-10-09 hang).
-  `tools/ringscan.py` queries the same files.
+  `gbarecompx/tools/ringscan.py` queries the same files.
 - **Guard-gate signature**: a depth-gated guard that never fires while the
   stack visibly grows → print `g_irq_nest_depth` at mainline PCs; a stuck
   ≥1 (poisoned by a guest-return × IRQ interleave) disables the
@@ -295,7 +295,7 @@ access, which is enough:
   `.venv/bin/python tools/savecheck.py <save>` (raw 64 KiB images + RTN5
   containers; checksum = the game's own CRC, reversed + verified).
 - `[[code_copy]]` maps decoding only; runtime entry PCs inside a copied span
-  still need `[[extra_func]]` seeds (probe with `tools/misspack.py` +
+  still need `[[extra_func]]` seeds (probe with `gbarecompx/tools/misspack.py` +
   a source-side prologue scan).
 
 ## Submodules (the framework is the gbarecompx fork)
@@ -328,5 +328,5 @@ access, which is enough:
 
 - Strict smoke: `GBARECOMP_STRICT_STATIC=1 ./build/FFTARecomp --bios
   bios/emibios_gba_bios.bin --rom game.gba --frames 2400 --no-window`
-- Session replay: `tools/resolve.py --trace <csv>`; coverage:
+- Session replay: `gbarecompx/tools/resolve.py --trace <csv>`; coverage:
   `tools/coverage_report.py`.

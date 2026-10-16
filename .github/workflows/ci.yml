@@ -36,7 +36,6 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             ninja-build libgl-dev ccache
 
-      # Cache pip so the capstone wheel isn't re-downloaded every run.
       - name: Cache pip
         uses: actions/cache@v4
         with:
@@ -63,17 +62,13 @@ jobs:
           restore-keys: |
             ffta-build-${{ runner.os }}-
 
-      # unit-py imports tools/misspack.py, which needs capstone. Local runs
-      # always use .venv (docs/manual-build.md); the runner needs the same dep on
-      # the interpreter that runs check.py (sys.executable). Pinned to the
-      # .venv version; manylinux py3-none wheel, nothing to build.
+      # The framework-protocol tools (misspack/disarm) moved into the
+      # gbarecompx submodule — their tests run in the fork's own guard job,
+      # so tier 1 needs no Python deps beyond the stdlib.
       - name: Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
-      - name: Python deps (unit-py)
-        run: python3 -m pip install "capstone==5.0.7"
 
       # The Phase 4c default (raylib ON) stands: the gbarecompx submodule
       # (the framework fork) is fetched by the submodule step above, so

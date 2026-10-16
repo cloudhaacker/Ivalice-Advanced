@@ -217,7 +217,7 @@ sequential clients and then stops accepting (observed: refused after one
 long-lived watcher disconnected), so use exactly **one long-lived watcher**
 per session and keep ad-hoc queries off its port.
 
-Recipe: `tools/livewatch.py <port>` (poll registers/state_hash/frame every
+Recipe: `gbarecompx/tools/livewatch.py <port>` (poll registers/state_hash/frame every
 2 s; on ~10 s of no frame-counter progress — a real stall; pc-stalls with a
 moving frame counter are legitimate waits — snapshot regs + hash + an IWRAM
 stack window while the game is frozen). Consult the frozen registers *before*

@@ -39,7 +39,7 @@ live in [THIRD_PARTY_ATTRIBUTION.md](../THIRD_PARTY_ATTRIBUTION.md).
   (**no license — its sources/logs are never ingested; reference only**).
 - [FFHacktics](https://ffhacktics.com/) forum — long-running FFTA research.
 
-Every ROM claim in the project is re-verified with `tools/disarm.py`
+Every ROM claim in the project is re-verified with `gbarecompx/tools/disarm.py`
 disassembly and cited; community sources are the map, never the evidence.
 
 ## Thanks

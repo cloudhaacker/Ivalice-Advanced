@@ -25,10 +25,10 @@ release build needs the **same** ROM for its corpus translation (the ROM
 is never embedded — the packaged sweep proves it); it cross-compiles from
 this tree, it does not rerun these steps on a second machine.
 
-**3. Python venv for the tooling** (disassembler, audit harness):
+**3. Python venv for the tooling** (the harness scripts):
 ```sh
-uv venv .venv && uv pip install --python .venv capstone
-#   (or: python3 -m venv .venv && .venv/bin/pip install capstone)
+uv venv .venv
+#   (or: python3 -m venv .venv)
 ```
 
 **4. Build the framework tools** (one-time; re-run only after submodule
@@ -115,10 +115,10 @@ use `tools/play.sh` (guide: [`tests/README.md`](../tests/README.md)).
   import in the exe (libstdc++/winpthread/…) means the prefix leaked a
   DLL and the objdump guard will say so — rebuild the prefix after
   pruning, then the exe.
-- `import capstone` fails in tools → step 3's venv (use
+- a tool fails to import its deps → step 3's venv (use
   `.venv/bin/python tools/...`).
 - A submodule directory is empty after cloning → step 1's retry line.
-- Window refuses to close, or a session wedges → `tools/quit.py <port>`; see
+- Window refuses to close, or a session wedges → `gbarecompx/tools/quit.py <port>`; see
   `tests/README.md` § Playtesting & debugging.
 - After `game.toml` edits: regenerate (step 6) → rebuild → attract gate, i.e.
   `.venv/bin/python tools/cycle.py`.

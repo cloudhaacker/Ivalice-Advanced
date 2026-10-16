@@ -1,7 +1,7 @@
 # Widescreen reference — FFTA field camera, strip, and apply paths
 
 Facts from the 2026-10-08 investigation (BRINGUP § "Widescreen W1"). All
-addresses verified with `tools/disarm.py`/live TCP probes unless labeled as
+addresses verified with `gbarecompx/tools/disarm.py`/live TCP probes unless labeled as
 hypotheses. ROM = AFXE (sha1 4ac05441…).
 
 ## Finding this code (durable index — start here)
@@ -304,7 +304,7 @@ landed as milestone 3 at the end of this file.)
   GBAS files (file offsets map ~linearly into EWRAM: offset = guest -
   0x02000000 + 0xFC in the 2026-10-08 container).
 - Code touching a var: FP ring (`GBARECOMP_INSN_TRACE=1` +
-  `GBARECOMP_FP_SAVE=path`; dumped on every clean exit) + `tools/ringscan.py
+  `GBARECOMP_FP_SAVE=path`; dumped on every clean exit) + `gbarecompx/tools/ringscan.py
   --reg/--reg-range`.
 - Writer/caller chain: `GBARECOMP_ABORT_ON_MEM_WRITE_ADDR` (+
   `GBARECOMP_RUNTIME_TRACE=1`) — works for RAM/VRAM, NOT for IO registers.

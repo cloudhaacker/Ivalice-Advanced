@@ -30,7 +30,7 @@ rom,io}`, `emu_set_keys`, plus `emu_step_inst`/`emu_registers`/
 
 The oracle **autoloads `<rom>.sav`** (framework fork code —
 `gbarecompx/oracle/main.cpp`); put a save copy next to a symlinked ROM
-to drive save/load flows (`tools/dualrun.py probe saveflow` does this).
+to drive save/load flows (`gbarecompx/tools/dualrun.py probe saveflow` does this).
 
 ## Save-flow note (corrected 2026-10-07)
 
@@ -57,7 +57,7 @@ retracted claims".)
 - Framework-ready tools: `gbarecompx/oracle/diff_cart.py` (absolute
   PAL/OAM/VRAM/IWRAM byte compare; `--native-exe ../build/FFTARecomp
   --rom ../game.gba --bios bios/gba_bios.bin`), `diff_frame.py`,
-  `gba_tcp.py` (manual driver). Our wrapper: `tools/framediff.py --lo 4
+  `gba_tcp.py` (manual driver). Our wrapper: `gbarecompx/tools/framediff.py --lo 4
   --hi 300` (spawns both engines, delta mode, JSON report to
   `/tmp/ffta_framediff/`, exit 1 on divergence).
 - **Sync on hardware events** (VBlank counts), never raw frame indexes

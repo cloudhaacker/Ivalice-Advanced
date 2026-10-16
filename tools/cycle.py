@@ -139,7 +139,7 @@ def stage_harvest(frames):
     print(f"harvest: {len(pcs)} distinct miss PCs → "
           f"{frag.relative_to(REPO)} (coverage={cov.group(1) if cov else '?'})")
     if pcs:
-        print("   next: .venv/bin/python tools/misspack.py "
+        print("   next: .venv/bin/python gbarecompx/tools/misspack.py "
               "logs/cycle_harvest.frag")
     return True
 

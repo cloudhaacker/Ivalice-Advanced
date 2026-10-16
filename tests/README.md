@@ -30,9 +30,8 @@ start, features, controls, building); running and display options live in
   mirrors the stack-guard test (`PACER_BANKED_API` probe — compiles to a
   skip where the patched header is absent).
 - **Python tooling:** `.venv/bin/python tests/python/test_tools.py`
-  (needs capstone — the `.venv`; run by `tools/check.py --only unit-py`).
-  Covers the pure healing/audit logic (trace_split, cache_harvest,
-  misspack prologue-scan) plus cheap structural guards:
+  (stdlib only; run by `tools/check.py --only unit-py`).
+  Covers cheap structural guards:
   - **TSV shape** — `symbols/*.tsv` field counts, hex addresses, region
     vocab, C-identifier names, no duplicate names (a malformed line breaks
     regen or mislabels an emitted unit; negative-tested).
@@ -119,9 +118,9 @@ Notes:
 | `logs/playtest_misses.frag` | TOML proposals for every code miss — journaled to disk the moment each miss is recorded (a hang or kill cannot lose it); rewritten with final counts at clean exit |
 | `recomp_cache/…` | each miss healed on the fly into native code — the game keeps running; the frag is the offline seed queue |
 
-A clean close (**ESC** in-game, or `tools/quit.py`) also flushes the exit
+A clean close (**ESC** in-game, or `gbarecompx/tools/quit.py`) also flushes the exit
 diagnostics. If the window ever refuses to close, `.venv/bin/python
-tools/quit.py <port>` closes remotely and flushes exactly the same
+gbarecompx/tools/quit.py <port>` closes remotely and flushes exactly the same
 artifacts.
 
 ### Debugging from a second terminal
@@ -132,14 +131,14 @@ single long-lived watcher per session.
 | Tool | Use |
 |---|---|
 | `.venv/bin/python tools/keyprobe.py PORT` | live KEYINPUT monitor (active-low) — verifies host keys reach the guest. Click the window once (focus) first. |
-| `.venv/bin/python tools/livewatch.py PORT` | frame-stall watchdog — snapshots registers, state hash and an IWRAM stack window to `/tmp/hang_*.json` the moment the frame counter stops advancing |
+| `.venv/bin/python gbarecompx/tools/livewatch.py PORT` | frame-stall watchdog — snapshots registers, state hash and an IWRAM stack window to `/tmp/hang_*.json` the moment the frame counter stops advancing |
 | `.venv/bin/python tools/hangprobe.py PORT` | read-only hang probe — registers + IF/IE/IME + FFTA wake flag + IRQ vector + miss report; safe on stalled sessions (never send `savestate_save` there — it wedges the single-client server) |
-| `.venv/bin/python tools/quit.py PORT` | clean remote close (archives + flushes) |
+| `.venv/bin/python gbarecompx/tools/quit.py PORT` | clean remote close (archives + flushes) |
 | raw TCP reads | memory/register reads for ad-hoc questions — see `gbarecompx/TCP.md`; observe mode has no stepping |
 
 For deeper captures (no code changes): `GBARECOMP_INSN_TRACE=1` +
 `GBARECOMP_FP_SAVE=file` (per-instruction ring; query with
-`tools/ringscan.py`), `GBARECOMP_WRAM_TRACE` (+`_LO`/`_HI`),
+`gbarecompx/tools/ringscan.py`), `GBARECOMP_WRAM_TRACE` (+`_LO`/`_HI`),
 `GBARECOMP_MISS_IWRAM_DUMP` — details in `reference/dev-gotchas.md`.
 
 ### Recipes
@@ -169,7 +168,7 @@ For deeper captures (no code changes): `GBARECOMP_INSN_TRACE=1` +
   mixer is mono and FFTA runs with the MP2K shadow off (`game.toml`).
 - **Save flows / external saves.** Play on a copy (`--save-path`), validate
   structurally with `tools/savecheck.py`; oracle comparisons:
-  `tools/dualrun.py probe saveflow`.
+  `gbarecompx/tools/dualrun.py probe saveflow`.
 - **Long sessions.** Supported — present-in-place + background healing keep
   long runs stable, and the frag stays current throughout.
 - **Widescreen.** `tools/play.sh --scale 4 --resize-view` (or
@@ -257,12 +256,12 @@ instruments everything:
   so both clean exits and kills/hangs leave the miss list on disk; a clean
   exit rewrites it with final counts.
 - If a session still looks odd, recover the healed PCs with
-  `.venv/bin/python tools/cache_harvest.py --new` (reads the heal cache
+  `.venv/bin/python gbarecompx/tools/cache_harvest.py --new` (reads the heal cache
   filenames). Paste the terminal output too — abort messages name the pc.
 
 **3 — Merge reviewed seeds** into `game.toml` (`[[extra_func]]` /
 `[[jump_table]]` / `[[code_copy]]`, each with a disassembly-evidence `note`;
-`tools/misspack.py <frag>` builds the evidence pack). Never auto-write
+`gbarecompx/tools/misspack.py <frag>` builds the evidence pack). Never auto-write
 `game.toml`; proposals are reviewed. **Same-session symbols check** (the
 step that keeps getting missed): every newly-identified function gets a
 naming-only entry in `symbols/ffta_symbols.tsv`, and every newly-identified
@@ -282,13 +281,13 @@ device journal is silent coverage debt (the 2026-10-11
 gAbilityAnimationTable batch: 218 records sat invisible until a gate run
 resumed that session's suspend state — BRINGUP same date).
 
-**4 — Resolve to static.** `.venv/bin/python tools/resolve.py --trace
+**4 — Resolve to static.** `.venv/bin/python gbarecompx/tools/resolve.py --trace
 logs/playthrough.csv [--load-state saves/<state>] [--frames N]` — it
 strict-replays your session, seeds each miss through a temporary overlay,
 rebuilds and repeats until `FULLY_STATIC`, then writes the accumulated seeds
 to a proposal file for merging. If you reloaded a savestate mid-session, the
 trace jumps backward and replay rejects it — split it first with
-`.venv/bin/python tools/trace_split.py --trace logs/playthrough.csv` and
+`.venv/bin/python gbarecompx/tools/trace_split.py --trace logs/playthrough.csv` and
 resolve each segment from the same start state.
 
 **5 — Verify.** `.venv/bin/python tools/cycle.py` (cold regen →
@@ -440,10 +439,10 @@ oracle-identical (BRINGUP §§ cont.2–cont.4; driver-call tooling:
 `tools/readseq_probe.py`). Remaining minor observation: a ~950-frame
 native-vs-oracle offset for the same flow (open; no state divergence in the
 compared windows).
-- **Oracle frame-diff:** `tools/framediff.py --lo 4 --hi 300` (native vs the
+- **Oracle frame-diff:** `gbarecompx/tools/framediff.py --lo 4 --hi 300` (native vs the
   framework's mGBA oracle; bounded band diffs on animated content are
   expected and documented in BRINGUP § "park-phase semantics") and
-  `tools/dualrun.py` for lockstep region/pixel probes.
+  `gbarecompx/tools/dualrun.py` for lockstep region/pixel probes.
 - **Acceptance replays in the repo today:** boot → new game
   (`inputs/title_to_newgame.csv`, 6000 f), the battle continuation
   (`inputs/session2_battle_trace.csv` + a matching state), battle movement

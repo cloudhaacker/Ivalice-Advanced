@@ -8,7 +8,7 @@
 #
 # Self-heal is ON (not strict): unmapped code is bridged instead of aborting,
 # so the session never hard-stops; every miss is recorded and later runs
-# through tools/misspack.py -> game.toml seeds.
+# through gbarecompx/tools/misspack.py -> game.toml seeds.
 #
 # Controls: arrows = D-pad, X = A, Z = B, Enter = Start, Backspace = Select,
 #           C = L, V = R. Close the window (or Ctrl-C the terminal) to quit.
