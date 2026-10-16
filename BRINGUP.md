@@ -7780,3 +7780,52 @@ Plan §5.4 table/rules updated. Re-proof on next push.
 Framework `ci` 38838990626: 4/4 (folded raylib+Xvfb tier green).
 FFTA tier-1 38839313117: success (covers the backend-default HEADLESS
 guard, 6.1/6.2, fold log). No open CI items.
+
+## 2026-10-16 — LCD grid and dither are now scale-aware (game-space, all stages)
+
+**The bug.** `lcd_shader.h`'s mask indexed `gl_FragCoord` directly with the
+Shadertoy reference's periods (3 px, 2 px) hard-wired, so the triad was 3
+*drawable* pixels wide no matter how the game was scaled. FFTA is presented at
+`layout.width / 240`, so one triad per game pixel only happened by accident at
+exactly 3x (the default window); at 6x/8x/9x a game pixel held 2-3 triads with
+boundaries cutting across it. Phase was also measured from the screen edge, so
+letterboxing (1080p fullscreen: 1620x1080 at x=150) slid the grid relative to
+the artwork. On the default chain the grid was applied fullscreen and the
+letterbox bars were masked too.
+
+**The audit that widened the scope.** Two of the three GPU passes were affected:
+- deband was already correct (`texel = 1/base_w` in source UV is one game pixel
+  on both the direct and the sharp-pre-upscale path) — left alone, now pinned
+  by `shader_deband_texel_step` + a test;
+- dither had the same fault, milder: a 4-px screen cell straddles pixel edges
+  at any scale > 4, laying uncorrelated noise inside a single pixel.
+
+**The fix.** One shared `PresentGrid` (origin + scale, resolved from
+`compute_presentation_layout` once per frame) uploaded as `uGrid`/`uGameSize` to
+the grid and dither programs. The mask is now one triad + one dark row per
+**game** pixel, anti-aliased by the fragment's real overlap (fractional scales
+are the common case: 1080p fullscreen is 6.75). At 1:1 it reduces to the
+reference verbatim, which is pinned by a parity sweep over the whole old table.
+Below 3 px per game pixel a triad cannot be drawn, so it collapses to one
+stripe per game pixel — the reference's own ratio at 1:1, as chosen.
+
+**Two real bugs caught by probing before the tests existed** (both would have
+been invisible in a review): the coverage `width` is the fragment *footprint*
+in stripe units (3/scale), not the stripe width — I had it inverted, which
+silently broke the sum-to-1 invariant; and my CPU assembly put the blue
+stripe's full-strength channel in `r` while the GLSL had it right in `b`.
+
+**Proven.** `lcd_shader_tests` 66 → 135 assertions, all existing ones
+unchanged; full framework `ctest` 73/73; `raylib_present` PASS on the real GL
+tier (`tier=GL display`, 0 failures). The fake raylib api gained uniform
+recording (it previously returned -1 for every lookup, so *no* uniform write was
+ever observable) and four new cases prove the backend uploads the current
+layout's grid, recomputes it on resize, skips it when off, and degrades cleanly
+when lookups fail. Mutation-checked: reverting the upload to origin-0/scale-1
+fails the suite at the 8x assertion, and a mutation harness covering all four
+mutants reports 10/10 caught, so the tests are not vacuous.
+
+**Not done here.** No screenshot measurement of the new dark-row LSB delta at
+8x (the 8-px pitch is a much coarser pattern than the old 1 px) — that needs a
+windowed run and stays open. Android ES 1.00 is transliterated, not compiled on
+any tier; `glslangValidator` validates all six sources locally and passes.
