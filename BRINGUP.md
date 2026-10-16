@@ -7730,3 +7730,12 @@ Framework `ci` 38833664107 all success (stub, raylib 6 ON, rlsw headless,
 guard); FFTA tier-1 38833598904 success. The headless tier runs green on a
 runner with no display. Phase 5 accept fully closed except gl-xvfb
 (deferred, no verified recipe).
+
+## 2026-10-16 — Phase 6.2: RAYLIB_PLAN surgical fixes (doc-only)
+
+Corrected the plan-named stale claims in `.opencode/RAYLIB_PLAN.md` (untracked
+working-tree doc): SetAudioStreamCallback era (≥4.5, not 6.0-addition),
+#3911 status (closed, declined out-of-scope — verified live on GitHub),
+windowless notes (rlsw/PLATFORM_MEMORY supersede, GL caveat kept), API-notes
+section title, tier-3 table row, and the two `gbarecomp-raylib tree` skip
+strings (-> `gbarecompx`, matching check.py). No code touched.
