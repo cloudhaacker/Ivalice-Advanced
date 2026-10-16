@@ -722,7 +722,7 @@ index 78f06d6..13c5272 100644
      g_call_return_floor = saved_floor;
      --g_irq_nest_depth;
 diff --git a/src/gba/gba_bios.h b/src/gba/gba_bios.h
-index 4fe18a3..f713305 100644
+index 4fe18a3..3d9d822 100644
 --- a/src/gba/gba_bios.h
 +++ b/src/gba/gba_bios.h
 @@ -24,6 +24,13 @@ public:
@@ -732,7 +732,7 @@ index 4fe18a3..f713305 100644
 +    // Accepted alternative: emibios (https://github.com/coolbho3k/emibios),
 +    // a clean-room LGPL-3.0-or-later BIOS replacement. A game config may
 +    // pin it as its launch BIOS via [bios].sha1 (the runtime gate stays the
-+    // per-config pin); launcher-side recognition accepts either hash
++    // per-config pin); the asset picker accepts either hash
 +    // (ffta-recomp issue #17).
 +    static constexpr const char* kEmibiosSha1 =
 +        "0c0d404d16c6b55b3071aba714f82077da132f14";
