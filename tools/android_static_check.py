@@ -392,7 +392,7 @@ def check_save_picker_wiring():
             ("installVerifiedSave", "setup save installer"),
             ("hasSaveImport", "setup save-card gate"),
             ("externalSaveFile", "setup external mirror"),
-            ("Save data (optional)", "setup save card")):
+            ("IMPORT SAVE", "setup save affordance (launch-screen redesign)")):
         need(token in combined,
              "save-picker token %r missing (%s)" % (token, what))
     # The import is optional: ready() must not consult the save state.
@@ -810,6 +810,65 @@ def check_gate_usage():
 # Entry point
 # ---------------------------------------------------------------------------
 
+def check_boxart_drawable_wiring():
+    """Launch-screen box art must flow through the engine template's
+    launchBoxartRes mechanism (staged as drawable-nodpi/launcher_boxart.png,
+    resolved by name via getIdentifier), never as an APK asset — the assets
+    contract is payload-only."""
+    gradle = read_text("android/app/build.gradle")
+    need("launchBoxartRes" in gradle,
+         "build.gradle must set the engine template's launchBoxartRes "
+         "(the boxart staging mechanism)")
+    need("recomp/launcher/boxart.png" in gradle,
+         "build.gradle must point launchBoxartRes at the tracked "
+         "recomp/launcher/boxart.png")
+    setup_java = read_text(
+        "gbarecompx/platform/android/java/org/gbarecomp/GbaSetupActivity.java")
+    need('"launcher_boxart", "drawable"' in setup_java,
+         "GbaSetupActivity must resolve the launcher_boxart drawable by "
+         "name (getIdentifier — game-namespace-agnostic)")
+    need((REPO / "recomp/launcher/boxart.png").is_file(),
+         "recomp/launcher/boxart.png missing (the tracked boxart source)")
+
+
+def check_launch_screen_skip_classification():
+    """src/main.cpp must classify the MUTATED args vector — the Android
+    native entry's argv is raylib's synthetic {"raylib"}, invisible to
+    appended flags; classifying the raw argv made the launch screen
+    un-skippable on Android (2026-10-16 device finding)."""
+    main_cpp = read_text("src/main.cpp")
+    need("launcher_should_skip_screen(args)" in main_cpp,
+         "src/main.cpp must classify the mutated args vector "
+         "(launcher_should_skip_screen(args)), not the raw argv")
+    need("launcher_should_skip_screen(argc" not in main_cpp,
+         "src/main.cpp must not classify the raw argv (invisible on Android)")
+    need("launcher_wants_screen(args)" in main_cpp,
+         "src/main.cpp must honor an explicit --launcher force "
+         "(launcher_wants_screen(args))")
+
+
+    need((REPO / "recomp/launcher/boxart.png").is_file(),
+         "recomp/launcher/boxart.png missing (the tracked boxart source)")
+
+
+def check_launch_screen_skip_classification():
+    """src/main.cpp must classify the MUTATED args vector — the Android
+    native entry's argv is raylib's synthetic {"raylib"}, invisible to
+    appended flags; classifying the raw argv made the launch screen
+    un-skippable on Android (2026-10-16 device finding). The Android posture
+    (user decision, 2026-10-16): the platform setup activity is the pre-boot
+    surface; the raygui launch screen is desktop-only."""
+    main_cpp = read_text("src/main.cpp")
+    need("launcher_should_skip_screen(args)" in main_cpp,
+         "src/main.cpp must classify the mutated args vector "
+         "(launcher_should_skip_screen(args)), not the raw argv")
+    need("launcher_should_skip_screen(argc" not in main_cpp,
+         "src/main.cpp must not classify the raw argv (invisible on Android)")
+    need("launcher_wants_screen(args)" in main_cpp,
+         "src/main.cpp must honor an explicit --launcher force "
+         "(launcher_wants_screen(args))")
+
+
 CHECKS = [
     ("identity: applicationId and gate package/activity constants",
      check_package_constants),
@@ -848,6 +907,10 @@ CHECKS = [
     ("gate: setup-still-resumed fails the gate", check_gate_setup_resumed),
     ("gate: usage contract (--help 0, bad --wait 2, unknown option 2)",
      check_gate_usage),
+    ("identity: launch-screen box art staged as a drawable",
+     check_boxart_drawable_wiring),
+    ("android: launch-screen skip classification uses the mutated args "
+     "vector", check_launch_screen_skip_classification),
 ]
 
 

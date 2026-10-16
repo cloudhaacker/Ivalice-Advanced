@@ -313,8 +313,12 @@ int ffta_main(int argc, char** argv) {
     if (on_mobile) ffta_log_manifest(external_log);
 #endif
 #if defined(__ANDROID__)
-    // Mobile args carry --no-launcher, so nothing is lost on device:
-    // the raylib launcher is not built on Android; go straight to setup.
+    // Mobile args carry --no-launcher: the setup screen is the Android
+    // launcher. The pre-boot launch screen exists on device and now works
+    // (SAF pick via android_saf_bridge, payload box art) but stays opt-in
+    // via a --launcher debug arg until the mobile boot flow is redesigned
+    // around it — the device gate and the suspend/resume lifecycle depend
+    // on an unattended boot.
     #if defined(GBAGAME_BUNDLED_ROM)
     // Private build with the ROM staged: drop the vacuous flag and boot.
     // (Public builds stop at the #else below — skipping setup is only valid
@@ -421,9 +425,22 @@ int ffta_main(int argc, char** argv) {
 
 #if defined(GBARECOMP_USE_RAYLIB)
     // Skip the pre-boot launcher for headless / explicit-path invocation
-    // (--rom/--bios/--no-window/--frames/--load-state/--tcp). Bare invocation
-    // shows the screen. Constraint 7.
-    if (!gbarecomp::launcher_should_skip_screen(argc, argv)) {
+    // (--rom/--bios/--no-window/--frames/--load-state/--tcp/--no-launcher).
+    // Bare invocation shows the screen; --launcher forces it even for
+    // scripted-looking runs (play.sh passes --rom). Constraint 7.
+    //
+    // Classify the MUTATED args vector, not the raw argv: on Android the
+    // native entry's argv is raylib's synthetic {"raylib"}, so every flag
+    // the mobile layer appended (--no-launcher, the staged TOML, the
+    // debug-args.txt entries) is invisible to an argv-based check — which
+    // made the launch screen un-skippable on device (2026-10-16 finding).
+    // The POSTURE stands (2026-10-16, user decision): Android's pre-boot
+    // surface is the platform setup activity (pure Android/SAF); the raygui
+    // launch screen is desktop-only. --launcher (a debug arg) can still
+    // force the screen on device for development; its ROM picker fails
+    // cleanly there (no desktop dialog backends — see asset_picker.cpp).
+    if (gbarecomp::launcher_wants_screen(args) ||
+        !gbarecomp::launcher_should_skip_screen(args)) {
         if (auto backend = gbarecomp::create_launcher_backend()) {
             gbarecomp::LauncherConfig cfg;
             cfg.argv0 = argc > 0 ? argv[0] : nullptr;

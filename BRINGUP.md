@@ -8475,3 +8475,67 @@ residence: if the tool parses a format the framework defines or drives
 a surface the framework exposes, it belongs to the framework — and its
 tests move with it. Consumer repos keep the tools that encode THEIR
 content (routes, identities, RAM-layout forensics, release identity).
+
+## 2026-10-16 — Android launcher session: four device findings, the pure-Android launcher, a parallel-session fork tree
+
+Device: Xiaomi Mi 11 (mars, 3200x1440), public release APK (`--expect
+public`), manual QA. Goal: test the launcher track on Android.
+
+**Findings (each fixed where it belonged):**
+
+1. **The C++ launch screen was un-skippable on Android.** The skip check
+   classified the RAW argv — but a NativeActivity's argv is raylib's
+   synthetic `{"raylib"}`; every appended flag (`--no-launcher`, the staged
+   TOML, debug-args entries) is invisible to it. Fix (fork): vector-based
+   classification (`launcher_should_skip_screen(args)` + `--no-launcher`
+   skip + `--launcher` force), unit-tested (boot classification 19 cases).
+   Guarded game-side (`android-static`: classification must use the
+   mutated vector).
+2. **`run_game` died on `--no-launcher`** ("unknown argument" is fatal) —
+   the launcher track retired the old seam parser without re-homing the
+   flag; every PLAY looked dead (the game activity exited instantly and
+   Android fell back to the setup screen). Fix (fork): the parser tolerates
+   the flag as a no-op; the skip decision stays in the classification layer.
+3. **tinyfiledialogs on Android**: no backend there, and the no-backend
+   path prints a "missing software!" banner and blocks on a stdin read
+   (once per dialog attempt). Fix (fork): on `__ANDROID__` the picker never
+   reaches tinyfd — a clean log line instead; desktop behavior unchanged.
+4. **`rom.cfg` cache-form miss**: a cached `/data/data/<pkg>` path can fail
+   `fs::exists` from the app domain (`/data/user/0` spelling). Fix (fork):
+   cache-candidates retry; new picks keep writing the observed form.
+
+**Dead end, retired:** a SAF pick bridge behind `asset_picker_seam` was
+built and device-tested; it demonstrated (a) a modal pick across the SAF
+sheet starves the NativeActivity event pump (the window goes unresponsive;
+`onActivityResult` can never run) and (b) post-and-exit relaunch races the
+process out of memory. User decision: **the pure-Android setup activity is
+the Android pre-boot surface; the raygui launch screen is desktop-only.**
+The bridge was reverted; the fixes above were kept.
+
+**Landed instead:** `GbaSetupActivity` restyled into the desktop launch
+screen's layout (box-art panel, title, ROM path status, PLAY / SELECT ROM /
+save import, skip checkbox); BIOS card retired (`biosRequired=false` — the
+clean-room emibios always applies); `setBusy` null-guards the retired
+views (an unguarded deref crashed SAF result delivery on device). Debug
+`debug-args.txt` is now **one-shot** (a forced flag persisted across
+relaunches otherwise). Box art rides the engine template's
+`launchBoxartRes` mechanism (drawable, getIdentifier — supersedes the
+game-local staging task).
+
+**Tests:** fork boot-classification cases extended (vector overload, force
+flag); `tools/check_launch_screen_wiring.py` (fork guard job: mobile
+posture + one-shot + parser tolerance + retired-view hygiene, self-tested);
+game `android-static` 26/26 (three new checks: skip classification,
+boxart wiring, plus the save-import needle update). Manual QA passed on
+device (pick → import → PLAY → boot).
+
+**Parallel-session hazard:** the fork working tree also carries a
+menu-engine refactor from another session (pluggable MenuEngine,
+`raygui_impl.cpp`, `menu_engine_test`, `launchBoxartRes` template
+generalization) — complete and 73/73 green on the Android path, but the
+desktop target does not compile (`menu_engine_raygui.cpp:70` `SPINNER` not
+declared), which blocks `cycle.py`/attract and any gitlink bump. Per user
+decision the fork is hands-off pending coordination; this commit lands
+game-side only, gitlink unchanged. Open item: land both fork workstreams
+as separate commits after coordination, then bump the gitlink and run the
+full gate.

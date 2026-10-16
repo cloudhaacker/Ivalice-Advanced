@@ -192,6 +192,41 @@ adb shell run-as org.gbarecomp.fftarecomp cat files/android-runtime.log
 For TCP debugging: `adb forward tcp:19888 tcp:19888` plus `--tcp-observe
 19888` in `files/debug-args.txt`.
 
+## The Android pre-boot surface
+
+The **setup screen (`GbaSetupActivity`) is the Android launcher** — pure
+Android, laid out like the desktop launch screen: box-art panel (from the
+engine template's `launchBoxartRes` mechanism — staged as a
+`drawable-nodpi/launcher_boxart.png` from the tracked
+`recomp/launcher/boxart.png`, the same file the desktop build stages),
+title, the resolved ROM path in the status line, **PLAY**, **SELECT ROM**
+(the system file sheet — SAF, with size/SHA-1 verification), an optional
+save import, and the "skip this screen on launch when ready" checkbox.
+There is exactly one pre-boot screen per platform: this one on Android, the
+C++ raygui launch screen on desktop.
+
+Why the C++ launch screen is desktop-only (2026-10-16 device session): the
+mobile platform appends `--no-launcher` (the device gate and the
+suspend/resume lifecycle depend on an unattended boot), Android has no
+desktop file-dialog backends (tinyfiledialogs' no-backend path prints a
+banner and reads stdin), and a NativeActivity's event pump lives on the
+native thread — a modal pick across the SAF sheet starves it. The pure
+Android screen sidesteps all three.
+
+Debug affordances, all honored through the mutated-args skip
+classification (the native entry's argv is raylib's synthetic `{"raylib"}`,
+so classification must read the argument vector, not raw argv — guarded by
+`android-static`):
+
+- `--no-launcher` skips the desktop launch screen; `run_game` tolerates the
+  flag (a fatal "unknown argument" there once killed every mobile boot —
+  PLAY appeared dead).
+- `debug-args.txt` is **one-shot**: consumed and removed on the boot that
+  reads it, so a forced flag can't persist across relaunches. Write
+  `--launcher` (`adb shell run-as …`) to force the desktop screen for
+  development — its ROM picker has no Android backend and fails cleanly
+  (log line, never stdin).
+
 ## On-device suspend/resume protocol (the manual gate)
 
 The device gate (`tools/validate_android.sh`) asserts **boot health only**

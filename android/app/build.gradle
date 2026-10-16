@@ -49,6 +49,15 @@ ext.gbaGame = [
     ],
     gameRoot      : gameRoot,
     engineRoot    : engineRoot,
+    launchBoxartRes: new File(gameRoot, "recomp/launcher/boxart.png"),
 ]
 
 apply from: new File(engineRoot, "platform/android/gbarecomp-app.gradle")
+
+// Launch-screen box art: the engine template stages it as
+// drawable-nodpi/launcher_boxart.png when launchBoxartRes is set (resolved
+// by name via getIdentifier — the engine's Java stays namespace-agnostic).
+// Source: the tracked recomp/launcher/boxart.png — the same file the desktop
+// CMake stage_boxart target and the release packager stage; no second copy.
+// (Supersedes the game-local staging task: the template mechanism is the
+// generalized home, 2026-10-16.)
