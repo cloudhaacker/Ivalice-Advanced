@@ -8114,3 +8114,127 @@ gate + manual pass).
 - Phase 7 asset (box art, attributions, screenshots) unchanged; launcher UI now has status/error reporting after each pick.
 - Verify: `.venv/bin/python tools/check.py --fast` ALL PASS (8/8); asset picker tests PASS; attract hash `1EF4C118A8438CADE6E5847DC6716A7A800D157A568DECB272F2F7052EF321C1`.
 - Nested framework repo backed up and committed separately as `launcher: raygui contract, repick cache fix, asset picker tests`.
+
+---
+
+## 2026-10-18 — Phase 7 close-out: docs, attribution, definition of done (launcher track complete)
+
+The launcher track (`.opencode/RAYGUI_LAUNCHER.md`) is complete through
+Phase 7. Phase 7 commits: `fbe0366` (7.1a box art + attribution/license
+set + release staging), `f9b3ca5` (7.1b docs sweep), `95e61c5` (7.1c
+CI/tooling text + dead-option cleanup), `74d614e` (7.1d patch
+re-baseline); the nested gbarecompx comment fix is `78d28af`, pushed
+(`05b8a2f..78d28af main`).
+
+**Plan erratum (user-corrected, recorded):** the launcher was always
+meant to be framework code in the gbarecompx fork — the plan's
+`src/launcher.{h,cpp}` / `tests/unit/...` paths were written as game-repo
+paths. As built (and now documented): contract `gbarecompx/src/runtime/launcher.h`,
+backend `gbarecompx/src/runtime/launcher_raygui.cpp`, model
+`launch_screen_model.h`, tests `gbarecompx/tests/runtime/`. Game
+`src/main.cpp` includes the framework header via
+`${GBARECOMP_ROOT}/src/runtime` and calls the contract only
+(`launcher_should_skip_screen` + `create_launcher_backend`).
+
+**After-shots (the §5 requirement), product build `build/FFTARecomp`:**
+- `ldd build/FFTARecomp | grep -iE 'sdl|imgui|freetype|harfbuzz|zlib|raylib'`
+  → empty. Full dynamic set: libc, libm, libstdc++, libgcc_s, and the
+  GL/X11 stack only (libOpenGL/libGLdispatch/libGLX/libGLU, libX11/libXext/
+  libxcb/libXau/libXdmcp/libICE/libSM/libuuid). Zero SDL, zero ImGui, no
+  freetype/harfbuzz/zlib.
+- `nm -C build/FFTARecomp | grep -icE 'imgui|ImFont'` → 0.
+- Windows exe: the objdump import-table guard (static imports=29 at v1.6)
+  remains the PE-side proof; `STATIC_FORBIDDEN_DLLS` keeps the freetype/
+  harfbuzz/zlib names as regression guards.
+
+**Prefix delta:** `cross-prefix/` is raylib-only (SDL2, freetype, harfbuzz,
+zlib recipes deleted; the unreachable meson builder removed) — Phase 6.1,
+re-verified here: `tools/win_cross_deps.py` docstring + `tools/README.md`
+now state it.
+
+**Release hash delta:** the staged content set changed in 7.1a —
+`assets/img/boxart.png` ADDED to both desktop layouts (the launch screen's
+art actually ships now; previously only dev builds had it via CMake
+`stage_boxart`), `LICENSES/ZLIB-tinyfiledialogs.txt` +
+`LICENSES/ZLIB-raygui.txt` added, `LICENSES/ZLIB.txt` + `FTL.txt`
+removed, README template rewritten. The v1.6 pins
+(linux `92a4eb9f…` 45,745,653 B / windows `d9564173…` 43,553,223 B) are
+therefore superseded: the next tagged cut re-pins (gate run today:
+linux zip sha1 `9c3a38c7b021bafa7dfa1640db94afcf0ac378f5`, 44,055,918 B,
+built from a dirty tree — expect a different hash from the clean tag).
+
+**Gates (pasted from the runs):**
+- `tools/check.py --fast` → ALL PASS (8/8): backend-default (raylib=1),
+  savecheck, unit-cpp (0 failures), raylib-backend, unit-py (54 tests),
+  patches (all reverse-ok + pin-forward-ok; `gbarecomp-local replay:
+  431-file tree matches`, `arm-recomp-core-local replay: 35-file tree
+  matches`), android-static (24 checks), attract
+  `sha256=1EF4C118A8438CADE6E5847DC6716A7A800D157A568DECB272F2F7052EF321C1`
+  — unchanged through the entire track.
+- `tools/check.py --only release` → PASS (see hash above; zip verified to
+  ship `assets/img/boxart.png` + the new LICENSES set, no stale ones).
+- `tools/cycle.py` → PASS (regen 63,134 units, dispatch sanity OK, build
+  OK, attract gate OK) — run because the CMakeLists option removal is a
+  regen input; corpus byte-stable.
+- emibios boot end-to-end: the attract gate itself boots through the
+  pinned emibios BIOS on the product build — that is the §5 verification.
+
+**Step 7.1 sweep detail:** the RED grep
+(`rg -n "launcher|recomp-ui|ui_check|libsdl2" README.md docs/ tools/
+reference/ .github/`) now returns only intentional text: the deliberate
+gbarecompx-repoint contributor notes, current launch-screen docs
+(dev-gotchas § Pre-boot launch screen), Android `launchable-activity`
+checker terms (Android app-launcher concept, unrelated), frozen patch
+content (diff records — `SKIP_LAUNCHER_ON_BOOT` is the Android setup-flow
+flag; `RecompFrameBlend` mentions are historical diff context), and the
+static-link guard's forbidden-DLL names. Sweep fixes worth calling out:
+`tools/README.md` still listed the deleted `ui_check.py`;
+`make_release.py`'s release README still told Linux users to install
+SDL2/freetype/harfbuzz and said "launcher state" for config.ini; ci.yml
+still apt-installed the three dead dev packages (the 2026-10-17 "pruned"
+entry was wrong — the ccache commit `2ad4a33` restored the list);
+`win_cross_deps.py` still carried the dead harfbuzz meson builder.
+
+**Attribution decision (sign-off class, logged):** the license set now
+equals the linked set — tinyfiledialogs (zlib, © Guillaume Vareille) and
+raygui (zlib, © Ramon Santamaria) texts added verbatim; the orphaned
+zlib-lib (`ZLIB.txt`) and FreeType (`FTL.txt`) texts deleted. The
+Appendix A manifest listed only MIT-harfbuzz/ZLIB-SDL2 for deletion
+(both gone in `3a0e3aa`); ZLIB.txt/FTL.txt fell out the same way once
+6.1 dropped the libraries — the covering unit test
+(`test_license_bundle_covers_licenses_dir`) forces the equality either
+way. Box art posture: unknown-provenance cover art shipped under the
+2026-10-16 sign-off, disclosed with source URL + SHA-256 + EmuMovies
+credit in `THIRD_PARTY_ATTRIBUTION.md`; the screen degrades to its text
+fallback if the file is absent.
+
+**Known divergences / open items (recorded, not silently dropped):**
+1. **gbarecompx repoint (the remaining launcher-track item).** The game
+   binary does not compile against the pinned `gbarecomp` fallback: the
+   launch-screen contract (`src/runtime/launcher.h`) exists only in the
+   gbarecompx fork, and `src/main.cpp` includes it unconditionally. Fresh
+   clones therefore cannot build FFTARecomp until the build repoints
+   `GBARECOMP_ROOT` at the published remote (the `.gitignore` deferral).
+   CI stays green because tier-1 never builds the game binary and the
+   raylib-backend job skips cleanly while gbarecompx is untracked.
+   Deferred by decision 2026-10-18 (docs close-out only); the plan §5
+   checklist carries it as the one open box.
+2. Framework-side follow-ups (filed, not dropped): dead launcher files in
+   the gbarecompx tree (`launcher_seam.h`, `launcher_profile.h`,
+   `launcher_netplay_seam.h` and the `RECOMP_LAUNCHER`/`RECOMP_UI_*`
+   defines are referenced by nothing in the product); the Flatpak/XDG
+   portal file-chooser item (tinyfd cannot speak it; documented in the
+   plan §4).
+3. Pre-existing release-track remainders (unchanged by this track): APK
+   release-signing key (still debug-signed), runner registration for the
+   tag-triggered release workflow, offline-push re-trial, f6000+ contact
+   sheet, upstream note on the bridge stop-contract.
+4. Plan §4 divergences stand as written (no Flatpak portal support in
+   tinyfd; no clipboard on the launch screen; keybind vocabulary
+   untouched; `--launcher`/`--no-launcher` flags removed — release-notes
+   material for the next cut).
+
+**§5 Definition of done:** all boxes ticked in
+`.opencode/RAYGUI_LAUNCHER.md` except the repoint (item 1 above), with
+the after-shots and hash deltas recorded here. The launcher track is
+hand-back ready.
