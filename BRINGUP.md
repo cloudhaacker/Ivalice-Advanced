@@ -7760,3 +7760,10 @@ ubuntu:24.04 podman container: contract suite early-outs without
 xvfb-run, full real-backend path + v2 suite pass with it (system pkgs:
 GL/X11 dev + xvfb + libgl1-mesa-dri). CI job mirrors exactly that,
 plus a proof step that fails on the early-out line. CI proof on push.
+
+## 2026-10-16 — gl-xvfb CI proof (first run green)
+
+Framework `ci` 38838258955 all success: stub, raylib 6 ON, rlsw headless,
+GL under Xvfb, guard. The virtual-display tier is now covered on every
+push; no deferrals remain in Phase 5/6 except the full README trio and
+Phase 7 extraction.
