@@ -145,10 +145,13 @@ jobs:
             ffta-ccache-raylib-${{ runner.os }}-
 
       # Configures build/ with default flags (raylib is the product default
-      # since Phase 4c), builds gbarecomp_raylib_backend, then builds and runs
-      # ffta_raylib_present_tests.
+      # since Phase 4c) and builds gbarecomp_raylib_backend. The present-
+      # pipeline runtime coverage moved to the framework's own CI
+      # (gbarecompx raylib job: tests/runtime/raylib_present_test.cpp under
+      # Xvfb+llvmpipe) with the 2026-10-17 ownership split — this job keeps
+      # the product-config compile + the default-flip guard.
       # Deliberately builds nothing that needs the ROM: generated/ is
-      # gitignored, and the integration test is kept link-lean (raylib +
+      # gitignored, and the backend link is lean (raylib +
       # gbarecomp_raylib_backend only) precisely so it works on a fresh
       # checkout.
       # Pre-Phase-7 this job skips (no gbarecompx tree); once the framework is

@@ -21,14 +21,13 @@ start, features, controls, building); running and display options live in
   mid-copy-resume regressions (sentinel `r2 == -1` from any address,
   including a byte-matching re-plant, must pass through; two-byte-early
   entries only run on a byte-match) and the copy-count clamp semantics.
-- **Frame pacer (`tests/unit/test_frame_pacer.cpp`, same binary):**
+- **Frame pacer (moved 2026-10-17 to `gbarecompx/tests/runtime/frame_pacer_test.cpp` —
+  the framework owns `host_platform`):**
   `wait_for_next_frame(k)` throttles k periods (the issue-#8 fix — a
   4-frame present must take ~4 periods, not 1), the default paces one
   frame, uncapped returns immediately, and absurd banks clamp instead of
   sleeping for seconds. Wide timing margins (no flakes); red-verified
-  against the pre-fix single-period behavior. Pristine-checkout policy
-  mirrors the stack-guard test (`PACER_BANKED_API` probe — compiles to a
-  skip where the patched header is absent).
+  against the pre-fix single-period behavior.
 - **Python tooling:** `.venv/bin/python tests/python/test_tools.py`
   (stdlib only; run by `tools/check.py --only unit-py`).
   Covers cheap structural guards:

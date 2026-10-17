@@ -278,30 +278,14 @@ int main() {
     bus_poke(0x03002000u, (const uint8_t*)"\x00\x10\x00\x01", 4);  // +1
     CHECK(ffta::lzss_entry_guard(0x0800543Cu, 1, &g_cpu) == 1);
 
-    // ── host-stack guard (mobile_platform) ──────────────────────────
-    {
-        extern int run_host_stack_guard_tests();
-        g_failures += run_host_stack_guard_tests();
-    }
-
-    // ── frame pacer banked waits (host_platform) ────────────────────
-    {
-        extern int run_frame_pacer_tests();
-        g_failures += run_frame_pacer_tests();
-    }
-
     // ── speed pill geometry + tap edges (src/ffta_speed_boost.h) ───
     // Issue #11: placement rect + press-to-toggle tracker. No SDL needed.
+    // (The framework-owned companions — host-stack guard, frame pacer,
+    // stick-to-dpad — moved to gbarecompx/tests/runtime/ on 2026-10-17;
+    // their coverage runs in the fork's CI now.)
     {
         extern int run_speed_boost_tests();
         g_failures += run_speed_boost_tests();
-    }
-
-    // ── left stick as d-pad (input_synth.h stick_to_dpad) ──────────
-    // Issue #14: deadzone semantics, cardinals, diagonals.
-    {
-        extern int run_stick_dpad_tests();
-        g_failures += run_stick_dpad_tests();
     }
 
     std::printf("%s (%d failure%s)\n", g_failures ? "FAIL" : "PASS",

@@ -196,32 +196,18 @@ if (NOT ANDROID)
 endif()
 
 # ── host unit tests for src/ custom code ────────────────────────────
+# GAME-OWNED ONLY (2026-10-17 ownership split): everything here tests src/
+# headers. The framework's tests (host-stack guard, frame pacer, backend
+# selection, HostWindow closed/delegation, the raylib present pipeline)
+# moved to gbarecompx/tests/runtime/ — the fork's CI owns them now, and its
+# standalone build no longer has the "cannot compile host_window.cpp"
+# blocker that originally kept them here.
 option(FFTA_BUILD_TESTS "Build host unit tests for src/ custom code" ON)
 if(FFTA_BUILD_TESTS AND NOT ANDROID)
     enable_testing()
-    # The host-stack-guard test targets the guard APIs in the framework
-    # submodule (the gbarecompx fork carries host-stack-guard-desktop as
-    # committed code). Probe the header and compile the test only where
-    # the APIs exist (a stale/foreign framework checkout skips cleanly).
-    include(CheckSymbolExists)
-    set(HSG_HEADER "${GBARECOMP_ROOT}/src/runtime/mobile_platform.h")
-    file(READ "${HSG_HEADER}" _hsg_header_text)
-    if(_hsg_header_text MATCHES "host_stack_guard_arm_current")
-        set(HOST_STACK_GUARD_API ON)
-        message(STATUS "host-stack-guard APIs present: testing")
-    else()
-        set(HOST_STACK_GUARD_API OFF)
-        message(STATUS "host-stack-guard APIs absent (pristine submodule): "
-                       "guard test compiles to a skip")
-    endif()
     add_executable(ffta_unit_tests
         tests/unit/test_ram_dispatch.cpp
-        tests/unit/test_host_stack_guard.cpp
-        tests/unit/test_frame_pacer.cpp
-        tests/unit/test_speed_boost.cpp
-        tests/unit/test_stick_dpad.cpp
-        "${GBARECOMP_ROOT}/src/runtime/mobile_platform.cpp"
-        "${GBARECOMP_ROOT}/src/runtime/host_platform.cpp")
+        tests/unit/test_speed_boost.cpp)
     target_include_directories(ffta_unit_tests PRIVATE
         "${GBARECOMP_ROOT}/src/armv4t"
         "${GBARECOMP_ROOT}/src/runtime"
@@ -235,34 +221,6 @@ if(FFTA_BUILD_TESTS AND NOT ANDROID)
     # assert() (the vacuous-assert trap; same treatment as the framework's
     # test targets in gbarecompx/CMakeLists.txt).
     target_compile_options(ffta_unit_tests PRIVATE -UNDEBUG)
-    if(HOST_STACK_GUARD_API)
-        target_compile_definitions(ffta_unit_tests PRIVATE HOST_STACK_GUARD_API=1)
-    endif()
-    # Same pristine-checkout policy for the frame-pacer banked-wait test:
-    # compile it live only where the patched header declares the frames
-    # parameter; elsewhere it builds to a skip.
-    file(READ "${GBARECOMP_ROOT}/src/runtime/host_platform.h"
-         _pacer_header_text)
-    if(_pacer_header_text MATCHES "wait_for_next_frame\\(uint64_t")
-        set(PACER_BANKED_API ON)
-        message(STATUS "frame-pacer banked-wait API present: testing")
-        target_compile_definitions(ffta_unit_tests PRIVATE PACER_BANKED_API=1)
-    else()
-        set(PACER_BANKED_API OFF)
-        message(STATUS "frame-pacer banked-wait API absent (pristine "
-                       "submodule): pacer test compiles to a skip")
-    endif()
-    # Same pristine-checkout policy for the issue-#14 stick-to-d-pad
-    # mapping (input_synth.h locally): test the pure helper where present.
-    file(READ "${GBARECOMP_ROOT}/src/runtime/input_synth.h"
-         _stick_dpad_header_text)
-    if(_stick_dpad_header_text MATCHES "stick_to_dpad")
-        message(STATUS "stick-to-dpad API present: testing")
-        target_compile_definitions(ffta_unit_tests PRIVATE STICK_DPAD_API=1)
-    else()
-        message(STATUS "stick-to-dpad API absent (pristine submodule): "
-                       "test compiles to a skip")
-    endif()
     add_test(NAME ram_dispatch COMMAND ffta_unit_tests)
 
     # Widescreen margin policy decision logic (src/ffta_ws_margin.h): the
@@ -274,96 +232,10 @@ if(FFTA_BUILD_TESTS AND NOT ANDROID)
     target_compile_options(ffta_ws_margin_tests PRIVATE -UNDEBUG)
     add_test(NAME ws_margin COMMAND ffta_ws_margin_tests)
 
-    # HostWindow closed-state contract: every guard clause must return its
-    # documented fallback on a never-opened window. Lives here rather than in
-    # the framework test tree because gbarecomp's standalone configuration
-    # cannot compile host_window.cpp (GBARECOMP_RUNTIME_UI off, already broken
-    # on the pinned submodule). Builds with the same flags as the app.
-    add_executable(ffta_host_window_tests
-        tests/unit/test_host_window_closed.cpp
-        # gbarecomp_runtime's ARM core references the generated dispatch table.
-        ${GAME_GENERATED_SOURCES})
-    target_include_directories(ffta_host_window_tests PRIVATE
-        "${GBARECOMP_ROOT}/src/runtime" src)
-    target_link_libraries(ffta_host_window_tests PRIVATE
-        "-Wl,--start-group"
-        gbarecomp_runtime
-        gbarecomp_debug
-        gbarecomp_gba
-        gbarecomp_armv4t
-        "-Wl,--end-group")
-    target_compile_options(ffta_host_window_tests PRIVATE -UNDEBUG)
-    add_test(NAME host_window_closed COMMAND ffta_host_window_tests)
-
-    # HostWindow delegation contract (Phase 4a): with a V2-capable backend the
-    # flat generation must stay cold; the flat-only case proves the fallback
-    # still lands AND that the spy covers every delegation site (so the
-    # zero-flat assertion cannot be vacuous). Same build recipe as
-    # ffta_host_window_tests; the V2 fakes live in the framework test tree.
-    add_executable(ffta_host_window_delegation_tests
-        tests/unit/test_host_window_delegation.cpp
-        # gbarecomp_runtime's ARM core references the generated dispatch table.
-        ${GAME_GENERATED_SOURCES})
-    target_include_directories(ffta_host_window_delegation_tests PRIVATE
-        "${GBARECOMP_ROOT}/src/runtime" "${GBARECOMP_ROOT}/tests/runtime" src)
-    target_link_libraries(ffta_host_window_delegation_tests PRIVATE
-        "-Wl,--start-group"
-        gbarecomp_runtime
-        gbarecomp_debug
-        gbarecomp_gba
-        gbarecomp_armv4t
-        "-Wl,--end-group")
-    target_compile_options(ffta_host_window_delegation_tests PRIVATE -UNDEBUG)
-    add_test(NAME host_window_delegation
-             COMMAND ffta_host_window_delegation_tests)
-
-    # Backend-selection predicate. Built in BOTH app configurations so
-    # host_using_raylib_backend() is exercised where it returns true, not only
-    # where it returns false. Linking gbarecomp_runtime transitively brings
-    # gbarecomp_raylib_backend (and its GBARECOMP_USE_RAYLIB define) when raylib
-    # was fetched.
-    add_executable(ffta_backend_select_tests
-        tests/unit/test_backend_select.cpp
-        # gbarecomp_runtime's ARM core references the generated dispatch table.
-        ${GAME_GENERATED_SOURCES})
-    target_include_directories(ffta_backend_select_tests PRIVATE
-        "${GBARECOMP_ROOT}/src/runtime" src)
-    # Same recipe as ffta_host_window_tests (the factory lives in the runtime,
-    # so the runtime is needed), plus the raylib backend explicitly. The raylib
-    # backend references rab_*, whose implementation is compiled inside
-    # host_window.cpp, so listing it inside the same --start-group keeps the
-    # resolver happy.
-    target_link_libraries(ffta_backend_select_tests PRIVATE
-        "-Wl,--start-group"
-        gbarecomp_runtime
-        gbarecomp_raylib_backend
-        gbarecomp_debug
-        gbarecomp_gba
-        gbarecomp_armv4t
-        "-Wl,--end-group")
-    target_compile_options(ffta_backend_select_tests PRIVATE -UNDEBUG)
-    add_test(NAME backend_select COMMAND ffta_backend_select_tests)
-
-    # Raylib integration test: opens a real GL context, uploads frames and
-    # closes, so the raylib path gets runtime coverage rather than only
-    # compiling. Guarded on the framework's EFFECTIVE raylib flag (a failed
-    # fetch leaves the backend stub-only, and this needs real raylib.h).
-    # Skips itself cleanly when no display is attached -- see the test source.
-    if(GBARECOMP_RAYLIB_ENABLED)
-        add_executable(ffta_raylib_present_tests
-            tests/unit/test_raylib_present.cpp)
-        target_include_directories(ffta_raylib_present_tests PRIVATE
-            "${GBARECOMP_ROOT}/src/runtime" src)
-        # Deliberately lean: gbarecomp_raylib_backend (+ raylib) is enough.
-        # gbarecomp_runtime would drag in the ROM-derived dispatch table, which
-        # is never committed, so this test could not link on a fresh CI
-        # checkout. Keep it that way -- if it starts needing the runtime, the
-        # test has outgrown its job and should be split instead.
-        target_link_libraries(ffta_raylib_present_tests PRIVATE
-            gbarecomp_raylib_backend)
-        target_compile_options(ffta_raylib_present_tests PRIVATE -UNDEBUG)
-        add_test(NAME raylib_present COMMAND ffta_raylib_present_tests)
-        set_tests_properties(raylib_present PROPERTIES TIMEOUT 120)
-    endif()
+    # The HostWindow closed/delegation contracts, the backend-selection
+    # predicate, the host-stack guard, the frame pacer and the raylib
+    # present pipeline all moved to gbarecompx/tests/runtime/ (2026-10-17
+    # ownership split) — the fork's CI runs them; this tree no longer
+    # compiles framework sources into test targets.
 
 endif()

@@ -389,75 +389,18 @@ def check_raylib_compile():
                        (errs[0].strip() if errs
                         else "raylib_backend.cpp does not compile as a stub"))
 
-    # Compiling is not running. Build and run the integration test too: it opens
-    # a real GL context, uploads frames and closes, which is the only thing that
-    # catches a raylib call that typechecks but misbehaves. (This already earned
-    # its keep: it found that open() hid the window whenever linear filtering was
-    # off -- the default -- so a default launch was invisible.)
-    r = run(["cmake", "--build", str(build), "--target",
-             "ffta_raylib_present_tests", "--parallel", "4"], timeout=900)
-    if r.returncode != 0:
-        errs = [ln for ln in (r.stdout + r.stderr).splitlines()
-                if "error:" in ln]
-        return False, (errs[0].strip() if errs else "raylib present test build failed")
-
-    exe = build / "ffta_raylib_present_tests"
-    if not exe.exists():
-        return True, "backend compiles (ON+OFF; raylib present test not built)"
-
-    # Finding a display is part of the gate. A real one is the strongest signal,
-    # so prefer it; otherwise fall back to Xvfb with Mesa's software rasterizer
-    # (llvmpipe), which is the standard headless recipe for GL on a CI runner
-    # that has no GPU and no /dev/dri. Only if neither exists do we skip.
-    env = clean_env()
-    cmd = [str(exe)]
-    how = "real display"
-    if not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
-        if shutil.which("xvfb-run") is None:
-            return True, ("backend compiles; present test SKIPPED "
-                          "(no display and no xvfb-run)")
-        cmd = ["xvfb-run", "-a", "--server-args=-screen 0 1280x800x24",
-               str(exe)]
-        # No GPU here, so ask Mesa for the software rasterizer explicitly
-        # instead of relying on driver autodetection. GL 4.5 covers raylib's
-        # 3.3 core requirement; the override is belt-and-braces for older Mesa.
-        env["LIBGL_ALWAYS_SOFTWARE"] = "1"
-        env["GALLIUM_DRIVER"] = "llvmpipe"
-        env["MESA_GL_VERSION_OVERRIDE"] = "4.5"
-        how = "Xvfb + llvmpipe"
-
-    r = run(cmd, env=env, timeout=300)
-    tail = (r.stdout + r.stderr).strip().splitlines() or [""]
-    if r.returncode != 0:
-        bad = [ln.strip() for ln in tail if "FAIL" in ln]
-        return False, (bad[0] if bad else tail[-1].strip() or "present test failed")
-    ran = "running against a real GL context" in (r.stdout + r.stderr)
-    if not ran:
-        return True, f"backend compiles (ON+OFF); present test SKIPPED (no {how})"
-
-    # The menu composited-screen tier rides the same display recipe: the
-    # capture test asserts an open menu shows PANEL and TEXT pixels on the
-    # app's X window — the "open + suppressed + painted nothing" and
-    # "shapes without text" device regressions both fail here (2026-10-16).
-    menu_exe = build / "gbarecomp_build" / "menu_render_contract_tests"
-    r = run(["cmake", "--build", str(build), "--target",
-             "menu_render_contract_tests", "--parallel", "4"], timeout=900)
-    if r.returncode != 0:
-        return False, "menu_render_contract_tests build failed"
-    menu_cmd = [str(menu_exe)]
-    if cmd[0] == "xvfb-run":
-        menu_cmd = cmd[:-1] + [str(menu_exe)]
-    r = run(menu_cmd, env=env, timeout=300)
-    if r.returncode != 0:
-        out = (r.stdout + r.stderr).strip().splitlines() or [""]
-        bad = [ln.strip() for ln in out if "CHECK failed" in ln]
-        return False, (bad[0] if bad else out[-1].strip() or "menu render contract failed")
-    if "capture tier skipped" in (r.stdout + r.stderr):
-        return True, (f"backend compiles (ON+OFF); present test PASSED; menu "
-                      f"render contract PASSED ({how}; capture tier skipped "
-                      "— no X11)")
-    return True, (f"backend compiles (ON+OFF); present test PASSED; menu "
-                  f"render contract PASSED incl. capture tier ({how})")
+    # Compiling is not running — but the PRESENT-pipeline runtime coverage
+    # (ffta_raylib_present_tests through 2026-10-17) moved to the FRAMEWORK:
+    # gbarecompx/tests/runtime/raylib_present_test.cpp, run by the fork's own
+    # raylib CI job under Xvfb+llvmpipe. The ownership split keeps this suite
+    # to the game's own surface: the product-config compile + the default-flip
+    # assertion above are what "the game's raylib path still builds" means.
+    # (History that earned its keep here: the present test once found that
+    # open() hid the window whenever linear filtering was off — the default —
+    # so a default launch was invisible. The menu composited-screen tier that
+    # used to ride this recipe moved with it — menu_render_contract_tests is
+    # the fork's test and runs in the fork's raylib job.)
+    return True, "backend compiles (ON+OFF; raylib default selected)"
 
 
 def check_raylib_backend():
@@ -546,14 +489,11 @@ def check_backend_default():
     ok, detail = backend_default_cache_ok(cache.read_text())
     if not ok:
         return False, detail
-    exe = REPO / "build/ffta_backend_select_tests"
-    if not exe.exists():
-        return True, "build/ is raylib (selection binary not built)"
-    r = run([str(exe)])
-    line = (r.stdout.strip().splitlines() or [""])[-1]
-    if r.returncode != 0 or "raylib=1" not in line:
-        return False, f"backend_select disagrees: {line or f'exit {r.returncode}'}"
-    return True, "build/ is raylib; backend_select raylib=1"
+    # The selection-predicate binary (ffta_backend_select_tests) moved to the
+    # framework's test tree (2026-10-17 ownership split; the fork's CI runs
+    # it config-adaptively). The cache assertion above is this suite's
+    # remaining contract.
+    return True, "build/ is the raylib product build (cache)"
 
 
 CHECKS = {
