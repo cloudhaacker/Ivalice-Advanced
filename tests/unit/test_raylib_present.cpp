@@ -925,36 +925,37 @@ int main() {
         {
             set_lcd(b, false);
             ::unsetenv("GBARECOMP_LCD_SHADER");
-            const std::vector<std::uint8_t> pattern = make_frame(61);
-
-            auto grab_sharp = [&](bool sharp_on,
-                                  std::vector<unsigned char>& out, int& w,
-                                  int& h) {
-                b.close();
-                check(open_backend(b, sharp_on ? "sharp_px_on" : "sharp_px_off",
-                                   nullptr, false, sharp_on),
-                      sharp_on ? "reopen sharp=on for pixel pin"
-                               : "reopen sharp=off for pixel pin");
-                SetWindowSize(700, 500);
-                b.video().present(pattern.data(), true);
+            auto set_sharp = [&](bool on) {
+                gbarecomp::FxSettings s = b.fx().settings();
+                s.sharp = on;
+                b.fx().apply(s);
+            };
+            // SetWindowSize is not instantly reflected in the framebuffer:
+            // the first present/read after a resize can be transitional
+            // (observed as ~100% "differences" that were really
+            // old-geometry frames). Settle: one throwaway present + read.
+            auto settle = [&] {
+                b.video().present(make_frame(200).data(), true);
                 Image img = LoadImageFromScreen();
-                w = img.width;
-                h = img.height;
-                const unsigned char* bytes =
-                    static_cast<const unsigned char*>(img.data);
-                out.assign(bytes, bytes + static_cast<std::size_t>(w) * h * 4u);
                 UnloadImage(img);
             };
-            auto grab_integer = [&](bool sharp_on,
-                                    std::vector<unsigned char>& out, int& w,
-                                    int& h) {
-                b.close();
-                check(open_backend(b, sharp_on ? "sharp_int_on" : "sharp_int_off",
-                                   nullptr, false, sharp_on),
-                      sharp_on ? "reopen integer sharp=on"
-                               : "reopen integer sharp=off");
-                SetWindowSize(kBaseW * 2, kBaseH * 2);
-                b.video().present(pattern.data(), true);
+
+            // ONE open, ONE context for every grab: the mask check above
+            // proves LoadImageFromScreen reads reliably within a context,
+            // while close/reopen cycles turned every read stale under Mesa
+            // llvmpipe (CI's renderer) — different patterns read back
+            // identically, which zeroed the whole comparison. Sharp toggles
+            // LIVE through fx().apply() (the same path the fake-api suite
+            // pins the prescale mechanics through), so no reopen is needed.
+            // The fractional layout: 700x500 → units 233 (not a multiple of
+            // the 80-px gcd), prescale factor 2.
+            b.close();
+            check(open_backend(b, "sharp_pixels"), "reopen for the pixel pins");
+            SetWindowSize(700, 500);
+            set_sharp(false);
+            settle();
+
+            auto grab = [&](std::vector<unsigned char>& out, int& w, int& h) {
                 Image img = LoadImageFromScreen();
                 w = img.width;
                 h = img.height;
@@ -966,16 +967,34 @@ int main() {
             std::vector<unsigned char> off_a, off_b, on_px, ioff_a, ioff_b,
                 ion_px;
             int fw = 0, fh = 0, iw = 0, ih = 0;
-            grab_sharp(false, off_a, fw, fh);
+            b.video().present(make_frame(61).data(), true);
+            grab(off_a, fw, fh);
             check(fw == 700 && fh == 500,
                   "the pixel-pin framebuffer is the fractional window");
-            grab_sharp(false, off_b, fw, fh);
-            grab_sharp(true, on_px, fw, fh);
-            grab_integer(false, ioff_a, iw, ih);
+            // Liveness: a DIFFERENT pattern must read differently. If this
+            // fails, the framebuffer readback is stale (or dead) and every
+            // later comparison would be meaningless — say so before judging
+            // the recipe.
+            b.video().present(make_frame(62).data(), true);
+            grab(off_b, fw, fh);
+
+            set_sharp(true);
+            b.video().present(make_frame(61).data(), true);
+            grab(on_px, fw, fh);
+
+            // The integer control: same context, exact 2x window.
+            SetWindowSize(kBaseW * 2, kBaseH * 2);
+            settle();
+            set_sharp(false);
+            b.video().present(make_frame(61).data(), true);
+            grab(ioff_a, iw, ih);
             check(iw == kBaseW * 2 && ih == kBaseH * 2,
                   "the control framebuffer is the integer window");
-            grab_integer(false, ioff_b, iw, ih);
-            grab_integer(true, ion_px, iw, ih);
+            b.video().present(make_frame(61).data(), true);
+            grab(ioff_b, iw, ih);
+            set_sharp(true);
+            b.video().present(make_frame(61).data(), true);
+            grab(ion_px, iw, ih);
 
             const gbarecomp::PresentationLayout lay5 =
                 gbarecomp::compute_presentation_layout(700, 500, kBaseW,
@@ -985,18 +1004,18 @@ int main() {
                   "the 700x500 layout is fractional and engages the prescale "
                   "(factor 2)");
 
-            // Fractional: the toggle must change the picture. Clean-in-both
-            // rule against compositor smearing (a pixel that differs between
-            // the two off-reads was not ours to judge).
+            // Fractional: the toggle must change the picture.
             {
+                // Liveness first: DIFFERENT patterns must read differently.
+                int live = 0;
+                for (std::size_t i = 0; i < off_a.size(); i += 997)
+                    if (off_a[i] != off_b[i]) ++live;
+                check(live > 0,
+                      "the framebuffer readback is live (different patterns "
+                      "read differently)");
                 int judged = 0, differing = 0;
                 for (int y = lay5.y; y < lay5.y + lay5.height; y += 3) {
                     for (int x = lay5.x; x < lay5.x + lay5.width; x += 3) {
-                        bool clean = true;
-                        for (int c = 0; c < 4 && clean; ++c)
-                            clean = off_a[(std::size_t(y) * fw + x) * 4u + c] ==
-                                    off_b[(std::size_t(y) * fw + x) * 4u + c];
-                        if (!clean) continue;
                         ++judged;
                         for (int c = 0; c < 3; ++c) {
                             const int d =
@@ -1009,7 +1028,12 @@ int main() {
                         }
                     }
                 }
-                check(judged > 1000, "enough clean pixels to judge sharp");
+                check(judged > 1000, "enough pixels to judge sharp");
+                std::printf(
+                    "  info  sharp fractional: differing=%d judged=%d "
+                    "(near-zero with a live readback = the prescale or the "
+                    "bilinear finish did not engage)\n",
+                    differing, judged);
                 check(differing * 20 > judged,
                       "sharp changes the presented pixels at a fractional "
                       "layout (>5% differ)");

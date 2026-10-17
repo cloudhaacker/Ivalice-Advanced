@@ -9169,3 +9169,21 @@ same APK.
   failed; ctest ran old objects). Lesson repeated: a green ctest means
   nothing unless the build before it was clean — read the build's
   exit, not just the tests'.
+- CI follow-up (the pixel pins' first CI run FAILED): the raylib-backend
+  job runs under **Mesa llvmpipe**, where the pin's original design —
+  close/reopen the backend around every grab — turned every
+  LoadImageFromScreen read STALE (different patterns read back
+  identically; the diff zeroed). Local repro without Xvfb:
+  `LIBGL_ALWAYS_SOFTWARE=1` on the real display = the same renderer.
+  Root causes, in order: (1) reopen-per-grab → stale reads under
+  llvmpipe (the mask check above it reads fine WITHIN one context —
+  the reopen was the variable); (2) resize lag — the first
+  present/read after SetWindowSize is transitional (old-geometry
+  frames masquerading as ~100% "differences"). Fixes: ONE context for
+  all grabs (sharp toggles LIVE via fx().apply — the path the fake-api
+  suite already pins), different patterns on the two off-reads as an
+  explicit READBACK-LIVENESS pin, and a settle present+read after
+  every SetWindowSize. Result: real GL 25316/36348 (70%) differ,
+  llvmpipe 25262 (69%), deterministic across runs, PASS on both. The
+  suite now carries its own environment guardrails: liveness first,
+  settle after resize, numbers printed on every run.
