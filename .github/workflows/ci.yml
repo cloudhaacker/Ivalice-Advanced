@@ -76,10 +76,24 @@ jobs:
       # Tier-1 pins the stub backend (-DGBARECOMP_USE_RAYLIB=OFF): it is the
       # cheap fork-safe gate (unit tests, no ROM, no raylib fetch). The
       # raylib-backend job below runs the product configuration.
+      #
+      # rm -f CMakeCache.txt first: a restored build/ dir (cache step below,
+      # restore-keys fallback) carries cache values from older trees, and
+      # set(... CACHE) never overwrites an existing entry — the pre-rename
+      # GBARECOMP_ROOT (= gbarecomp) survived the gbarecompx rename and failed
+      # the checkout guard here (2026-10-17 CI incident). Deleting the cache
+      # file forces a clean reconfigure; ccache still makes the rebuild fast.
+      #
+      # run: | (literal block): the backslash continuations must stay real
+      # line continuations. In a folded plain scalar "\ " becomes an escaped
+      # space and the -D flags arrive as positional junk ("Ignoring extra
+      # path") — GBARECOMP_USE_RAYLIB=OFF silently never applied.
       - name: Configure
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
-          -DGBARECOMP_USE_RAYLIB=OFF \
-          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_C_COMPILER_LAUNCHER=ccache
+        run: |
+          rm -f build/CMakeCache.txt
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DGBARECOMP_USE_RAYLIB=OFF \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_C_COMPILER_LAUNCHER=ccache
 
       - name: Gate (unit-cpp, unit-py, android-static)
         run: python3 tools/check.py --only unit-cpp,unit-py,android-static
