@@ -408,6 +408,22 @@ else
   fail_check "process running (pidof $PACKAGE returned nothing — crashed or never started?)"
 fi
 
+# 1b. stale-build guard: the installed APK must be THIS checkout's build.
+#     The 2026-10-16 incident class — the phone ran an APK whose engine was
+#     cut between a menu bug and its fix; every later gate passed while the
+#     device stayed broken. --no-install runs are the exposed path (after a
+#     real install this is trivially true). Skips when either version is
+#     unknown (no tags, no installed package, or the fake-adb self-test).
+installed_version="$("${ADB[@]}" shell dumpsys package "$PACKAGE" 2>/dev/null | tr -d '\r' | sed -n 's/^versionName=//p' | sed -n '1p')"
+repo_version="$(git describe --tags 2>/dev/null | sed -e 's/^v//' -e 's/-dirty$//' || true)"
+if [ -z "$installed_version" ] || [ -z "$repo_version" ]; then
+  pass_check "stale-build guard skipped (installed='${installed_version:-?}' checkout='${repo_version:-?}')"
+elif [ "$installed_version" = "$repo_version" ]; then
+  pass_check "installed APK matches this checkout ($repo_version)"
+else
+  fail_check "device APK ($installed_version) is not this checkout ($repo_version) — rebuild + install before gating"
+fi
+
 # 2. resumed activity
 acts=$("${ADB[@]}" shell dumpsys activity activities 2>/dev/null || true)
 resumed_line=$(printf '%s\n' "$acts" | grep -F "$PACKAGE/$GAME_ACTIVITY" | grep -E '(^|[[:space:]])(top|m)?ResumedActivity[=:]' | sed -n '1p' || true)

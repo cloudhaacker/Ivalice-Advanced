@@ -54,6 +54,7 @@ GRADLE_MIN_JDK = (21, 21)  # Gradle 8.11.1: JDK 21 works; JDK 27 is too new
 ANDROID_SCAFFOLD = REPO / "gbarecompx/platform/android/cpp/CMakeLists.txt"
 APK_DIR = ANDROID / "app/build/outputs/apk/debug"
 PRIVATE_MARKER = "-PRIVATE-rom-included.apk"
+PACKAGE = "org.gbarecomp.fftarecomp"
 # Sources the accepted APK must not be older than: if Gradle calls the build
 # UP-TO-DATE while any of these are newer, the artifact is silently stale.
 # (Payload-vs-staging drift is additionally caught by the content guard, which
@@ -146,7 +147,7 @@ def adb_devices_ready():
     return len(ready)
 
 
-def step_preflight():
+def step_preflight(skip_stale=False, installing=True):
     java, major = find_java()
     if java is None:
         die("no usable JDK found (need >= 17 and <= 26 for Gradle 8.11.1)",
@@ -222,7 +223,76 @@ def step_preflight():
             die("generated/ corpus is stale", hint="re-run build.py "
                 "(%s is newer than the last regen)" % source.name)
     details.append("corpus present + fresh (regen stamp)")
+    # Stale-device guard (2026-10-16 incident class): an installed APK older
+    # than this checkout is how yesterday's bugs survive today's fixes — the
+    # phone ran a build cut BETWEEN a menu bug and its fix for hours while
+    # every local gate stayed green. Fail loudly; --skip-stale proceeds (and
+    # installs this checkout, which is the cure anyway).
+    if not skip_stale and device_attached():
+        installed = installed_version_name()
+        local = local_version_name()
+        if installed and local and installed != local:
+            # Installing IS the cure, so the default path warns and
+            # proceeds; only a --no-install run (gating WITHOUT building —
+            # the exposed path) dies, mirroring validate_android.sh 1b.
+            msg = (f"device APK ({installed}) is not this checkout "
+                   f"({local}) — a stale install hides fixed regressions "
+                   "(the phone kept yesterday's menu bug for hours after "
+                   "the fix landed)")
+            if installing:
+                print(f"      warn: {msg}; installing this checkout now")
+                details.append(f"device APK stale ({installed}) — "
+                               f"installing {local}")
+            else:
+                die(msg, hint="rebuild + install this checkout "
+                    "(--skip-stale gates the stale build anyway)")
+        if installed and local and installed == local:
+            details.append(f"device APK matches this checkout ({installed})")
+        elif not installed and local:
+            details.append(f"device has no install yet (checkout {local})")
+        if not submodule_pin_committed():
+            print("      warn: gbarecompx checkout is NOT the recorded "
+                  "submodule pin — the APK embeds an uncommitted engine "
+                  "state; commit the bump so the device build is "
+                  "reproducible")
     return ", ".join(details)
+
+
+def device_attached():
+    r = run(["adb", "devices"], capture=True)
+    if r.returncode != 0:
+        return False
+    for line in (r.stdout or "").splitlines()[1:]:
+        parts = line.split()
+        if len(parts) >= 2 and parts[1] == "device":
+            return True
+    return False
+
+
+def installed_version_name():
+    r = run(["adb", "shell", "dumpsys", "package", PACKAGE], capture=True)
+    if r.returncode != 0:
+        return None
+    m = re.search(r"versionName=(\S+)", r.stdout or "")
+    return m.group(1) if m else None
+
+
+def local_version_name():
+    r = run(["git", "describe", "--tags"], capture=True)
+    if r.returncode != 0:
+        return None
+    out = (r.stdout or "").strip()
+    if out.startswith("v"):
+        out = out[1:]
+    if out.endswith("-dirty"):
+        out = out[: -len("-dirty")]
+    return out or None
+
+
+def submodule_pin_committed():
+    r = run(["git", "submodule", "status", "gbarecompx"], capture=True)
+    out = (r.stdout or "").strip()
+    return r.returncode == 0 and bool(out) and not out.startswith("+")
 
 
 # --- build -------------------------------------------------------------------
@@ -317,6 +387,8 @@ def main():
                     help="install without running the device gate")
     ap.add_argument("--skip-check", action="store_true",
                     help="skip the APK content guard")
+    ap.add_argument("--skip-stale", action="store_true",
+                    help="skip the installed-vs-checkout version guard")
     a = ap.parse_args()
 
     print(f"build_apk.py — {REPO}")
@@ -347,7 +419,8 @@ def main():
     i = 0
 
     i += 1
-    if run_step(i, total, "preflight", step_preflight) is None:
+    if run_step(i, total, "preflight", step_preflight, a.skip_stale,
+                not a.no_install) is None:
         return 1
 
     i += 1

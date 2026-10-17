@@ -662,7 +662,13 @@ case "$cmd" in
           printf 'Starting: Intent { cmp=org.gbarecomp.fftarecomp/org.gbarecomp.GbaSetupActivity }\\n'
         fi ;;
       dumpsys)
-        if [ "$scenario" = "setup-resumed" ]; then
+        if [ "${args[2]:-}" = "package" ]; then
+          # Stale-build guard: only the stale-version scenario carries a
+          # versionName; every other scenario reports none (guard skips).
+          if [ "$scenario" = "stale-version" ]; then
+            printf 'versionName=1.6-0-goldcommit\\n'
+          fi
+        elif [ "$scenario" = "setup-resumed" ]; then
           printf '    topResumedActivity=ActivityRecord{1 u0 org.gbarecomp.fftarecomp/org.gbarecomp.GbaSetupActivity t1}\\n'
         else
           printf '    topResumedActivity=ActivityRecord{1 u0 org.gbarecomp.fftarecomp/org.gbarecomp.GbaGameActivity t1}\\n'
@@ -703,6 +709,18 @@ esac
 exit 0
 '''
 
+# Fake `git` beside the fake adb: a deterministic `describe --tags` so the
+# gate's stale-build assertion compares against a fixed checkout version
+# (real repos vary; tag-less CI checkouts would skip — this pins the FAIL
+# path device-free).
+FAKE_GIT = '''\
+#!/usr/bin/env bash
+case "${1:-} ${2:-}" in
+  "describe --tags") printf 'v1.6-99-gnewcommit\\n' ;;
+  *) exit 0 ;;
+esac
+'''
+
 
 def run_gate(scenario, extra_args=()):
     """Run tools/validate_android.sh with the fake adb; returns the completed
@@ -714,6 +732,9 @@ def run_gate(scenario, extra_args=()):
         adb = bindir / "adb"
         adb.write_text(FAKE_ADB, encoding="utf-8")
         adb.chmod(0o755)
+        git = bindir / "git"
+        git.write_text(FAKE_GIT, encoding="utf-8")
+        git.chmod(0o755)
         evidence = tmp_path / "evidence"
         env = dict(os.environ)
         env["PATH"] = str(bindir) + os.pathsep + env.get("PATH", "")
@@ -792,6 +813,15 @@ def check_gate_setup_resumed():
     need("the setup screen is resumed instead" in completed.stdout,
          "expected the resumed-activity assertion to fail: %s"
          % tail(completed))
+
+
+def check_gate_stale_version():
+    completed, _ = run_gate("stale-version")
+    need(completed.returncode == 1,
+         "a stale installed APK should fail the gate (rc=%d)"
+         % completed.returncode)
+    need("is not this checkout" in completed.stdout,
+         "expected the stale-build assertion to fail: %s" % tail(completed))
 
 
 def check_gate_usage():
@@ -905,6 +935,7 @@ CHECKS = [
     ("gate: missing runtime log fails the gate", check_gate_missing_log),
     ("gate: crash-buffer entry fails the gate", check_gate_crash),
     ("gate: setup-still-resumed fails the gate", check_gate_setup_resumed),
+    ("gate: stale installed APK fails the gate", check_gate_stale_version),
     ("gate: usage contract (--help 0, bad --wait 2, unknown option 2)",
      check_gate_usage),
     ("identity: launch-screen box art staged as a drawable",

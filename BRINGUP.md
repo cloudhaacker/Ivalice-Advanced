@@ -8742,3 +8742,36 @@ Android 12+ backups (a backup-behavior decision). Gate = zero lint ERRORS
 New `android-lint` CI job (game repo, tier-1-safe: no ROM, no private
 material; setup-java 21 + gradle cache) + shellcheck `-S warning` over
 tools/*.sh — one SC2164 found and fixed in derail_loop.sh, rest clean.
+
+**Stale-device incident + the lock-in gates (same day).** The phone's
+"broken touch controls" was the device running an APK installed 15:39:39
+whose engine pin (e15020a) sat BETWEEN the menu-seam bug (06c0669, 15:39)
+and its fix (52c04c7, 16:04): a long-press opened the menu, input was
+suppressed, nothing painted, and the only touch exit was the system Back
+key. Diagnosed device-side (installed versionName ↔ fork ancestry via
+merge-base, plus a screenshot showing the exact signature); remedied by
+rebuild + install (device gate PASSED). Three gates landed so the class
+screams next time:
+- **Composited-screen tier** (the 2026-10-16 logged follow-up, now real):
+  menu_render_contract_tests reads the app's X window by title (root
+  captures BadMatch under compositors) and asserts an open menu shows
+  PANEL and TEXT pixels — the shapes-without-text dead-font signature —
+  then none when closed. Red control demonstrated (draw disabled →
+  `CHECK failed: panel > 300`). Skips without X11; CI xvfb runs it.
+- **Stale-device guard**: validate_android.sh assertion 1b compares the
+  installed versionName with `git describe --tags` (skips when either is
+  unknown; fake-adb + fake-git self-test pins the FAIL path — android-static
+  27/27), and build_apk.py preflight dies on the mismatch (--skip-stale
+  overrides) and warns on an uncommitted submodule pin.
+- **Settings-writer merge fix**: save_menu_settings kept the old [video]
+  header AND appended a new one per save — the device config.ini hit ~50.
+  Readers tolerate it (last section wins) but the file grows unboundedly.
+  Now one merged [video] section, foreign lines preserved, LCD keys last,
+  byte-idempotent. Red-first: the dupe pin now counts [video] (it only
+  ever counted [Menu] — the vacuous-guard shape) + idempotence.
+- **The lint tier drew blood on itself**: the c0/c4 "unused" profiler
+  params are live under __ANDROID__ only; the desktop compile database
+  can't see that, the rename broke the Android build (undeclared
+  identifiers), restored with a NOLINT recording the configuration split.
+  Lesson: the sweep is per-configuration — check an #ifdef before
+  trusting "unused" on a cross-platform signature.
