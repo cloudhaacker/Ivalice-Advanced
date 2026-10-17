@@ -265,6 +265,15 @@ if(FFTA_BUILD_TESTS AND NOT ANDROID)
     endif()
     add_test(NAME ram_dispatch COMMAND ffta_unit_tests)
 
+    # Widescreen margin policy decision logic (src/ffta_ws_margin.h): the
+    # size-0 layer mask + the -1/0 span contract, pinned to the captured
+    # register blocks (device conversations x4, desktop pub replay, the
+    # battle move state). Red-first via the A/B fixture replay (BRINGUP).
+    add_executable(ffta_ws_margin_tests tests/unit/test_ws_margin.cpp)
+    target_include_directories(ffta_ws_margin_tests PRIVATE src)
+    target_compile_options(ffta_ws_margin_tests PRIVATE -UNDEBUG)
+    add_test(NAME ws_margin COMMAND ffta_ws_margin_tests)
+
     # HostWindow closed-state contract: every guard clause must return its
     # documented fallback on a never-opened window. Lives here rather than in
     # the framework test tree because gbarecomp's standalone configuration

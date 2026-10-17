@@ -12,6 +12,7 @@
 #include "ffta_ram_dispatch.h"
 #include "ffta_lzss_guard.h"
 #include "ffta_speed_boost.h"
+#include "ffta_ws_margin.h"
 #include "mobile_platform.h"
 
 #if defined(__ANDROID__)
@@ -117,12 +118,50 @@ GBA_MOD_CONSTRUCTOR(register_ffta_mod_plugins) {
     gba_mod_register_activation_plugin("ffta.widescreen", ffta_ws_activate);
 }
 
-// ── Widescreen (W3): per-scene margin policy ───────────────────────────────
-// The world map's field BGs are 256-px-wide tilemaps (size=2), so its margin
-// samples land on the tilemap's wrapped edge — pillarbox those scenes.
-// Field / battle / pub scenes keep their 512-wide rings (size=1) authored, so
-// the margins stay real content. Runs at every emulated frame start, before
-// scanline 0; inert at native width (only the wide compositor reads these).
+// ── Widescreen (W3/W4): per-scene margin policy ────────────────────────────
+// Two rules, both read from the per-frame IO snapshot (no guest-RAM state):
+//
+// 1. Pillarbox (W3): the world map's field BGs are 256-px-wide tilemaps
+//    (size=2), so its margin samples land on the tilemap's wrapped edge —
+//    pillarbox those scenes.
+//
+// 2. UI-layer margin suppression (2026-10-16, re-lands the 2026-10-15 W2
+//    interim rule): FFTA's UI panels — chat bubbles, portrait plates, pub
+//    rumor/law screens, confirm dialogs — are 256-px tilemaps (BGxCNT
+//    size==0) whose margin samples wrap into the panel's own edge columns
+//    ("chat text bubbles are wrapping/repeating"). The wide compositor
+//    samples tilemap px (x - extra_left + hofs) mod 256 continuously, so a
+//    256-px panel repeats its border/interior/text in the margins wherever
+//    its scroll lands — pinned pixel-exact on four device captures and the
+//    desktop pub replay (BRINGUP). Size-0 layers therefore never paint
+//    margin columns: suppress their samples outside the native 240 span.
+//    Captured disconfirmations, in order: BLDCNT is NOT a condition (the
+//    pub conversation runs blended, bldcnt=0x3348, with the bubble up);
+//    window-enable is NOT a condition either (the desktop pub bubble has
+//    DISPCNT window bits 13/14 SET while all four device conversation
+//    captures have the same registers configured but the enable bits CLEAR
+//    — a windows gate would have armed nowhere on the device). The only
+//    stable discriminator is the size field. Battle move/pan/menu keeps its
+//    margins because ALL FOUR layers are the 512-px ring there (no size-0
+//    layer — captured; the same fact that made the interim fix fix the move
+//    state). Sprites: the device windows OBJ out of the margins (winout
+//    0x2F) and the desktop pub parks off-screen sprites (issue #26) — no
+//    sprite content is suppressed with the BGs. The rule was withdrawn
+//    2026-10-15 for the Totema report, but its summon A/B (BRINGUP) shows
+//    the summon window pixel-identical with the rule enabled — the report
+//    was presentation-side; re-landed with that A/B plus the ws matrix and
+//    the bubble-fixture A/B (GBARECOMP_FFTA_UI_GATE=0) as the gates.
+//
+// Runs at every emulated frame start, before scanline 0; inert at native
+// width (only the wide compositor reads these).
+static int ffta_ws_ui_gate(int bg, int output_x, int screen_y, int* out_hw_x) {
+    // The tested span logic (ffta_ws_margin.h): -1 suppresses the sample
+    // outside the native span, 0 keeps the hardware X in it. out_hw_x stays
+    // null — no remap, only suppression.
+    return ffta::ws_ui_gate_sample(static_cast<int>(g_ws_frame_left),
+                                   output_x);
+}
+
 void ffta_ws_margin_policy(const gbarecomp::ExtendedViewFrameInfo* frame) {
     if (!frame || !frame->io || frame->io_size < 0x10) return;
     g_ws_frame_left = frame->extra_left;
@@ -134,12 +173,20 @@ void ffta_ws_margin_policy(const gbarecomp::ExtendedViewFrameInfo* frame) {
     const bool world_map_tilemaps =
         ((bg0 >> 14) & 3u) == 2u && ((bg1 >> 14) & 3u) == 2u;
     g_ws_pillarbox = world_map_tilemaps ? 1 : 0;
-}
 
-// (The BG margin provider is intentionally gone: no fixed layer skip can be
-// right across FFTA's per-scene layer-role swaps. The engine's window control
-// gates the margin columns; the world-map pillarbox above handles the one
-// scene whose 256-px tilemaps alias there.)
+    // Rule 2: the per-frame size-0 layer mask (the tested decision lives in
+    // ffta_ws_margin.h) drives both the provider install and its layer
+    // admission. Empty mask -> provider uninstalled (the engine's sampling
+    // stands, zero added traffic). The env opt-out is the A/B arm for the
+    // fixture gates (and an emergency kill-switch).
+    static const bool ui_gate_disabled =
+        std::getenv("GBARECOMP_FFTA_UI_GATE") &&
+        std::getenv("GBARECOMP_FFTA_UI_GATE")[0] == '0';
+    const unsigned mask =
+        ui_gate_disabled ? 0u : ffta::ws_ui_gate_layers(io, frame->io_size);
+    g_ws_bg_x_provider_layers = mask;
+    g_ws_bg_x_provider = mask ? &ffta_ws_ui_gate : nullptr;
+}
 
 #if defined(__ANDROID__)
 // Issue #6: battery saves and save states live in the user-visible external
