@@ -8930,3 +8930,51 @@ same APK.
   concentrated in small features — menu bullet stars reconstructed,
   text curves cleaner, portrait edges smoothed. Assistant-verified on
   the captures; USER manual check pending (desktop + Android).
+
+## 2026-10-16 — MMPX verified by user; grid boot-enable bug fixed; README shader-stack callout
+
+- USER manual checks: MMPX "works. not really my style" (the intended
+  outcome for a taste toggle — stays opt-in, default off). Pixel grid
+  report: **starting the game with it on does not enable it**.
+- Root cause (fork `1cea51c`): `FxImpl::load_config` direct-wrote
+  `impl_->lcd_border` before diffing — `settings()` agreed with itself,
+  so every later diff-driven path (load_config's own compile block AND
+  the runtime boot's menu-settings apply) no-oped silently and the LCD
+  program never compiled; present saw the flag on with
+  `lcd_shader_ready` false → no grid until an in-menu toggle. MMPX and
+  the grille path were unaffected (they diff parsed locals).
+- Fix: effect toggles go through `apply()`'s diff exclusively in
+  load_config (floats keep direct writes — no transitions attached) +
+  defense in depth: present() lazy-compiles the LCD program whenever
+  either effect wants it (the dither/deband pattern) — boot ordering
+  can never strand a configured-on effect again; open() also compiles
+  when border-only is configured.
+- Two test-infra bugs found while pinning this (both fixed in the same
+  commit): (1) the two-arg `CHECK(cond, "msg")` form is the COMMA
+  OPERATOR under the file's variadic CHECK — every two-arg present-level
+  pin in raylib_api_fake_test was vacuous (condition discarded, the
+  string literal always non-null) — converted to single-arg with the
+  message as a trailing comment, making the boot-enable pin TRUE red;
+  (2) FakeRaylibApi cleared its uniform-name map on every program load,
+  so once the lazy compile put two program loads inside one present,
+  post-second-program uploads recorded nameless and every name lookup
+  missed — real GL hands per-program locations; the fake now keeps one
+  persistent name→loc map.
+- New pins: `config_enabled_border_compiles` (the exact boot
+  double-apply sequence, true-red verified) +
+  `config_enabled_lcd_compiles` (same poison class, grille path).
+  Suites: stub 81/81, headless 82/82.
+- Desktop end-to-end repro of the user scenario (scratch exe dir,
+  config.ini with lcd_border=1 + edge_smoothing=1, cold boot, no menu
+  interaction): capture shows grid + MMPX active on first present; both
+  programs compile at boot (window capture at /tmp/opencode/boot_probe/).
+- APK 1.6-111-g7a93ce0 built + content guard passed; device gate failed
+  only the resumed-activity check (phone dozing — the documented
+  unattended quirk); install pending an awake phone + USER relaunch
+  repro (the regression scenario itself).
+- Fork `8503ad1`: README gains "The present-time shader stack" section
+  (per-toggle what/engages, chain order, game-space anchoring,
+  frame-hash safety) + the Display-effects table row and value bullets
+  name the new toggles; THIRD_PARTY_ATTRIBUTION.md gains the MMPX entry
+  (JCGT 2021 MIT, algorithm-level port, vendored test-only oracle,
+  clamp DEVIATION, opaque-input assumption).
