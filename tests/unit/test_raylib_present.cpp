@@ -903,6 +903,163 @@ int main() {
             }
         }
         set_lcd(b, false);
+
+        // ---- sharp prescale: the VISIBLE effect, pinned in screen pixels ----
+        // The lifecycle section above only proves the RenderTexture path
+        // runs: readback() serves the CPU staging buffer, which is pre-GPU
+        // by design, so a sharp path that scaled to the wrong size or never
+        // engaged at all still passed it — the user-facing question "are you
+        // sure it works?" had no pixel-level answer. This closes the gap at
+        // a FRACTIONAL layout (700x500: units=233, not a multiple of the
+        // 80-px gcd, so compute_sharp_prescale_factor engages with factor
+        // 2): present a deterministic non-uniform pattern with the toggle
+        // off and on, read the REAL framebuffer (LoadImageFromScreen, the
+        // same instrument as the mask check above), and require the outputs
+        // to differ. A dead toggle — factor never computed, target never
+        // bound, filter never set — reproduces exactly as a zero diff.
+        // The integer-layout control pins the DESIGNED inertness: at an
+        // exact 2x the factor is 0, both paths are the same direct blit, and
+        // the screen must be pixel-identical — the toggle is not supposed to
+        // change anything there, which is precisely why it "does nothing"
+        // when the window sits on a whole multiple of 240x160.
+        {
+            set_lcd(b, false);
+            ::unsetenv("GBARECOMP_LCD_SHADER");
+            const std::vector<std::uint8_t> pattern = make_frame(61);
+
+            auto grab_sharp = [&](bool sharp_on,
+                                  std::vector<unsigned char>& out, int& w,
+                                  int& h) {
+                b.close();
+                check(open_backend(b, sharp_on ? "sharp_px_on" : "sharp_px_off",
+                                   nullptr, false, sharp_on),
+                      sharp_on ? "reopen sharp=on for pixel pin"
+                               : "reopen sharp=off for pixel pin");
+                SetWindowSize(700, 500);
+                b.video().present(pattern.data(), true);
+                Image img = LoadImageFromScreen();
+                w = img.width;
+                h = img.height;
+                const unsigned char* bytes =
+                    static_cast<const unsigned char*>(img.data);
+                out.assign(bytes, bytes + static_cast<std::size_t>(w) * h * 4u);
+                UnloadImage(img);
+            };
+            auto grab_integer = [&](bool sharp_on,
+                                    std::vector<unsigned char>& out, int& w,
+                                    int& h) {
+                b.close();
+                check(open_backend(b, sharp_on ? "sharp_int_on" : "sharp_int_off",
+                                   nullptr, false, sharp_on),
+                      sharp_on ? "reopen integer sharp=on"
+                               : "reopen integer sharp=off");
+                SetWindowSize(kBaseW * 2, kBaseH * 2);
+                b.video().present(pattern.data(), true);
+                Image img = LoadImageFromScreen();
+                w = img.width;
+                h = img.height;
+                const unsigned char* bytes =
+                    static_cast<const unsigned char*>(img.data);
+                out.assign(bytes, bytes + static_cast<std::size_t>(w) * h * 4u);
+                UnloadImage(img);
+            };
+            std::vector<unsigned char> off_a, off_b, on_px, ioff_a, ioff_b,
+                ion_px;
+            int fw = 0, fh = 0, iw = 0, ih = 0;
+            grab_sharp(false, off_a, fw, fh);
+            check(fw == 700 && fh == 500,
+                  "the pixel-pin framebuffer is the fractional window");
+            grab_sharp(false, off_b, fw, fh);
+            grab_sharp(true, on_px, fw, fh);
+            grab_integer(false, ioff_a, iw, ih);
+            check(iw == kBaseW * 2 && ih == kBaseH * 2,
+                  "the control framebuffer is the integer window");
+            grab_integer(false, ioff_b, iw, ih);
+            grab_integer(true, ion_px, iw, ih);
+
+            const gbarecomp::PresentationLayout lay5 =
+                gbarecomp::compute_presentation_layout(700, 500, kBaseW,
+                                                       kBaseH);
+            check(gbarecomp::compute_sharp_prescale_factor(lay5, kBaseW,
+                                                           kBaseH) == 2,
+                  "the 700x500 layout is fractional and engages the prescale "
+                  "(factor 2)");
+
+            // Fractional: the toggle must change the picture. Clean-in-both
+            // rule against compositor smearing (a pixel that differs between
+            // the two off-reads was not ours to judge).
+            {
+                int judged = 0, differing = 0;
+                for (int y = lay5.y; y < lay5.y + lay5.height; y += 3) {
+                    for (int x = lay5.x; x < lay5.x + lay5.width; x += 3) {
+                        bool clean = true;
+                        for (int c = 0; c < 4 && clean; ++c)
+                            clean = off_a[(std::size_t(y) * fw + x) * 4u + c] ==
+                                    off_b[(std::size_t(y) * fw + x) * 4u + c];
+                        if (!clean) continue;
+                        ++judged;
+                        for (int c = 0; c < 3; ++c) {
+                            const int d =
+                                off_a[(std::size_t(y) * fw + x) * 4u + c] -
+                                on_px[(std::size_t(y) * fw + x) * 4u + c];
+                            if (d < -2 || d > 2) {
+                                ++differing;
+                                break;
+                            }
+                        }
+                    }
+                }
+                check(judged > 1000, "enough clean pixels to judge sharp");
+                check(differing * 20 > judged,
+                      "sharp changes the presented pixels at a fractional "
+                      "layout (>5% differ)");
+            }
+            // Integer control: the DESIGNED inertness, now explicit. Same
+            // clean-in-both rule; the survivors must be identical (<=1 LSB
+            // for driver nondeterminism) between sharp off and on.
+            {
+                const gbarecomp::PresentationLayout lay6 =
+                    gbarecomp::compute_presentation_layout(kBaseW * 2, kBaseH * 2,
+                                                           kBaseW, kBaseH);
+                check(lay6.integer_scale == 2,
+                      "the 2x control layout is a whole multiple");
+                check(gbarecomp::compute_sharp_prescale_factor(
+                          lay6, kBaseW, kBaseH) == 0,
+                      "the integer layout computes no prescale (factor 0)");
+                int judged = 0, changed = 0;
+                for (int y = lay6.y; y < lay6.y + lay6.height; y += 3) {
+                    for (int x = lay6.x; x < lay6.x + lay6.width; x += 3) {
+                        bool clean = true;
+                        for (int c = 0; c < 4 && clean; ++c) {
+                            clean =
+                                ioff_a[(std::size_t(y) * iw + x) * 4u + c] ==
+                                ioff_b[(std::size_t(y) * iw + x) * 4u + c] &&
+                                ion_px[(std::size_t(y) * iw + x) * 4u + c] ==
+                                    ioff_a[(std::size_t(y) * iw + x) * 4u + c];
+                        }
+                        if (!clean) continue;
+                        ++judged;
+                        for (int c = 0; c < 3; ++c) {
+                            const int d =
+                                ion_px[(std::size_t(y) * iw + x) * 4u + c] -
+                                ioff_a[(std::size_t(y) * iw + x) * 4u + c];
+                            if (d < -1 || d > 1) {
+                                ++changed;
+                                break;
+                            }
+                        }
+                    }
+                }
+                check(judged > 1000, "enough clean pixels for the control");
+                check(changed == 0,
+                      "sharp is pixel-identical at an exact integer layout "
+                      "(designed inertness)");
+            }
+            // Restore the suite's default geometry for the sections below.
+            b.close();
+            check(open_backend(b, "raw3"), "reopen after the sharp pixel pins");
+            SetWindowSize(kBaseW * 2, kBaseH * 2);
+        }
     }
 #endif  // !PLATFORM_MEMORY
 
