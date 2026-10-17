@@ -9187,3 +9187,42 @@ same APK.
   llvmpipe 25262 (69%), deterministic across runs, PASS on both. The
   suite now carries its own environment guardrails: liveness first,
   settle after resize, numbers printed on every run.
+
+## 2026-10-17 — test ownership split: the game's CI tests only the game
+
+- USER question: "why does ffta-recomp run those tests? are they not
+  already tested in gbarecompx?" → the audit found 7 of the game's 10
+  unit/integration tests tested FRAMEWORK code, because the ORIGINAL
+  blockers had silently died: "gbarecomp cannot compile host_window.cpp
+  standalone" (recomp-ui removed; the fork's runtime carries in-tree
+  generated_dispatch.cpp — raygui_links_tests already linked it) and the
+  pristine-submodule API gates (HOST_STACK_GUARD_API / PACER_BANKED_API /
+  STICK_DPAD_API — the fork IS the API home).
+- Audit verdicts: ram_dispatch/speed_boost/ws_margin = game ✓ kept;
+  host_window_closed = a DRIFTED DUPLICATE of a fork file that was
+  ORPHANED (never CMake-registered — and it asserted a
+  resize_driven_view() getter that does not exist, i.e. broken code
+  sitting unbuilt); host_window_delegation = unique coverage (the fork's
+  window_backend_dispatch drives the backend interfaces, not the
+  HostWindow facade) → moved; backend_select = folded into the
+  consolidated host_window_closed test (same factory contract);
+  stack_guard/frame_pacer = converted from companions of the game's
+  ram_dispatch harness into standalone fork tests; stick_dpad = deleted
+  (re-pinned gamepad_map's stick_to_dpad; its header even named the
+  wrong file); raylib_present = moved verbatim (llvmpipe-hardened).
+- Fork side (ab72068): five tests adopted + registered (the present test
+  in the raylib tier only); local verification: stub tier 86/86, the
+  raylib scratch tier (FETCHCONTENT_SOURCE_DIR_RAYLIB pointed at the
+  game's fetched raylib-src) 88/88, the present test PASS on real GL AND
+  LIBGL_ALWAYS_SOFTWARE.
+- Game side (4ccc7dc): ffta_unit_tests = ram_dispatch + speed_boost only
+  (the framework sources it used to compile directly are gone, with the
+  API gates); the four framework test targets removed;
+  check.py's raylib-compile = the product-config compile + the Phase 4c
+  default-flip assertion (the present + menu-composite runtime tiers run
+  in the fork's raylib job — the menu tier was ALSO a framework test the
+  game's suite was running); backend-default keeps the cache assertion;
+  ci.yml + tests/README comments updated.
+- Coverage continuity: the fork's CI runs the moved tests per fork push
+  (the game's bump pins that exact commit); the game's CI re-verifies
+  its own three per game push. CI watch after the pushes next.
