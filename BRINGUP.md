@@ -8903,3 +8903,30 @@ same APK.
   smoothing pre-pass (style change, every scale) or an integer-scale
   pillarbox layout option on the phone (pixel-perfect, obvious difference);
   awaiting the user's call on which direction they want.
+
+## 2026-10-16 — MMPX edge smoothing (settings toggle, full coverage)
+
+- Build-out of the MMPX investigation (reference/upscale-shaders.md §
+  work plan): McGuire & Gagiu JCGT 2021, palette-exact 2x
+  reconstruction. New "Edge smoothing" row (Graphics, shader-gated),
+  [video] edge_smoothing persistence, no CLI flag.
+- Differential testing caught TWO issues pre-merge: the UPSTREAM C99
+  clamp bug (`min > max` — never upper-clamps → OOB reads; fixed to the
+  documented intent in the vendored test-only copy with a DEVIATION
+  note) and a wrong hand-derived pin (line-END corners legitimately
+  round per rules 2/4 — interior diagonal blocks are the invariant).
+  Mirror matches the fixed reference byte-for-byte over 160 random
+  images + structured patterns.
+- Backend: first present-chain pass (game tex → 2x POINT RT → the rest
+  of the chain); engages at display ≥2x; sharp factor computed against
+  the STAGE dims (phone 6.75x → factor 3 vs 640x320 — identical RT size
+  to today's); set_linear_filter re-filters the stage. Tap clamping is
+  in-shader (the game texture's wrap is REPEAT — noted as the deband
+  pass's latent issue too, default-off, unfixed there yet).
+- glslangValidator both dialects rc 0 (negative control verified).
+  Suites: stub 81/81, headless 82/82, check.py 17/17, attract golden
+  1EF4C118… held (readback pre-shader contract).
+- Desktop A/B (windowed 4x, off/on): 2.50% of pixels differ,
+  concentrated in small features — menu bullet stars reconstructed,
+  text curves cleaner, portrait edges smoothed. Assistant-verified on
+  the captures; USER manual check pending (desktop + Android).
