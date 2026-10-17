@@ -108,6 +108,11 @@ tap). Candidate upstream note for gbarecomp.
 
 ## Build (Linux)
 
+> The framework-level APK packaging rules (the scaffold contract, the
+> private/distributable personalities, corpus freshness, repackage
+> hygiene, versionName) live in `gbarecompx/packaging/README.md` §
+> Android (APK) — this section is the per-game operational recipe.
+
 One command wraps the whole private-build pipeline (preflight → Gradle →
 content guard → install + device gate):
 
