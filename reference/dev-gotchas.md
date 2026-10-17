@@ -324,6 +324,35 @@ access, which is enough:
   orphaned-`ninja` trap when killing a build: kill the `ninja` child too,
   or the next `cycle.py` build races it and loses `.o` files at link.
 
+## Android native build + input traps (2026-10-17)
+
+- **`#if __ANDROID__` code has no desktop compile gate.** The stub and
+  headless tiers compile it out entirely; the first real syntax check is
+  the APK build's NDK compile. Commit AFTER an APK build verifies, not
+  before — the pad-hook work landed two android-only compile errors this
+  way (incomplete `android_app` type, then a missing include dir), both
+  invisible to every desktop tier.
+- **Gradle does not track submodule CMakeLists changes.** The `.cxx`
+  configure stays stale while edited sources recompile against old
+  include dirs ("file not found" for a header whose include dir was
+  just added). `touch CMakeLists.txt` (the GAME's — a tracked configure
+  input) forces the reconfigure — which then trips the APK preflight's
+  regen-stamp freshness check, so re-run `tools/cycle.py` to re-stamp
+  before rebuilding the APK.
+- **KeyCharacterMap fallback synthesis** (the "menu on B" mechanism): an
+  UNHANDLED key event makes the InputDispatcher synthesize the device
+  keymap's fallback — `Generic.kcm` maps `BUTTON_B→BACK`,
+  `BUTTON_A→DPAD_CENTER`, `BUTTON_X→DEL`, `BUTTON_SELECT→MENU` —
+  arriving ~36 ms after the raw press with
+  `AKEY_EVENT_FLAG_FALLBACK` (0x400) and keyboard auto-repeat while
+  held. Invisible to `getevent` (injected dispatcher-side, not via
+  uinput), so kernel captures look clean while the app sees doubles.
+  The runtime's Android pad hook consumes the gamepad-button range plus
+  fallback-tagged BACK/CENTER (`android_gamepad.h`; keycode-trust, not
+  source-trust), so real Back presses (no fallback flag) keep the menu
+  gesture. Debugging "button X opens the menu": the `pad-census:`
+  logcat lines print keycode, source AND flags — check the flag first.
+
 ## Run examples
 
 - Strict smoke: `GBARECOMP_STRICT_STATIC=1 ./build/FFTARecomp --bios

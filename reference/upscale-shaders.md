@@ -86,12 +86,24 @@ Their chain (MonoGame `Camera.cs`/`Game1.cs` in the repo):
    (`snapped − round(snapped·(1−factor))`) — smooth sub-pixel relationships
    between layers without breaking the grid.
 
-## What landed here (2026-10-16)
+## What landed here (2026-10-16; sharp verified 2026-10-17)
 
 - **Sharp scaling** toggle: prescale integer factor → RT (bilinear-filtered
   target), plain bilinear finish. POINT→BILINEAR change is the whole >3×
   fix; see the finish comment in `raylib_backend.cpp`
   (`ensure_sharp_target`).
+- **Sharp scaling verified at the pixels (2026-10-17)**, after the user's
+  "does nothing, even at scale 8" challenge: the GL present test now
+  reads the REAL framebuffer (`LoadImageFromScreen`) — at a fractional
+  layout (700×500 → units 233, factor 2) sharp off/on differ (>5% of
+  layout pixels); at the exact 2× control they are pixel-identical. The
+  inertness at exact scales is the recipe's DESIGN (rsn8887/TheMaister:
+  automatic integer prescale + bilinear remainder — at a whole multiple
+  there is nothing to even out), and the DEFAULT window (960×480 → 3×)
+  plus every `--scale N` sit exactly there. It engages whenever the 3:2
+  fit is not a whole multiple (any 16:9 window → 6.75×, the phone's
+  case). The menu's status line now says "Sharp scaling: inert at exact
+  scale" when it would be a no-op.
 - **Pixel grid** + **Grid opacity** toggles: LADXHD border on the shared
   LCD program, `lcd_border`/`lcd_grid_alpha` in `[video]`.
 - Not landed (candidates, in order of cost): MMPX 2× pre-pass before the
@@ -100,7 +112,11 @@ Their chain (MonoGame `Camera.cs`/`Game1.cs` in the repo):
   (dosbox-staging's `integer_scaling = vertical` shape) if a windowed
   aspect-correctness debate ever comes up.
 
-## MMPX work plan (investigated 2026-10-16, not started)
+## MMPX work plan (investigated 2026-10-16; landed the same day)
+
+The plan below was executed within the day: the fork's
+`src/runtime/mmpx.{h,cpp}` + GLSL, the "Edge smoothing" toggle, and the
+differential oracle. Kept for the shape of the investigation.
 
 Feasibility: **clean** — the engine already has every primitive (multi-pass
 present chain, RT lifecycle, FxSettings→menu→`[video]` persistence,

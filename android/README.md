@@ -399,6 +399,34 @@ ROM in `files/roms/`) stands. The device lifecycle gate
 `tools/android_static_check.py` pins the wiring (filenames ↔ `romFile` ↔
 TOML) device-free.
 
+## Controller support (2026-10-17)
+
+A gamepad — built-in, like the AYN Odin's, or USB/Bluetooth — drives the
+game directly, with the same mapping as desktop:
+
+| Action | Controller |
+|---|---|
+| A / B | A / B (label-wise) |
+| L / R | LB / RB |
+| Start / Select | Start / Select |
+| D-Pad | D-pad or the left stick (25% deadzone) |
+| Fast-forward (hold) | right trigger |
+| Settings menu | the pad's menu/center button, or the device Back key |
+
+Why a capture layer exists (the short version): Android tags every input
+event with source flags, and some devices (the Odin, measured:
+`KEYBOARD | GAMEPAD | JOYSTICK`) flag their *button* events as keyboard
+too — raylib's Android backend then drops them, and the OS "helpfully"
+synthesizes fallback keys for the unhandled presses (the device keymap
+maps `BUTTON_B→BACK`, `BUTTON_A→DPAD_CENTER`: the classic "B opens the
+menu" symptom, arriving ~36 ms late with keyboard auto-repeat while
+held). The runtime captures gamepad events at the glue level and trusts
+the keycode, not the source bits — face buttons play as GBA buttons, the
+d-pad still reaches raylib's keyboard table for menu navigation, and a
+real Back press keeps its menu gesture (`android_gamepad.h` in the
+framework; the mechanism is written up in
+`reference/dev-gotchas.md`).
+
 ## Known behavior
 
 - **Split-loop nesting (fixed 2026-10-09, `607ca07`):** the vblank wait

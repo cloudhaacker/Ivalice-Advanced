@@ -58,10 +58,13 @@ start, features, controls, building); running and display options live in
     gate must never regress to comparing emitted corpus mtimes (the
     recompiler preserves them for byte-identical output — the
     2026-10-11 "corpus is stale forever" lesson).
-- `tools/check.py` runs both, plus the patches check (every per-feature
-  patch must also **forward-apply on the pristine pin** — the CI condition;
-  dev-based exports go INVALID there), the attract gate,
-  widescreen smoke and strict route replays (below).
+- `tools/check.py` runs both, the attract gate,
+  widescreen smoke and strict route replays (below). The GitHub CI runs
+  `--only unit-cpp,unit-py,android-static` plus the raylib-backend and
+  android-lint jobs (`.github/workflows/ci.yml`). The per-feature
+  patches check is RETIRED: the framework fork carries its former patch
+  work as committed history, so there is no patch suite to
+  forward-apply anymore.
 
 ---
 

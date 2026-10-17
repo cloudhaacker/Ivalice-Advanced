@@ -100,7 +100,7 @@ cmake --build build --target FFTARecomp --parallel 8
 |---|---|
 | Fresh-clone bootstrap | `python3 build.py` (idempotent; `--force`, `--no-smoke`, `--jobs N`) |
 | Full regression gate | `.venv/bin/python tools/check.py` (`--fast`; `--jobs N`; `--only a,b`) |
-| CI subset (no dumps needed) | `--only unit-cpp,unit-py,patches,android-static` — `.github/workflows/ci.yml` |
+| CI subset (no dumps needed) | `--only unit-cpp,unit-py,android-static` — `.github/workflows/ci.yml` |
 | Android static checks (device-free) | `tools/android_static_check.py` — suite `android-static` in `tools/check.py` |
 | Android APK content guard | `tools/android_apk_check.py [--apk …] [--expect public/private]` — opt-in `check.py --only android-apk` |
 | Release packager (issue #3 R-track) | `.venv/bin/python tools/make_release.py [--apk \| --windows] [--version V]` — allowlist stage → private-material sweep → deterministic portable zip (Linux zip + public APK + static Windows exe) |
