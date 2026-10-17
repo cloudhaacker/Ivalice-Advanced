@@ -9117,3 +9117,55 @@ same APK.
 - USER verified on the Odin (APK 1.6-119-g37a6f1c): "it works now. no
   issues" — B=GBA B (no menu, no flicker held), back=menu, A clean.
   Desktop guide-button check next (binary rebuilt).
+
+## 2026-10-17 — sharp scaling: pixel-proven working; inert-at-integer made explicit
+
+- USER challenge: "the sharp scaling toggle does nothing. it is
+  imperceptible. even at scale 8. are you absolutely sure it works?" —
+  a fair challenge: NO test anywhere pinned the toggle's VISIBLE effect.
+  The existing present-test section (resize to 700x500 + sharp on) only
+  proved the RenderTexture LIFECYCLE runs — its readback() serves the
+  CPU staging buffer, pre-GPU by design, so a sharp path that never
+  engaged would still pass it.
+- Engagement math (presentation_layout.h, cited): the fit layout
+  maximizes at the reduced aspect (3:2 for 240x160), and
+  integer_scale>0 only when the layout is a whole multiple of 240x160;
+  compute_sharp_prescale_factor returns 0 for integer layouts BY DESIGN
+  (every game pixel already spans whole device pixels — nothing to even
+  out) and for layouts too small for a factor>=2 prescale. The DEFAULT
+  window (960x480 → 720x480 = 3x) and every --scale N window
+  (--scale 8 → 1920x1280 = 8x) are exact integers → the toggle is
+  silent THERE, correctly. It engages on any window whose 3:2 fit is
+  not a whole multiple — any 16:9 window (1920x1080 → 6.75x, the
+  phone's case) included.
+- NEW PIXEL PINS (tests/unit/test_raylib_present.cpp, GL-only section,
+  LoadImageFromScreen = the real framebuffer): at 700x500 (units=233,
+  fractional, factor 2) the presented picture MUST DIFFER between sharp
+  off and on on a non-uniform pattern (>5% of clean-in-both-reads layout
+  pixels, ±2 LSB) — RESULT: PASSES (~the pin is green: the toggle
+  changes the picture); at the exact 2x control the outputs must be
+  pixel-IDENTICAL (±1 LSB, changed==0) — the designed inertness, now
+  explicit. Grounding: the rsn8887/TheMaister sharp-bilinear family is
+  a fractional-scale fix ("sharp pixels without pixel wobble", automatic
+  integer prescale + bilinear remainder) — integer-scale inertness is
+  the recipe's intent, not a local defect.
+- Discoverability fix (fork): the menu now SAYS when the toggle is
+  inert. Video::logical_size (default 240x160; the raylib backend
+  returns its live base — widescreen widths included) + a
+  sharp_status_if_inert() helper that runs the SAME
+  compute_sharp_prescale_factor over the live drawable, called from
+  HostMenu::build (opened onto an inert toggle) and from the
+  Bind::SharpScaling apply case (the toggle moment). Status strings:
+  "Sharp scaling: inert at exact scale" / "window too small to engage"
+  (both < kMaxStatus=48). Test: sharp_inert_status() (red-first: the
+  status was empty pre-impl) covers open-on-inert, engaged-silence, and
+  the live-toggle case — which exposed that frame() processes input
+  only while the menu is OPEN (build() alone ignores presses; open() =
+  build + menu_open).
+- Verification: stub 82/82, headless (raylib ON) 83/83, GL present
+  pins PASS — after one self-inflicted detour: an extra closing brace
+  from the logical_size insertion broke the VideoImpl class, and the
+  FIRST verification round "passed" on stale binaries (the builds had
+  failed; ctest ran old objects). Lesson repeated: a green ctest means
+  nothing unless the build before it was clean — read the build's
+  exit, not just the tests'.
