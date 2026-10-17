@@ -108,6 +108,38 @@ Run this after every play session; it is the whole loop in order.
   not a tag name (a retag changes bytes and must fail loudly). Record the
   prefix rule next to the objdump import-table guard — the prune and the
   guard catch different classes (poisoned search path vs silent fallback).
+- **Platform-gated code has no compile gate on the other platforms.**
+  `#if __ANDROID__` blocks compile out of every desktop tier — the first
+  real syntax check is the target platform's own build. Commit AFTER the
+  target-platform build verifies, not before; two android-only compile
+  errors (an incomplete forward-declared type, a missing include dir)
+  shipped to a public branch exactly this way while every desktop tier
+  stayed green.
+- **Build-system caches do not track dependency-tree changes.** Gradle's
+  externalNativeBuild did not notice a submodule CMakeLists edit: the
+  configure stayed stale while edited sources recompiled against old
+  include dirs ("file not found" for a header whose include dir had just
+  been added). Touch a configure input the outer build DOES track, and
+  expect the freshness/stamp gates upstream of the build to fire once —
+  re-run the regeneration step, don't fight the gate.
+- **A green test run means nothing unless the build before it was
+  clean.** A failed compile + a passing ctest run means the tests ran
+  stale binaries; read the build's exit status before believing the
+  suite.
+- **A pixel test must prove its own observability first.** Read back two
+  DIFFERENT frames and require them to differ (liveness) before judging
+  any feature, and settle one throwaway present+read after every window
+  resize (the first post-resize read can be a transitional frame that
+  masquerades as a 100% difference). A frozen readback reads as a dead
+  feature; renderer-specific behavior (Mesa llvmpipe vs hardware GL)
+  must be exercised on both classes before a pin ships to CI.
+- **Tests live with the code they test.** Framework code's tests run in
+  the framework's own CI — a game project's suite testing framework
+  headers is a placement bug: it hides framework regressions from the
+  framework's gate until a consumer bumps, and it makes the game's CI
+  fail on changes it cannot attribute. When the ownership question
+  comes up, audit by the tested file's path, not by where the test
+  file happens to sit.
 
 ## Decision log and docs discipline
 

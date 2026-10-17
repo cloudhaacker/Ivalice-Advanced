@@ -36,7 +36,7 @@ included).
    and commit after every milestone.
 6. **Three strikes.** Do: after 3 inexplicable failures, stop, write the
    state to `BRINGUP.md`, report — don't thrash.
-7. **Framework docs win.** `gbarecompx/{PRINCIPLES,DEBUG,CLAUDE}.md` +
+7. **Framework docs win.** `gbarecompx/{PRINCIPLES,DEBUG,CLAUDE,AGENTS}.md` +
    `docs/TOML_SCHEMA.md` supersede other notes; read PRINCIPLES before any
    debugging session.
 8. **Public-repo hygiene.** Do: summaries + attribution only, never verbatim
@@ -125,7 +125,7 @@ cmake --build build --target FFTARecomp --parallel 8
 | `tools/` | The harness — key ones listed in the table above; full list: `tools/README.md` |
 | `.agents/skills/` | `gbarecomp-recomp-playbook` — portable playtest/healing/audit playbook (SKILL.md routes its references) |
 | `mods/` `inputs/` `symbols/` `reference/` | Widescreen catalog; input traces; symbol seeds; study notes |
-| `gbarecompx/` | Pinned submodule = the framework fork (`james2doyle/gbarecompx`; every former patch is committed history there) — do not update casually (pin bumps: `reference/dev-gotchas.md` § Submodules) |
+| `gbarecompx/` | Pinned submodule = the framework fork (`james2doyle/gbarecompx`, **public**; every former patch is committed history there; owns the framework tests + agent rules `gbarecompx/AGENTS.md`) — do not update casually (pin bumps: `reference/dev-gotchas.md` § Submodules) |
 
 ## Status (2026-10-18)
 
@@ -147,6 +147,33 @@ sheet, upstream note on the bridge stop-contract, APK release-signing key
 (`gbaKeystore` vs debug — still debug-signed), runner registration
 (`release.yml` tag job still queues). History, evidence,
 crash playbooks: `BRINGUP.md`.
+
+### CI, test ownership, and controller input (2026-10-17, complete)
+
+- **tier-1 CI fixed** after the rename era: a stale `build/` cache
+  (restore-keys fallback carried a pre-rename `GBARECOMP_ROOT` past the
+  hash key; `set(... CACHE)` never overwrites) plus folded-backslash
+  YAML continuations silently swallowing the stub flag — both fixed in
+  `.github/workflows/ci.yml`; first fully green run since the rename.
+- **gbarecompx is public** (`james2doyle/gbarecompx`) — the submodule
+  fetches on CI without credentials.
+- **Android controllers** device-verified on the AYN Odin (APK
+  1.6-119): a glue-level capture trusts the KEYCODE, not the source
+  bits (the raylib #5387 device class — buttons flagged KEYBOARD were
+  dead), and consumes KeyCharacterMap fallback synthesis (the OS turned
+  unhandled BUTTON_B into BACK — the "menu on B" symptom). Face buttons
+  map label-wise; the pad's menu button and the Back key both open the
+  settings overlay; right trigger = fast-forward; left stick = d-pad.
+- **Sharp scaling verified at the pixels** (fractional layouts differ
+  ~70%, exact-integer layouts identical — the designed inertness per
+  the rsn8887 recipe) and the menu's status line names the inert case.
+- **Test ownership split**: the game's CI tests only game code —
+  `tests/unit/` is 3 files (ram_dispatch, speed_boost, ws_margin); the
+  framework's tests (HostWindow contracts, backend selection, host-stack
+  guard, frame pacer, the present pipeline) moved to
+  `gbarecompx/tests/runtime/` and run in the fork's four-job CI
+  (86/86 stub, 88/88 raylib tier). Framework-side agent rules:
+  `gbarecompx/AGENTS.md`.
 
 ### Launcher track (2026-10-16 → 2026-10-18, complete) — recomp-ui removed; raygui launch screen
 
@@ -191,8 +218,8 @@ dropped.
 | Study-notes index, sources, credits | `reference/README.md` |
 | Manual setup route (no build.py) + troubleshooting | `docs/manual-build.md` |
 | Playtest/debug cookbook, healing loop, gates, coverage, CI, unit tests | `tests/README.md` |
-| Android target: build, run, device gate, known behavior | `android/README.md` |
-| Harness traps: run modes, capture envs, close handling, RAM-dispatch, saves, submodule pins, framework patches | `reference/dev-gotchas.md` |
+| Android target: build, run, device gate, controller support, known behavior | `android/README.md` |
+| Harness traps: run modes, capture envs, close handling, RAM-dispatch, saves, submodule pins, Android native build + input traps | `reference/dev-gotchas.md` |
 | Oracle + frame-diff protocol (park phase, sync rules, builds) | `reference/oracle-harness.md` |
 | Widescreen internals + validation | `reference/widescreen.md` |
 | Event VM + scripts | `reference/event-vm.md` |
