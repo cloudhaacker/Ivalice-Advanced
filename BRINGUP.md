@@ -8694,3 +8694,21 @@ a font-corruption seam; test dummy fonts now heap-allocated/96-glyph
 gap: GL-context lifetime itself is invisible to the recording tier —
 pixel truth after context churn still needs the parked xvfb tier or the
 user's eyes.
+
+**Menu save/load state slots (same day).** The settings overlay gained
+Save state / Load state / Slot rows — a feature the imgui-era menu had
+(system.state_slot) that silently vanished when the presentation was
+replaced; only the ungated executor + slot-path builder survived in
+runtime.cpp, unreachable (the raylib backend has no F1..F9 mapping —
+nothing interactive wrote ev.save_slot). Restored on the menu seam per
+the in-tree doctrine: actions record-and-close; the host loop drains
+pending ops into ev.save_slot/ev.load_slots right after host_menu.frame
+(drain_menu_state_ops, pure + headless-tested) and the one ungated
+executor runs them at the dispatch boundary; slot persists via config.ini
+[Menu] state_slot; executor toasts confirm (drawn while closed). Pinned
+red-first in four tiers — model (labels/rows/contract), rendered display
+through both engines with HostMenu-built models, persistence round-trip,
+and a product-wiring guard (check_menu_state_wiring.py, CI-registered,
+self-tested) because the runtime drain call is the one line no headless
+test reaches. Menu stub's run assembler now reconstructs spaces (ported
+from the launcher harness) so multi-word labels pin exactly.
