@@ -330,3 +330,22 @@ access, which is enough:
   bios/emibios_gba_bios.bin --rom game.gba --frames 2400 --no-window`
 - Session replay: `gbarecompx/tools/resolve.py --trace <csv>`; coverage:
   `tools/coverage_report.py`.
+
+## Device gate: unattended runs bounce to the launcher (2026-10-16)
+
+`validate_android.sh` failed only "resumed activity" on a phone nobody
+was touching, while the app itself ran fine (log: cpu_backend, no misses,
+crash buffer clean — 5/6 checks passed). Reproduced: after
+force-stop + `am start` of `GbaSetupActivity` (AUTOSTART), the game
+resumes, then ~10 s later `ResumedActivity` reports the launcher —
+the ROM's `mUserActivityTimeoutOverrideFromWindowManager=10000` counts
+user-activity idle in 10 s when no human input lands, and the phone
+dozes/locks, bouncing the task to the launcher inside the gate's 40 s
+wait. adb `monkey`/`am start` do NOT reset that timer; the screen
+staying on (`stay_on_while_plugged_in=7`) does not either. Every gate
+that passed earlier ran with the phone attended. Recipe: wake + unlock
+(face/PIN) and have the user touch the phone around the gate's wait, or
+accept the 5-check evidence for an unattended install and re-run the
+resumed-activity check at the next attended session. (A future gate
+option: a `--wait-under-40` or an adb `input keyevent WAKEUP` inside the
+wait loop — untested; do not add blind.)

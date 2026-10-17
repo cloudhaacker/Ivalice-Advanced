@@ -8871,3 +8871,10 @@ same APK.
   strict routes FULLY_STATIC).
 - APK rebuilt + installed + gate PASSED (1.6-102-g8c3c95c); device
   verification of the bubble fix pending the user's next session.
+
+- Device verification (user, same evening): "just tested. looks good" —
+  the bubble fix confirmed on the phone in live play. The install gate's
+  6th check (resumed activity) had failed unattended-only; see the
+  dev-gotchas entry. All four of today's fixes are on the device APK
+  (1.6-103-gae01ddd): audio mute honored, toast/status clocks ticked,
+  atomic savestate write, UI-layer margin suppression.
