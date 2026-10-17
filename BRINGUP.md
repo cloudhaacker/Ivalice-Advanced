@@ -9079,3 +9079,41 @@ same APK.
   manual test planned. Parked: launcher (pre-boot) gamepad nav still
   reads raylib state — dead buttons on this device class until the
   raylib pin takes upstream 5e14ac5; touch works there.
+- APK 1.6-117-g8c1e55b (capture path): build+install+gate ran GREEN
+  once the glue-header include landed on the right target
+  (gbarecomp_raylib_backend, not gbarecomp_runtime — fork 3516f6e);
+  two android-ABI compile failures on the way, both invisible to the
+  desktop tiers (#if __ANDROID__ code has NO desktop compile gate —
+  the APK build IS the gate; also: gradle does not track submodule
+  CMakeLists changes, the .cxx configure went stale, touch the game's
+  CMakeLists to force reconfigure, which then trips the APK preflight's
+  regen-stamp freshness check → cycle.py re-run).
+- USER test on the Odin: "android is mostly working. the controller B
+  button is still opening the settings menu though" — and the census
+  caught the REAL mechanism: keycode=97 (BUTTON_B) at the hook, then a
+  KEY_BACK edge ~36ms later, then KEY_BACK edges at keyboard auto-repeat
+  cadence while held — with NO BACK event at the kernel level (two
+  all-node getevent captures: B=BTN_EAST only). ROOT CAUSE: raylib
+  leaves the gamepad key UNHANDLED (#5387 guard + zero keyboard table →
+  callback returns 0) → the InputDispatcher synthesizes the device
+  KeyCharacterMap's FALLBACK key. Generic.kcm read verbatim on the
+  Odin: BUTTON_B→BACK, BUTTON_A→DPAD_CENTER (observed: keycode=23
+  +34ms after A), BUTTON_X→DEL (a SECOND menu path via the
+  touch-emulated Backspace arm), BUTTON_Y→SPACE, BUTTON_START→
+  DPAD_CENTER, BUTTON_SELECT→MENU, BUTTON_MODE→HOME. The menu-on-B was
+  never a mapping bug — it was Android finishing raylib's unhandled
+  event for it.
+- Fix (fork 1d7ad51): `android_key_consumed(keycode, flags)` — (1)
+  consume the gamepad-button range 96..110 always (handled events never
+  trigger fallback synthesis); (2) defense in depth: consume a
+  FLAG_FALLBACK-tagged BACK/DPAD_CENTER (NDK AKEY_EVENT_FLAG_FALLBACK
+  = 0x400) — real Back presses carry no fallback flag, so KEY_BACK →
+  menu stays. DPAD_* still forward (raylib maps them to arrows — menu
+  pad-navigable). Census v3 logs the first THREE sightings per keycode
+  with source AND flags. Plus kPadGuide (BUTTON_MODE on Android, GLFW
+  GUIDE on desktop) → injects the CONFIGURED HK_MENU key: the pad's
+  menu button opens the settings overlay; menu then navigates from
+  GBA KEYINPUT levels (d-pad + A/B).
+- USER verified on the Odin (APK 1.6-119-g37a6f1c): "it works now. no
+  issues" — B=GBA B (no menu, no flicker held), back=menu, A clean.
+  Desktop guide-button check next (binary rebuilt).
