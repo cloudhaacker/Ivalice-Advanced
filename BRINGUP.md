@@ -8785,3 +8785,89 @@ screams next time:
   scenario now mimics the indentation. The capture tier joined CI:
   `raylib-compile` builds and runs menu_render_contract_tests on the same
   display recipe (real display locally, Xvfb+llvmpipe on runners).
+
+**Audio toggle was set-but-never-read (same day, user report).** The
+menu's Audio Bind was correctly wired — the raylib AudioImpl flipped
+`audio_enabled` and nothing ever read it (zero readers since the Phase
+4b carve), so the live toggle AND the boot-time [Menu] audio_enabled
+application were both silent no-ops. Fix: push() honors mute before any
+device gating (device-independent drop; buffered tail drains); the mute
+contract is documented on the seam and pinned by audio_mute_contract_
+tests — headless (no window or audio device needed; the ctor owns the
+seam), red-first via the gbarecomp_audio_drop_stats counter (enabled()
+cannot distinguish "flag set" from "flag honored" — the observable IS
+the fix's test). 79/79; stub builds skip. A setter sweep for the same
+class found no other dead flags: every seam setter's state has live
+reads. On-device: ships in the next APK rebuild.
+
+**Menu Save state failed on device: a foreign-owned slot (same day).**
+"snapshot: cannot open for write: .../states/ffta_usa.state1" — slot 1
+held a state file PUSHED BY ADB during the 2026-10-13 trace-replay
+session (owned by shell, group r--), and the old writer opened the
+TARGET for trunc (needs the file; the app owns only the directory).
+Slot 2 saved fine moments earlier — the path, the dir, and the menu
+save flow were all healthy. Fix: snapshot_write_file (temp + fsync +
+rename, the mod_state pattern) — self-heals foreign-owned targets,
+makes every state write crash-safe (slots AND suspend; the fsync lands
+before the slot exists), and is pinned red-first by snapshot_write_tests
+(reproduces the device failure literally; runs everywhere). 80/80.
+No manual device cleanup needed: the next slot-1 save replaces the
+shell-owned file.
+
+**"State loaded" toast rendered forever (same day, device report).**
+The slot-loaded toast draws while the menu is CLOSED by design (the
+action closes the menu), gated on toast_frames > 0 — but the clock was
+never ticked: the model deliberately has none ("the host decrements",
+per menu_model_test) and no host code ever did. The identical dead
+status clock (settings "Saved" line) was masked by the m.open gate;
+the toast is the first visible symptom of the class. Fix: the single
+per-frame pump (HostMenu::frame, the only present() driver) ticks both
+clocks before presenting. Red-first: toast_and_status_clocks_expire
+pins model AND presented-model zero at expiry (engine gate reads the
+presented copy). 80/80. Landed with the savestate self-heal in the
+same APK.
+
+## 2026-10-16 — UI-layer margin suppression re-landed (chat bubble wrap, user report)
+
+- Report (device session): "the chat text bubbles are wrapping/repeating
+  now. They didn't seem to do that before" — the wide margins repeat the
+  bubble's edge columns; later the same session: mirrored repeat on the
+  right, a bottom bubble overflowing left, and the NOTICE confirm dialog
+  overflowing BOTH edges.
+- Why "now": the device APK carried the W3-era UI-layer skip until
+  tonight's updates; the skip was withdrawn 2026-10-15 (move-state break +
+  summon report). The withdrawn engine's window-controlled sampling wraps
+  256-px UI tilemaps into the margins.
+- Desktop recreation (user session, tools/play.sh --resize-view
+  --tcp-observe): four probe captures + a frozen pub fixture
+  (/tmp fixture drive; ws_pub_enter route + A,A → "Greetings!" bubble at
+  guest 52623, saved as the A/B fixture). Mechanism pinned pixel-exact on
+  all five: margins sample tilemap px (x - extra_left + hofs) mod 256; a
+  256-px (BGxCNT size==0) panel's border/interior/text repeats wherever its
+  scroll lands near the edge. Sprites ruled out (guest windows OBJ out of
+  the margins; winout 0x2F everywhere).
+- Captured gate disconfirmations (do not re-add without new evidence):
+  BLDCNT==0 fails (the pub conversation runs blended, 0x3348, bubble up);
+  window-enable bits fail (device conversations 0x1F40 = clear, desktop pub
+  0x3F40 = set — same UI, different enable routing; a windows gate would
+  have armed NOWHERE on the device). The only stable discriminator is the
+  size field — exactly the withdrawn interim rule's condition.
+- Re-land rationale: the 2026-10-15 interim width rule was withdrawn for
+  the Totema report, but that session's own summon A/B (BRINGUP 2026-10-15)
+  shows the summon window PIXEL-IDENTICAL with the rule enabled — the
+  report was presentation-side, the rule was refuted-but-innocent. This
+  landing is the same suppression (strict subset with the env kill-switch),
+  so the summon A/B result carries over.
+- Implementation: src/ffta_ws_margin.h (pure decision: size-0 layer mask +
+  the -1/0 span contract) applied per frame in ffta_ws_margin_policy
+  (src/main.cpp) via the engine's g_ws_bg_x_provider + layers mask; empty
+  mask -> provider uninstalled (zero traffic). GBARECOMP_FFTA_UI_GATE=0 is
+  the A/B arm and emergency kill-switch.
+- Gates: fixture A/B (bubble repeats gone; 4379 px differ, confined to
+  x0..23/x296..319 at view 320; center byte-identical; on/off frames
+  reproduce bit-exact after the header refactor); ws_margin unit pin
+  (captured register blocks incl. the move state's all-size-1 inert case);
+  ws_check 6 cases x 3 widths; check.py 17/17 (attract golden byte-exact,
+  strict routes FULLY_STATIC).
+- APK rebuilt + installed + gate PASSED (1.6-102-g8c3c95c); device
+  verification of the bubble fix pending the user's next session.
