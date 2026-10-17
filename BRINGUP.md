@@ -8887,3 +8887,19 @@ same APK.
   the hunt unnecessary; seed it if a future fix needs it. Naming-only
   rows: cycle PASS, attract golden 1EF4C118… held (no codegen shift); APK
   not rebuilt (no behavior change).
+
+- Device confirmation (user, APK 1.6-106-g14cd881): all new settings work —
+  Pixel grid renders, Grid opacity adjusts, Sharp scaling persists/applies.
+  Sharp shows no visible difference on the phone — expected, not a defect:
+  the 2400x1080 panel is a 6.75x fractional fill (prescale factor 6,
+  remainder 1.125), where nearest's uneven columns and sharp's blend
+  columns are each ~1/9 of a game pixel — below notice, consistent with the
+  >3.5x crossover in reference/upscale-shaders.md. Sharp's visible band is
+  1.5-3.5x window scaling (desktop drag test). Engagement on-device is
+  inferred from the deterministic layout math (fractional at every probed
+  inset variant) — the backend has no engagement log line; adding one is a
+  cheap triage aid to bundle with the next fork change. Aesthetic follow-up
+  candidates for the ">3x doesn't look great" complaint: MMPX 2x edge-
+  smoothing pre-pass (style change, every scale) or an integer-scale
+  pillarbox layout option on the phone (pixel-perfect, obvious difference);
+  awaiting the user's call on which direction they want.
