@@ -8712,3 +8712,20 @@ and a product-wiring guard (check_menu_state_wiring.py, CI-registered,
 self-tested) because the runtime drain call is the one line no headless
 test reaches. Menu stub's run assembler now reconstructs spaces (ported
 from the launcher harness) so multi-word labels pin exactly.
+
+**C++ lint tier (same day).** clang-tidy 23 was installed locally, nothing
+configured — now: `.clang-tidy` (curated: DeadStores, unused
+params/usings/aliases, use-override, redundant member init),
+`tools/check_clang_tidy.sh` scoped to the first-level src/runtime TUs
+(excludes generated_bios/ — 109k recompiled lines, same rule as the game's
+generated/ — and vendor/raygui), both CMakeLists export
+compile_commands.json, fork CI runs it best-effort (SKIP without
+clang-tidy/configure; local is the strict gate). First sweep: 29 warnings
+= 15 vendor noise + 14 real, all fixed (netplay dtor override, two chrono
+member inits, a tuple init, two unused profiler param names, four dead
+cursor stores in the mods manifest parser — the key dispatch re-derives
+the cursors per key line, so the section-header stores were unread).
+0 warnings / 44 TUs / ~38 s. Dead code measured with the wiring-guard
+scanner: 729 lines compile out of every product build behind the retired
+GBARECOMP_RUNTIME_UI gate (~0.5% of src/runtime) + the seam headers —
+removal is a separate session, the scanner proves each block.
