@@ -36,7 +36,7 @@ included).
    and commit after every milestone.
 6. **Three strikes.** Do: after 3 inexplicable failures, stop, write the
    state to `BRINGUP.md`, report — don't thrash.
-7. **Framework docs win.** `gbarecompx/{PRINCIPLES,DEBUG,CLAUDE,AGENTS}.md` +
+7. **Framework docs win.** `gbarecompx/{PRINCIPLES,DEBUG,AGENTS}.md` +
    `docs/TOML_SCHEMA.md` supersede other notes; read PRINCIPLES before any
    debugging session.
 8. **Public-repo hygiene.** Do: summaries + attribution only, never verbatim

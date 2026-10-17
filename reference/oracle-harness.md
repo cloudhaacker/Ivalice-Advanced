@@ -4,7 +4,7 @@ Moved out of `AGENTS.md` on 2026-10-08. The harness compares our runner
 against the framework's **own** mGBA oracle (the framework's mGBA 0.10.5
 checkout — distinct from the system mGBA install used for manual eyeballing).
 History: BRINGUP § Phase 5. Framework-side docs: `gbarecompx/oracle/README.md`
-and `gbarecompx/CLAUDE.md` § SYNC RULES.
+and `gbarecompx/DEBUG.md` § SYNC RULES.
 
 ## Build the oracle (one-time; needs network for the mGBA clone)
 
@@ -61,7 +61,7 @@ retracted claims".)
   --hi 300` (spawns both engines, delta mode, JSON report to
   `/tmp/ffta_framediff/`, exit 1 on divergence).
 - **Sync on hardware events** (VBlank counts), never raw frame indexes
-  (gbarecompx/CLAUDE.md § SYNC RULES); debug region **writes**, not screen
+  (gbarecompx/DEBUG.md § SYNC RULES); debug region **writes**, not screen
   pixels, until memory matches.
 - Frame dumps/saves are ROM-derived: write to `/tmp/` or `logs/`
   (gitignored) only — never commit them. Recomp-side capture envs:
