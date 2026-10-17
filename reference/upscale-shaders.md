@@ -99,3 +99,94 @@ Their chain (MonoGame `Camera.cs`/`Game1.cs` in the repo):
   interpolation (needs multi-pass plumbing); one-axis-integer snapping
   (dosbox-staging's `integer_scaling = vertical` shape) if a windowed
   aspect-correctness debate ever comes up.
+
+## MMPX work plan (investigated 2026-10-16, not started)
+
+Feasibility: **clean** — the engine already has every primitive (multi-pass
+present chain, RT lifecycle, FxSettings→menu→`[video]` persistence,
+glslangValidator dev-time validation, ES 1.00 dual-dialect pattern).
+
+**Reference material (all MIT, all in hand):**
+- C99 reference: `ITotalJustice/mmpx` `mmpx.c` — 186 lines, the complete
+  rule cascade (McGuire & Gagiu copyright header, MIT). Local copy at
+  `/tmp/opencode/mmpx_ref.c` at investigation time.
+- Fragment-shader precedent: libretro `edge-smoothing/scalenx/shaders/
+  mmpx.slang` (hunterk's adaptation, MIT header, 303 lines) — proves the
+  fragment form; do not copy (dialect differs, attribution hygiene).
+- Paper: JCGT 0010/02/04 (open access) — the rule definitions + the
+  font-sheet guidance (dark-foreground ambiguity bias).
+
+**Algorithm shape (from the C99):** each source pixel → 4 output quadrant
+pixels (J/K/L/M). Inputs: 3×3 neighborhood (A..I) + 2-away probes (P,Q,R,S)
++ occasional ±3 probes in the intersection rules — ≤17 taps, worst case.
+Exact RGB equality tests (FFTA: opaque RGB888, byte-exact in float — no
+threshold needed); luma with a dark-foreground bias for ambiguous corners;
+`src()` clamps out-of-range taps to the border. Output = always SOME source
+pixel's value (palette-exact, no blends).
+
+**Design in our engine:**
+- New pure header `gbarecompx/src/runtime/mmpx.h` (the lcd_shader.h
+  pattern): the CPU mirror of the cascade + both GLSL sources (GLSL330
+  desktop with `texelFetch` for byte-exact taps; ES 1.00 Android with
+  `texture2D` at `(floor(coord)+0.5)/size` — highp is exact at 8-bit
+  values; ES 1.00 has no uint bitwise ops, so equality = chained `==`).
+- **Tap clamping in-shader** (manual UV clamp), NOT sampler wrap: the game
+  texture's wrap state is raylib's default REPEAT (only the filter is ever
+  set) — a repeat tap at the top row wraps to the bottom row and corrupts
+  every rule at image edges. (Side observation: the deband pass has the
+  same latent issue today — default-off, unnoticed; fix it there too when
+  touched.)
+- Pass placement: FIRST in the present chain, before the sharp prescale —
+  MMPX changes *what* is scaled (reconstructed art), sharp/finish change
+  *how*. Verified with the production layout function: the prescale factor
+  against the doubled dims is just
+  `compute_sharp_prescale_factor(layout, base_w*2, base_h*2)` — at the
+  phone's 6.75× it yields 3 (RT 1920×960 = identical size to today's 6×
+  logical; same 1.125 remainder). Exact scales: both inert (integer_scale>0
+  → 0) and the POINT blit of the MMPX tex at exact 2×-per-MMPX-texel is
+  already perfect. No new math.
+- RT lifecycle: `ensure_mmpx_target`/`release` keyed on base dims ×2 like
+  `ensure_sharp_target`; POINT-filtered (its output must be sampled
+  nearest downstream).
+- Stage/rect bookkeeping: the existing stage chain already handles "stage
+  ≠ game texture" (the sharp target case) — MMPX just reassigns
+  `stage_tex`/`stage_rect` before the sharp block. Deband's 1/game-px
+  texel step spans exactly 2 MMPX texels (the property its comment already
+  documents for the sharp target) ✓; dither/LCD index by `gl_FragCoord` in
+  game space — texel-density-agnostic ✓.
+- Settings: `FxSettings::edge_smoothing` (bool), menu row **"Edge
+  smoothing"** in Graphics gated `caps.shaders` (row count 19→20; no-
+  shaders stays 13), `[video]` key `edge_smoothing` in the merge family,
+  `Bind::EdgeSmoothing`, `HostWindow::set_edge_smoothing` (+ stub), boot
+  apply after the sharp filter apply. No CLI flag (menu+config only).
+- **MMPX without sharp at a fractional layout repeats the uneven-column
+  artifact at 2× scale** — allowed, documented ("pairs with Sharp
+  scaling"); no coercion, the user drives.
+
+**Test plan (red-first):**
+1. `mmpx_test.cpp`: **differential testing against the vendored MIT C99
+   reference** (test-only copy under `tests/`, attributed, never shipped):
+   random noise + structured patterns, our CPU mirror must match the
+   reference byte-for-byte (this is the strongest transcription-bug net).
+   Plus hand-derived pins of the canonical patterns: flat region → nearest
+   passthrough; 1px-thin line stays 1px; sharp corner reconstruction;
+   diagonal continuation; isolated dark pixel wins its corners (the luma
+   rule).
+2. Fake-api present pins: MMPX pass allocates the 2× RT, engages at ≥2×
+   display, inert below; uniform (texel size) uploaded; readback stays
+   pre-shader (attract-hash contract).
+3. glslangValidator both dialects at dev time (the existing six-source
+   validation pattern — manual, not CI-wired).
+4. `menu_settings` round-trip for `edge_smoothing`; `host_menu` row counts.
+
+**Effort estimate:** ~1000 lines incl. tests (mmpx.h ~350, backend ~120,
+settings stack ~80, vendored ref 186, tests ~300). One focused session —
+comparable to the two-toggle landing this came from — plus a desktop/phone
+visual A/B. Perf: ≤17 taps × 150k fragments ≈ trivial on desktop and the
+Adreno 740 (the LCD pass already runs there).
+
+**Risks:** rule transcription (mitigated by differential testing); tap
+edge semantics (in-shader clamp, matched to the reference's `src()`);
+ES 1.00 precision (highp + half-texel convention; byte-exact at 8-bit);
+the style question itself is the user's call (visible change, unlike sharp
+on the phone).
