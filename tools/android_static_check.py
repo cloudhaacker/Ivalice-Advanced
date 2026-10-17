@@ -666,7 +666,7 @@ case "$cmd" in
           # Stale-build guard: only the stale-version scenario carries a
           # versionName; every other scenario reports none (guard skips).
           if [ "$scenario" = "stale-version" ]; then
-            printf 'versionName=1.6-0-goldcommit\\n'
+            printf '    versionName=1.6-0-goldcommit\\n'
           fi
         elif [ "$scenario" = "setup-resumed" ]; then
           printf '    topResumedActivity=ActivityRecord{1 u0 org.gbarecomp.fftarecomp/org.gbarecomp.GbaSetupActivity t1}\\n'

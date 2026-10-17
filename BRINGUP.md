@@ -8775,3 +8775,13 @@ screams next time:
   identifiers), restored with a NOLINT recording the configuration split.
   Lesson: the sweep is per-configuration — check an #ifdef before
   trusting "unused" on a cross-platform signature.
+- **Guard follow-ups from its first live run**: the plain build path's
+  versionName was the identity block's static "0.1.0" (the stale-device
+  reference could never match) — build_apk.py now passes
+  `-PgbaVersionName=<git describe>` (the engine template's property wins),
+  so the device reports the checkout version (1.6-97-g899c269 at landing)
+  and the guard reads clean. Gate 1b's sed missed dumpsys's *indented*
+  `versionName=` (it skipped on every real device) — fixed; the fake-adb
+  scenario now mimics the indentation. The capture tier joined CI:
+  `raylib-compile` builds and runs menu_render_contract_tests on the same
+  display recipe (real display locally, Xvfb+llvmpipe on runners).

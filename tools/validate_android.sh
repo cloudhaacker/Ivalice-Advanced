@@ -414,7 +414,7 @@ fi
 #     device stayed broken. --no-install runs are the exposed path (after a
 #     real install this is trivially true). Skips when either version is
 #     unknown (no tags, no installed package, or the fake-adb self-test).
-installed_version="$("${ADB[@]}" shell dumpsys package "$PACKAGE" 2>/dev/null | tr -d '\r' | sed -n 's/^versionName=//p' | sed -n '1p')"
+installed_version="$("${ADB[@]}" shell dumpsys package "$PACKAGE" 2>/dev/null | tr -d '\r' | sed -n 's/^ *versionName=//p' | sed -n '1p')"
 repo_version="$(git describe --tags 2>/dev/null | sed -e 's/^v//' -e 's/-dirty$//' || true)"
 if [ -z "$installed_version" ] || [ -z "$repo_version" ]; then
   pass_check "stale-build guard skipped (installed='${installed_version:-?}' checkout='${repo_version:-?}')"

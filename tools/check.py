@@ -434,7 +434,30 @@ def check_raylib_compile():
     ran = "running against a real GL context" in (r.stdout + r.stderr)
     if not ran:
         return True, f"backend compiles (ON+OFF); present test SKIPPED (no {how})"
-    return True, f"backend compiles (ON+OFF); present test PASSED ({how})"
+
+    # The menu composited-screen tier rides the same display recipe: the
+    # capture test asserts an open menu shows PANEL and TEXT pixels on the
+    # app's X window — the "open + suppressed + painted nothing" and
+    # "shapes without text" device regressions both fail here (2026-10-16).
+    menu_exe = build / "gbarecomp_build" / "menu_render_contract_tests"
+    r = run(["cmake", "--build", str(build), "--target",
+             "menu_render_contract_tests", "--parallel", "4"], timeout=900)
+    if r.returncode != 0:
+        return False, "menu_render_contract_tests build failed"
+    menu_cmd = [str(menu_exe)]
+    if cmd[0] == "xvfb-run":
+        menu_cmd = cmd[:-1] + [str(menu_exe)]
+    r = run(menu_cmd, env=env, timeout=300)
+    if r.returncode != 0:
+        out = (r.stdout + r.stderr).strip().splitlines() or [""]
+        bad = [ln.strip() for ln in out if "CHECK failed" in ln]
+        return False, (bad[0] if bad else out[-1].strip() or "menu render contract failed")
+    if "capture tier skipped" in (r.stdout + r.stderr):
+        return True, (f"backend compiles (ON+OFF); present test PASSED; menu "
+                      f"render contract PASSED ({how}; capture tier skipped "
+                      "— no X11)")
+    return True, (f"backend compiles (ON+OFF); present test PASSED; menu "
+                  f"render contract PASSED incl. capture tier ({how})")
 
 
 def check_raylib_backend():

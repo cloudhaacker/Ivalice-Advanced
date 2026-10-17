@@ -302,6 +302,12 @@ def step_gradle(abi, jobs):
     cmd = [gradle, ":app:assembleDebug",
            f"-PgbaAbis={abi}", f"-PgbaNativeJobs={jobs}",
            f"-PprivateRom={ROM}"]
+    # Version from THIS checkout: the engine template falls back to the
+    # identity block's static "0.1.0", which made every plain build look
+    # stale against `git describe` (the stale-device guard's reference).
+    version = local_version_name()
+    if version:
+        cmd.append(f"-PgbaVersionName={version}")
     r = run(cmd, cwd=ANDROID, capture=False)
     if r.returncode != 0:
         die("gradle assembleDebug failed (see output above)",
