@@ -8729,3 +8729,16 @@ the cursors per key line, so the section-header stores were unread).
 scanner: 729 lines compile out of every product build behind the retired
 GBARECOMP_RUNTIME_UI gate (~0.5% of src/runtime) + the seam headers —
 removal is a separate session, the scanner proves each block.
+
+**Android lint tier (same day).** Android Lint (AGP 8.10.1, `:app:lintDebug`)
+over the engine-template activities: baseline **12 warnings, 0 errors**, all
+documented deliberate choices — the landscape orientation lock (DiscouragedApi
+×2, the 2026-10-08 decision), the Gradle 8.11.1 pin, the box-art
+getIdentifier() reflection, preferMinimalPostProcessing above minSdk
+(×2), plus cosmetic ObsoleteSdkInt/SetTextI18n/UnusedResources. The one real
+improvement candidate logged, not done: a dataExtractionRules resource for
+Android 12+ backups (a backup-behavior decision). Gate = zero lint ERRORS
+(lintDebug fails the build on them); warnings stay visible in the report.
+New `android-lint` CI job (game repo, tier-1-safe: no ROM, no private
+material; setup-java 21 + gradle cache) + shellcheck `-S warning` over
+tools/*.sh — one SC2164 found and fixed in derail_loop.sh, rest clean.
