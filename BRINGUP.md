@@ -9027,3 +9027,55 @@ same APK.
   v5 migration; actions/cache@v4 + checkout@v4 target Node 20 (forced
   to 24); **ubuntu-latest migrates to Ubuntu 26 from 2026-10-19** — if
   a runner-image change breaks a job, pin ubuntu-24.04 explicitly.
+
+## 2026-10-17 — Android gamepad capture (raylib #5387 device class; AYN Odin)
+
+- USER report (device now the AYN Odin handheld, serial 3961e6e — not
+  the Poco): controller buttons dead except "B opens the menu"; wanted:
+  face buttons → GBA, KEY_BACK keeps opening the menu, right trigger →
+  speed boost, left stick → d-pad (the existing shared behavior).
+- Facts gathered (all cited):
+  - `adb shell dumpsys input`: "Odin Controller" Classes KEYBOARD |
+    GAMEPAD | JOYSTICK; KeyLayoutFile Vendor_2020_Product_0111.kl.
+  - The .kl maps BTN_EAST→BUTTON_B (0x131), and a DEDICATED HID 0x9e
+    → BACK; `adb shell getevent -lt` live capture (user pressed all 11
+    controls in order): A=BTN_GAMEPAD, B=BTN_EAST, X=BTN_NORTH,
+    Y=BTN_WEST, L1/R1=BTN_TL/TR, L2/R2=BTN_TL2/TR2 with ABS_BRAKE/
+    ABS_GAS analog, Select=BTN_SELECT, Start=BTN_START, and the d-pad
+    reports ONLY through ABS_HAT0X/HAT0Y (no BTN_DPAD_* keys).
+  - raylib's Android backend (platforms/rcore_android.c, pinned 6.0
+    SHA): gamepad KEY branch requires source GAMEPAD/JOYSTICK and NOT
+    KEYBOARD; the keyboard fallback table maps every AKEYCODE_BUTTON_*
+    to 0. Upstream FIXED this class AFTER our pin (raysan5/raylib
+    5e14ac5, 2025-12-26; later refined "trust gamepad keycode, not
+    source bits" — the same design we adopted).
+  - Menu chain confirmed: KEY_BACK → GestureKind::Back → host policy
+    drains → menu toggle (raylib_backend touch section + TouchHub).
+- Fix (framework): new `src/runtime/android_gamepad.h` — pure keycode→
+  PadButton / axis-id→PadAxis tables (NDK-verified constants), the
+  ±32767 scaling (GAS/BRAKE *2-1 like the block it replaces), and an
+  atomic AndroidPadState (glue input thread writes, game thread reads).
+  `raylib_backend.cpp`: a glue-level onInputEvent hook installed after
+  InitWindow via raylib's GetAndroidApp(), CHAINING to raylib's saved
+  callback (the glue has ONE slot; returning 0 would drop events for
+  raylib too — BACK→menu, launcher nav, touch all preserved). The
+  hook trusts the KEYCODE, not the source bits; the Android gamepad
+  block in read() now feeds the hook's state through the SAME shared
+  mapping (gamepad_map.h) as desktop — stick→dpad inherited via
+  stick_to_dpad(), right-trigger fast-forward inherited from the
+  assist defaults (raylib_keymap.h assist_pad[1]). gamepad_connected()
+  on Android now also reports the hook's state.
+- Bounded `pad-census:` TraceLog lines (first sighting per keycode /
+  motion source) give on-device logcat evidence for the #5387 source
+  question; desktop compiles all of it out.
+- Tests red-first: `tests/runtime/android_gamepad_test.cpp` (+ CMake
+  registration) — table correctness incl. the two regression pins
+  (BACK never a pad button; C/Z/MODE/CENTER unmapped), HAT polarity
+  (measured -1 = up), scaling, and the end-to-end snapshot →
+  gamepad_to_keyinput path. Stub tier 82/82 (81 + the new suite);
+  headless (raylib ON) 83/83; cycle PASS — regen 63134 units, attract
+  golden 1EF4C118… held.
+- Desktop unchanged by construction (separate #else GLFW branch); user
+  manual test planned. Parked: launcher (pre-boot) gamepad nav still
+  reads raylib state — dead buttons on this device class until the
+  raylib pin takes upstream 5e14ac5; touch works there.
