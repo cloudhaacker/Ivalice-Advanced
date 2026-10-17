@@ -8978,3 +8978,44 @@ same APK.
   name the new toggles; THIRD_PARTY_ATTRIBUTION.md gains the MMPX entry
   (JCGT 2021 MIT, algorithm-level port, vendored test-only oracle,
   clamp DEVIATION, opaque-input assumption).
+
+## 2026-10-17 — tier-1 CI red: stale build-dir cache (rename era) + folded backslash continuations
+
+- Symptom: every push since ~01:36 failed. Two failure classes.
+- Class 1 (9-10s runs): the submodule fetch — the gbarecompx fork was
+  PRIVATE, so `git submodule update --init --recursive` was denied on
+  runners (actions/checkout's token only reaches the workflow's own
+  repo or public ones). USER made gbarecompx public → resolved; the
+  15:41 run shows ✓ Pinned submodules.
+- Class 2 (the real bug, run 39007194586): tier1 Configure FATAL
+  "GBARECOMP_ROOT is not a gbarecomp checkout: .../gbarecomp" — value
+  WITHOUT the x. Root cause: tier1 caches the whole `build/` dir
+  (added yesterday, green run 38958229935 = the last green tree
+  2ad4a334, which still had `[submodule "gbarecomp"]`); the
+  restore-keys prefix fallback (`ffta-build-Linux-`) restores that
+  stale CMakeCache.txt past the CMakeLists-hash key, and
+  `set(GBARECOMP_ROOT ... CACHE PATH)` never overwrites an existing
+  cache entry → the pre-rename path won over the new `gbarecompx`
+  default and the checkout guard died. android-lint and raylib-backend
+  stayed green — only tier1 caches build/ itself.
+- Reproduced locally: a scratch build dir seeded with one cache line
+  (`GBARECOMP_ROOT:PATH=.../gbarecomp`) + the CI configure → the exact
+  FATAL_ERROR at CMakeLists.txt:20.
+- Latent bug found in the same step while diagnosing: the Configure
+  `run:` used backslash continuations in a plain YAML scalar — YAML
+  folds it to one line, `\ ` becomes an ESCAPED SPACE, and the token
+  dump proves ` -DGBARECOMP_USE_RAYLIB=OFF` and
+  ` -DCMAKE_CXX_COMPILER_LAUNCHER=ccache` arrived as positionals
+  (leading space; CI's "Ignoring extra path" warning). The stub flag
+  silently never applied — had the cache been clean, tier1 would have
+  configured the PRODUCT (raylib-fetching) config instead.
+- Fix (ci.yml, tier1 only — release.yml checked clean for the
+  pattern): Configure becomes a `run: |` literal block (real line
+  continuations) and does `rm -f build/CMakeCache.txt` first, so any
+  restored build dir reconfigures from CURRENT defaults; ccache keeps
+  the rebuild fast, restored object files stay reusable. Step comments
+  document both traps.
+- Verification (scratch dirs, local build/ untouched): poisoned dir +
+  fixed script → configures clean, `GBARECOMP_ROOT=.../gbarecompx`,
+  `GBARECOMP_USE_RAYLIB:BOOL=OFF`; unit gate built + run there →
+  PASS (0 failures). Push + CI watch next.
