@@ -9018,4 +9018,12 @@ same APK.
 - Verification (scratch dirs, local build/ untouched): poisoned dir +
   fixed script → configures clean, `GBARECOMP_ROOT=.../gbarecompx`,
   `GBARECOMP_USE_RAYLIB:BOOL=OFF`; unit gate built + run there →
-  PASS (0 failures). Push + CI watch next.
+  PASS (0 failures).
+- Closed: pushed `9cef94b` → run 39046598762 GREEN (tier1,
+  raylib-backend, android-lint all success) — first fully green run
+  since the rename; first tier1 Configure past the guard since the
+  build-dir cache landed.
+- Watched annotations (warnings only, no action yet): setup-java v4 →
+  v5 migration; actions/cache@v4 + checkout@v4 target Node 20 (forced
+  to 24); **ubuntu-latest migrates to Ubuntu 26 from 2026-10-19** — if
+  a runner-image change breaks a job, pin ubuntu-24.04 explicitly.
