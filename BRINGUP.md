@@ -8878,3 +8878,12 @@ same APK.
   dev-gotchas entry. All four of today's fixes are on the device APK
   (1.6-103-gae01ddd): audio mute honored, toast/status clocks ticked,
   atomic savestate write, UI-layer margin suppression.
+
+- Symbols follow-up (same day): seeded the talk-op chain reached during the
+  bubble session — scene_char_talk_impl 0x0812638C, scene_vm_thread_spawn
+  0x08121B8C, scene_talk_vm_callback 0x08125A5C (naming-only; boundaries
+  verified with disarm.py; roles from call sites + prologues). The
+  per-frame bubble renderer was NOT identified — the IO-snapshot gate made
+  the hunt unnecessary; seed it if a future fix needs it. Naming-only
+  rows: cycle PASS, attract golden 1EF4C118… held (no codegen shift); APK
+  not rebuilt (no behavior change).
