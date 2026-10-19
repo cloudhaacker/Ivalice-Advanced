@@ -1,10 +1,10 @@
 # docs/ — how it works, running the game, and the repository map
 
 Deep-dive documentation. The [root README](../README.md) is the short
-story (quick start, features, controls, building); this folder holds the
-rest: project status, what the recompilation actually is, how to run and
-tune the built binary, the manual build route, the full repository map,
-and the contribution rules.
+story for players (release quick start, features, controls); this folder
+holds the rest: project status, what the recompilation actually is, how to
+run and tune the built binary, the manual build route, the full repository
+map, and the contribution rules.
 
 ## Status
 
@@ -16,9 +16,10 @@ Windows build is a static MinGW cross-compile from the same tree
 (`tools/make_release.py --windows` — zero DLL dependencies, import-table
 guarded, wine-smoked, byte-reproducible; see tests/README.md § the release
 packager). Linux/Steam Deck ships as a portable zip and an AppImage built
-in a Debian 12 container for a SteamOS-safe glibc floor (2.36); the
-AppImage's `AppRun` unpacks to a writable XDG data directory because the
-game keeps `rom.cfg`, settings and saves beside its executable. Android is
+in a Debian 12 container for a SteamOS-safe glibc floor (the produced
+binaries require glibc 2.35); the AppImage's `AppRun` unpacks to a
+writable XDG data directory because the game keeps `rom.cfg`, settings and
+saves beside its executable. Android is
 device-verified on a Xiaomi Poco X3 Pro (Android 14): boot,
 press-acceptance, and the suspend/kill/relaunch lifecycle gates passed
 2026-10-09. Builds are experimental, so back up important saves and report
@@ -119,7 +120,7 @@ step detects whether it is already done.
 
 | Path | What |
 |---|---|
-| `build.py` | Fresh-clone bootstrap — submodules → dumps → venv → patches → tools → BIOS → corpus → build → smoke ([README § Quick start](../README.md#quick-start)) |
+| `build.py` | Fresh-clone bootstrap — submodules → dumps → venv → tools → BIOS → corpus → build → smoke ([manual-build.md](manual-build.md)) |
 | `build_apk.py` | Android bootstrap — preflight → private Gradle build (ROM embedded; BIOS bundled from `bios/`) → APK content guard → install + device gate ([android/README.md § Build](../android/README.md)) |
 | `game.toml` | Per-game config: identity pin + all audit seeds (evidence in `note`s) |
 | `src/` | Host integration: `main.cpp` (hooks/plugins, launch-screen boot), `ffta_ram_dispatch.h`, stack setup |

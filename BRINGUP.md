@@ -9297,3 +9297,38 @@ the override (framework ctest 86/86; clean raylib-OFF build 86/86) and the
 game pin is `bb0636d`. The game's `android-lint` job then failed once on a
 corrupt NDK download (`ZipException: Archive is not a ZIP archive`), not on
 the tree; the job was rerun.
+
+## 2026-10-19 — README pass: release-only quick start, Del menu key, Steam Deck
+
+**Action.** Rewrote the branch README for players and moved source-build
+material into `docs/manual-build.md`:
+
+- Quick start now covers only release artifacts: the Linux zip, the static
+  Windows zip, the Steam Deck/SteamOS AppImage, and the public Android APK.
+  Source-build requirements, the `build.py` route, the manual pipeline, the
+  Android build, and contributor notes moved to `docs/manual-build.md`.
+- Corrected the in-game menu trigger from `Esc` to `Del` (`HK_MENU` default
+  `Delete`, `raylib_keymap.h`; see also `input_translate.h`). The menu
+  navigates with the D-Pad/arrows, A confirms, B goes back; `Del`/Guide
+  opens and closes it. The Android note no longer claims `Esc` steps back
+  inside the menu.
+- Made Steam Deck/SteamOS explicit in the intro, features, quick start,
+  and system requirements, including the AppImage's writable XDG unpack,
+  Game Mode display defaults, FUSE fallback, and the glibc 2.35 floor.
+- Removed the old SDL2/recomp-ui dependency claims from the player-facing
+  text. Note: `origin/main` still carries the pre-raylib README; it is 123
+  commits behind this branch and updates only when the branch is merged.
+
+**Evidence.** `gbarecompx/src/runtime/raylib_keymap.h` (default
+`HK_MENU` = `"Delete"`), `gbarecompx/src/runtime/input_translate.h`
+(`HK_MENU`), `gbarecompx/platform/android/gbarecomp-app.gradle` (minSdk
+28), `tools/publish_release.py` (artifact names), `tools/make_appimage.py`
+(XDG unpack + `SteamDeck=1` defaults), and `build-compat/FFTARecomp`'s
+max `GLIBC_2.35` requirement.
+
+**Checks.** Local Markdown link check for the three edited docs; no
+`recomp-ui`/`SDL2` tokens remain in `README.md` or
+`docs/manual-build.md`; `python3 -m py_compile build.py build_apk.py
+tools/check.py`; `git diff --check`.
+
+**Commit.** This change.

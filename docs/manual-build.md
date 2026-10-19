@@ -1,29 +1,100 @@
-# Manual build (what `build.py` automates)
+# Building from source
 
-Prefer `python3 build.py` (see the [Quick start](../README.md#quick-start)) —
-it runs every step below idempotently and stops with an actionable hint when
-something is off. This page is the reference + troubleshooting route: what the
-script does, in order, so a broken step can be run by hand.
+This is the source-build reference. If you only want to play, use a
+[release artifact](../README.md#quick-start) — no build tools are needed.
+
+`python3 build.py` is the one-command route: it runs every step below
+idempotently and stops with an actionable hint when something is off. This
+page documents the requirements, what the script does in order, the manual
+pipeline, and troubleshooting.
 
 The sequence was verified end-to-end from a fresh clone on 2026-10-08
-(submodules → tools → patches → BIOS → corpus → build → strict smoke +
-attract gate).
+(submodules → tools → BIOS → corpus → build → strict smoke + attract gate).
+
+## Requirements
+
+- Linux x86-64 host for the desktop build. The static Windows release is
+  cross-compiled from the same tree (MinGW-w64; see Troubleshooting).
+- CMake ≥ 3.20, Ninja, GCC or Clang with C++17, git, and Python 3.10+.
+- OpenGL + X11 development headers. Debian/Ubuntu:
+
+  ```sh
+  sudo apt install libgl-dev libx11-dev libxrandr-dev libxinerama-dev \
+    libxcursor-dev libxi-dev libxkbcommon-dev
+  ```
+
+- Network access on the first configure: CMake fetches pinned `raylib` and
+  `toml++` sources. No system UI toolkit beyond OpenGL/X11 is required.
+- `uv` (recommended) or `python3 -m venv` for the harness venv.
+- The supported ROM revision: *Final Fantasy Tactics Advance* (USA, AFXE),
+  SHA-1 `4ac05441f4de70a4ec3dd932116346c61b8783d9`, 16,777,216 bytes —
+  pinned in [`game.toml`](../game.toml).
+- The launch BIOS is the bundled clean-room
+  [emibios](../bios/README.md) build; no Nintendo BIOS dump is needed.
+
+Android builds additionally need JDK 21, Android SDK platform 35,
+build-tools 35, CMake 3.30.3, NDK 28.2.13676358, and `adb`. See
+[`android/README.md`](../android/README.md) § Build.
+
+## Quick source build
+
+1. Clone with submodules and place your legally obtained ROM dump at the
+   repo root:
+
+   ```sh
+   git clone --recurse-submodules https://github.com/james2doyle/ffta-recomp.git
+   cd ffta-recomp
+   cp /path/to/ffta-usa.gba game.gba
+   ```
+
+2. Run the bootstrap:
+
+   ```sh
+   python3 build.py
+   ```
+
+   It installs the Python tooling, builds the framework tools and BIOS
+   corpus, recompiles the game, builds `build/FFTARecomp`, and finishes
+   with a strict headless smoke test.
+
+3. Run the self-built binary:
+
+   ```sh
+   ./build/FFTARecomp
+   ```
+
+   With no arguments it opens the launch screen; the first boot opens the
+   file picker. Pick **Final Fantasy Tactics Advance (USA)** and select
+   **Play**. Pass the paths directly — or run with any headless flag
+   (`--no-window`, `--frames`, `--load-state`, `--tcp`) — to start without
+   the launch screen:
+
+   ```sh
+   ./build/FFTARecomp --bios bios/emibios_gba_bios.bin --rom game.gba
+   ```
+
+   Running and display options are listed in
+   [`docs/README.md`](README.md) § Display options.
+
+## Manual pipeline (what `build.py` automates)
 
 **1. Clone with submodules.**
 ```sh
-git clone <repo-url> ffta-recompiled && cd ffta-recompiled
+git clone https://github.com/james2doyle/ffta-recomp.git ffta-recomp
+cd ffta-recomp
 git submodule update --init --recursive
 # If a submodule worktree comes up empty, re-run with --checkout --recursive
 ```
 
 **2. Place your ROM dump** — `game.gba` at the repo root (FFTA USA). Launch
-verifies the ROM hash (SHA-1 in the root README § Building from source) and
-fails loudly if it is
-wrong or missing. No BIOS dump is needed: the launch BIOS is the bundled
-clean-room emibios at `bios/emibios_gba_bios.bin` (issue #17). The Windows
-release build needs the **same** ROM for its corpus translation (the ROM
-is never embedded — the packaged sweep proves it); it cross-compiles from
-this tree, it does not rerun these steps on a second machine.
+verifies the ROM hash (SHA-1 `4ac05441f4de70a4ec3dd932116346c61b8783d9`)
+and fails loudly if it is wrong or missing. No BIOS dump is needed: the
+launch BIOS is the bundled clean-room emibios at
+`bios/emibios_gba_bios.bin` (issue #17; pin in `bios/README.md`). The
+Windows release build needs the **same** ROM for its corpus translation
+(the ROM is never embedded — the packaged sweep proves it); it
+cross-compiles from this tree, it does not rerun these steps on a second
+machine.
 
 **3. Python venv for the tooling** (the harness scripts):
 ```sh
@@ -65,12 +136,6 @@ cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DGBARECOMP_ENABLE_MODS=
 cmake --build build --target FFTARecomp --parallel 8
 ```
 
-The `gbarecomp` submodule **is** the framework: james2doyle/gbarecompx —
-the fork carrying the raygui launch screen, the tinyfiledialogs asset
-picker, the emibios default BIOS, and every former local patch as
-committed history. A plain `--recurse-submodules` clone builds everything;
-there are no working-tree patches to apply.
-
 (`GBARECOMP_ENABLE_MODS=ON` links the framework's mod lifecycle APIs —
 activation/reset plugins, view-width requests — used by the game's
 widescreen hooks; verified gate-neutral.)
@@ -87,26 +152,56 @@ And optionally the attract gate, which pins the exact frame hash:
 ```
 
 Then play — run the built binary (`./build/FFTARecomp`; running and display
-options: [README.md](README.md)). For an *instrumented playtest session*
-use `tools/play.sh` (guide: [`tests/README.md`](../tests/README.md)).
+options: [`docs/README.md`](README.md) § Display options). For an
+*instrumented playtest session* use `tools/play.sh` (guide:
+[`tests/README.md`](../tests/README.md)).
+
+## Android build
+
+The APK consumes the desktop-generated corpus, so complete the desktop
+build first. Then:
+
+```sh
+python3 build_apk.py
+```
+
+With a device attached the script installs the APK and runs the boot-health
+gate. The full local-build, install, signing, and device-validation guide is
+[`android/README.md`](../android/README.md).
+
+The public release APK is built separately by `tools/make_release.py --apk`
+and contains no ROM; players import their dump through the Android setup
+screen.
+
+## Contributing
+
+The `gbarecompx` submodule **is** the framework:
+[james2doyle/gbarecompx](https://github.com/james2doyle/gbarecompx), the
+fork carrying the raygui launch screen, the tinyfiledialogs picker, the
+emibios default BIOS, and every former local patch as committed history. A
+plain `--recurse-submodules` clone builds everything; there are no
+working-tree patches to apply. Framework changes land as fork commits, then
+the game repo's gitlink moves — see
+[`reference/dev-gotchas.md`](../reference/dev-gotchas.md) § Submodules.
+
+Testing, debugging, coverage, and CI workflows live in
+[`tests/README.md`](../tests/README.md); the repository map is in
+[`docs/README.md`](README.md); project rules are in
+[`AGENTS.md`](../AGENTS.md).
 
 ## Troubleshooting
 
-- `build.py` stops at **dumps** → the ROM or BIOS is missing or has the
-  wrong hash (ROM SHA-1: root README § Building from source; BIOS pin:
-  `bios/README.md`); it never downloads them.
-- `build.py` stops at **framework patches** → the submodule drifted from
-  its pin; check `git -C gbarecompx status`.
+- `build.py` stops at **dumps** → the ROM is missing or has the wrong hash
+  (SHA-1 above); it never downloads one. BIOS pin: `bios/README.md`.
 - `gba_recompile: command not found` → step 4 was not run in this checkout.
 - `generated_bios/` stays empty / BIOS never loads → step 5 was run from the
   wrong directory (`cd gbarecompx` first). If strict runs instead abort with
   a dispatch miss near pc `0x300`, step 5 ran without
   `--config ../bios/emibios_gba_bios.toml`.
 - Launch aborts with an identity/hash error → wrong or missing dump; compare
-  against the pinned SHA-1s (ROM: root README § Building from source; BIOS:
-  `bios/README.md`).
-- CMake cannot find OpenGL/X11 development headers → install them (the
-  Debian/Ubuntu set is listed in the root README § Building from source).
+  against the pinned SHA-1 above (BIOS: `bios/README.md`).
+- CMake cannot find OpenGL/X11 development headers → install the
+  Debian/Ubuntu set in [Requirements](#requirements).
 - MinGW cross (static Windows build, R2): the toolchain is
   `mingw-w64-toolchain` from pacman (`x86_64-w64-mingw32-gcc` — check with
   `command -v`); the dependency prefix is built from pinned sources, not

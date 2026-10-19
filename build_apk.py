@@ -195,7 +195,7 @@ def step_preflight(skip_stale=False, installing=True):
                                      (BIOS, BIOS_SHA1, "BIOS", BIOS_SIZE)):
         if not path.exists():
             die(f"{label} missing: {path}", hint="run build.py first "
-                "(README § Quick start) — the private build embeds the ROM; "
+                "(docs/manual-build.md) — the private build embeds the ROM; "
                 "the BIOS is committed repo material")
         if path.stat().st_size != size:
             die(f"{label} has the wrong size: {path}")

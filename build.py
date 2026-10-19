@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fresh-clone bootstrap: from a clone to a running build/FFTARecomp.
 
-Wraps the newcomer setup (README § Quick start) into one idempotent script:
+Wraps the newcomer setup (docs/manual-build.md) into one idempotent script:
 
   1. submodules         git submodule update --init --recursive (two-pass)
   2. dumps              game.gba + BIOS present and SHA-1-verified
@@ -79,7 +79,7 @@ def run(cmd, cwd=REPO, capture=True, env=None, timeout=1800):
                               capture_output=capture, text=True, timeout=timeout)
     except FileNotFoundError:
         die(f"command not found: {cmd[0]}",
-            hint="install the build dependencies (README § Building from source)")
+            hint="install the build dependencies (docs/manual-build.md § Requirements)")
 
 
 def run_ok(cmd, cwd=REPO):

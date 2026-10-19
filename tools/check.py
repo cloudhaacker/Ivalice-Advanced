@@ -532,7 +532,7 @@ FAST = ["unit-cpp", "unit-py", "savecheck",
 # and no display, so it is cheap enough to gate every push.
 OPTIONAL = {"android-apk", "release", "raylib-compile", "raylib-headless"}
 # Checks that execute the game binary (require it to exist); the others run
-# on a fresh clone without the ROM (CI tier 1: unit-cpp, unit-py, patches).
+# on a fresh clone without the ROM (CI tier 1: unit-cpp, unit-py, android-static).
 NEEDS_EXE = {"attract", "hle-audit", "ws_smoke", "user_load", "route_G",
              "route_K", "route_B", "cadence"}
 
