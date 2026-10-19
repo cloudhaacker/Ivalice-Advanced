@@ -9288,3 +9288,12 @@ release workflow ROM-free:
 **Open.** Release signing key still debug; the release branch/pin decision
 and the first real tag remain (local publisher requires a clean tree whose
 HEAD is the tag).
+
+**CI follow-up (same day).** The pure `Video::logical_size` contract also
+required `NoopVideo` in `gbarecompx/tests/runtime/backend_v2_types_test.cpp`
+to implement the method; the local `gbarecompx/build` had stale objects and
+missed it, while the framework CI's clean build caught it. `bbca5d3` adds
+the override (framework ctest 86/86; clean raylib-OFF build 86/86) and the
+game pin is `bb0636d`. The game's `android-lint` job then failed once on a
+corrupt NDK download (`ZipException: Archive is not a ZIP archive`), not on
+the tree; the job was rerun.
