@@ -67,78 +67,82 @@ needed.
 Grab the latest release from the
 [releases page](https://github.com/james2doyle/ffta-recomp/releases).
 
-### Linux
-
-1. Download `FFTARecomp-*-linux-x64.zip` and extract it anywhere
-   **writable** — the ROM pick, menu settings, and saves are kept beside
-   the executable.
-2. Run `./FFTARecomp`.
-3. The launch screen opens; the first boot opens the native file picker
-   right away. Pick your USA ROM and select **Play**. The pick is
-   remembered, so later boots open ready to play — **Select ROM** re-picks,
-   and dropping a `.gba` file onto the window works too.
-
-Requires an x86-64 Linux desktop with OpenGL and X11/XWayland.
-
-### Windows
-
-1. Download `FFTARecomp-*-windows-x64.zip` and extract it anywhere
-   **writable**.
-2. Run `FFTARecomp.exe` — it is statically linked, with no DLLs or
-   installer.
-3. Pick your USA ROM on the launch screen and select **Play**.
-
-Requires Windows 10 or newer, x86-64.
-
-### Steam Deck / SteamOS (AppImage)
-
-1. Download `FFTARecomp-*-linux-x86_64.AppImage`, mark it executable
-   (`chmod +x`), and run it from Desktop Mode or add it as a non-Steam
-   game.
-2. The first run unpacks the game beside your user data under
-   `~/.local/share/ffta-recomp/app` (or `$XDG_DATA_HOME/ffta-recomp/app`)
-   and runs from there, because the game writes `rom.cfg`, settings, and
-   saves beside the executable and an AppImage mount is read-only.
-   Updating the AppImage refreshes the game files but keeps those player
-   files.
-3. Pick your USA ROM on the launch screen and select **Play**.
-
-In Game Mode the AppImage defaults to borderless fullscreen with the
-resize-driven widescreen view; pass `--window`, `--scale`, or
-`--view-width` to override, or set `FFTA_APPIMAGE_NO_DECK_DEFAULTS=1`.
-The launch-screen file picker uses the system dialog (zenity/kdialog on
-SteamOS). If that is unavailable, add `--rom /path/to/ffta.gba` as a Steam
-launch option once; the pick is remembered. If FUSE is unavailable, run
-with `APPIMAGE_EXTRACT_AND_RUN=1` or `--appimage-extract-and-run`.
-
-The AppImage and Linux zip are built in a pinned Debian 12 container
-(`tools/compat_build.py`) and require **glibc 2.35 or newer**, which
-SteamOS 3.x provides. A binary built on a rolling host can require a newer
-glibc than SteamOS ships.
-
-### Android
-
-1. Download `FFTARecomp-*-android-arm64-v8a.apk` and sideload it on an
-   arm64 Android device. The current release APK is debug-signed, so allow
-   installation from your browser or file manager when prompted.
-2. Open the app and tap **Select ROM**; choose your USA dump. The ROM is
-   hash-verified at launch, and the bundled BIOS needs no separate pick.
-3. Select **Play**. Settings and saves live in the app's data directory.
-
-Requires Android 9 or newer (API 28), arm64-v8a.
-
-### System requirements
-
-| Platform | Runs on |
-|---|---|
-| Linux | x86-64 with OpenGL and X11/XWayland. Debian/Ubuntu: `libgl1 libglu1-mesa libx11-6` (normally preinstalled on desktops) |
-| Steam Deck | SteamOS 3.x, x86-64; AppImage (FUSE) |
-| Windows | Windows 10+ x86-64; static executable, nothing extra |
-| Android | Android 9+ (API 28), arm64-v8a |
+| Release | Artifact | System requirements |
+|---|---|---|
+| Linux x64 | `FFTARecomp-*-linux-x64.zip` | x86-64 Linux with OpenGL and X11/XWayland; Debian/Ubuntu: `libgl1 libglu1-mesa libx11-6` (normally preinstalled on desktops) |
+| Windows x64 | `FFTARecomp-*-windows-x64.zip` | Windows 10+ x86-64; static executable, nothing extra |
+| Steam Deck / SteamOS | `FFTARecomp-*-linux-x86_64.AppImage` | SteamOS 3.x, x86-64; FUSE; glibc 2.35 or newer |
+| Android | `FFTARecomp-*-android-arm64-v8a.apk` | Android 9+ (API 28), arm64-v8a |
 
 Apart from the system OpenGL/X11 stack (and the standard C++ runtime), the
 release builds are self-contained; no additional game runtime libraries
 need to be installed.
+
+### Run
+
+- **Linux:** extract the zip anywhere writable and run `./FFTARecomp`.
+- **Windows:** extract the zip anywhere writable and run `FFTARecomp.exe`.
+- **Steam Deck / SteamOS:** mark the AppImage executable (`chmod +x`) and
+  run it from Desktop Mode, or add it as a non-Steam game.
+- **Android:** sideload the APK (it is debug-signed, so allow installation
+  from your browser or file manager) and open the app.
+
+### Pick your ROM
+
+The flow is the same on every release:
+
+1. Start the game. On desktop the launch screen opens (the first boot opens
+   the native file picker right away); on Android the setup screen opens.
+2. Choose **Select ROM** and pick your legally obtained USA dump. On desktop
+   you can also drop a `.gba` file onto the window.
+3. Select **Play**. The ROM is hash-verified, the pick is remembered, and
+   **Select ROM** re-picks later. The bundled BIOS needs no separate pick.
+
+### Load an old save (optional)
+
+Battery saves are raw 64 KiB (65,536-byte) flash images.
+
+- **Desktop:** copy your old `.sav` to the game's save file, named
+  `ffta_us.sav`, before launching; exact paths are in the file-location
+  details below.
+- **Android:** on the setup screen, use **Save data (optional)** →
+  **CHOOSE SAVE** and pick the 64 KiB `.sav` file.
+
+The game loads the imported battery save on the next launch; in-game saves
+update the same file.
+
+<details>
+<summary>Where files live and platform-specific details</summary>
+
+**Linux and Windows zip** (inside the extracted folder):
+
+- `saves/ffta_us.sav` — cartridge battery save (create `saves/` if needed)
+- `rom.cfg` — remembered ROM path
+- `config.ini`, `keybinds.ini` — menu settings and key bindings
+
+**Steam Deck / SteamOS AppImage:** after the first launch the game is
+unpacked to `$XDG_DATA_HOME/ffta-recomp/app` (default
+`~/.local/share/ffta-recomp/app`). That folder holds the executable,
+`saves/ffta_us.sav`, `rom.cfg`, and the config/keybind files; updating the
+AppImage keeps them. In Game Mode it defaults to borderless fullscreen with
+the resize-driven widescreen view. Override with `--window`, `--scale`, or
+`--view-width`, or set `FFTA_APPIMAGE_NO_DECK_DEFAULTS=1`. If FUSE is
+unavailable, run with `APPIMAGE_EXTRACT_AND_RUN=1` or
+`--appimage-extract-and-run`. If the system file picker is unavailable, add
+`--rom /path/to/ffta.gba` as a Steam launch option once.
+
+**Android:** the app's external files live under
+`/sdcard/Android/data/org.gbarecomp.fftarecomp/files/`; the battery save is
+`saves/ffta_us.sav`, and save states are in `states/`. To import a save
+manually, force-stop the app first, then copy the 64 KiB file to that
+`saves/ffta_us.sav` path.
+
+The AppImage and Linux zip are built in a pinned Debian 12 container
+(`tools/compat_build.py`) and require glibc 2.35 or newer, which SteamOS 3.x
+provides. A binary built on a rolling host can require a newer glibc than
+SteamOS ships.
+
+</details>
 
 Display and widescreen options (`--view-width 448`, `--resize-view`,
 `--scale`, fullscreen) are listed in [docs/README.md](docs/README.md).

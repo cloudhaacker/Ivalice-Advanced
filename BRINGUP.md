@@ -9307,6 +9307,11 @@ material into `docs/manual-build.md`:
   Windows zip, the Steam Deck/SteamOS AppImage, and the public Android APK.
   Source-build requirements, the `build.py` route, the manual pipeline, the
   Android build, and contributor notes moved to `docs/manual-build.md`.
+- Quick start is a single release/requirements table plus one shared
+  ROM-pick flow; platform install steps are separate and file locations
+  are collapsed under `<details>`. Added old-battery-save import for
+  desktop (`saves/ffta_us.sav`, 64 KiB) and Android (setup-screen
+  **Save data** card / manual external path).
 - The top docblock now names `gbarecompx` — the actively developed fork
   this project builds on — rather than upstream `gbarecomp`;
   `docs/README.md`'s "What this is" follows.
@@ -9319,15 +9324,17 @@ material into `docs/manual-build.md`:
   and system requirements, including the AppImage's writable XDG unpack,
   Game Mode display defaults, FUSE fallback, and the glibc 2.35 floor.
 - Removed the old SDL2/recomp-ui dependency claims from the player-facing
-  text. Note: `origin/main` still carries the pre-raylib README; it is 123
-  commits behind this branch and updates only when the branch is merged.
+  text. Note: `origin/main` still carries the pre-raylib README; it updates
+  only when PR #29 is merged.
 
 **Evidence.** `gbarecompx/src/runtime/raylib_keymap.h` (default
 `HK_MENU` = `"Delete"`), `gbarecompx/src/runtime/input_translate.h`
 (`HK_MENU`), `gbarecompx/platform/android/gbarecomp-app.gradle` (minSdk
 28), `tools/publish_release.py` (artifact names), `tools/make_appimage.py`
-(XDG unpack + `SteamDeck=1` defaults), and `build-compat/FFTARecomp`'s
-max `GLIBC_2.35` requirement.
+(XDG unpack + `SteamDeck=1` defaults), `game.toml` § `[save]`
+(`saves/ffta_us.sav`, flash512/65536), and `GbaSetupActivity`'s optional
+save import (size-validated, mirrors to the external `saves/` dir);
+`build-compat/FFTARecomp`'s max `GLIBC_2.35` requirement.
 
 **Checks.** Local Markdown link check for the three edited docs; no
 `recomp-ui`/`SDL2` tokens remain in `README.md` or
