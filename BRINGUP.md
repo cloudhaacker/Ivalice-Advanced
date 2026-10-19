@@ -9283,7 +9283,7 @@ release workflow ROM-free:
   `tests/python/test_tools.py` 56 tests.
 - `actionlint` + `shellcheck -S warning tools/*.sh` clean.
 
-**Commits.** `gbarecompx` `7a56fd0` (seam) + `559b1db` (packaging); game `5c8229d` (pin bump) + `c2a27b6` (release/AppImage tooling) + `ee14749` (packaging pin/runtime pin).
+**Commits.** `gbarecompx` `7a56fd0` (seam) + `559b1db` (packaging) + `e6138a5` (Windows docs); game `5c8229d` (pin bump) + `c2a27b6` (release/AppImage tooling) + `ee14749` (packaging pin/runtime pin) + `29f4e06` (Windows docs pin).
 
 **Open.** Release signing key still debug; the release branch/pin decision
 and the first real tag remain (local publisher requires a clean tree whose
