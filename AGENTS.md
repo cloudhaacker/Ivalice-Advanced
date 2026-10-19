@@ -105,7 +105,7 @@ cmake --build build --target FFTARecomp --parallel 8
 | Android APK content guard | `tools/android_apk_check.py [--apk …] [--expect public/private]` — opt-in `check.py --only android-apk` |
 | Release packager (issue #3 R-track) | `.venv/bin/python tools/make_release.py [--apk \| --windows] [--binary build-compat/FFTARecomp] [--version V]` — allowlist stage → private-material sweep → deterministic portable zip (Linux zip + public APK + static Windows exe) |
 | SteamOS compat binary (Steam Deck floor) | `.venv/bin/python tools/compat_build.py [--jobs N]` — Debian 12 container (glibc 2.36), refuses newer GLIBC symbols; output `build-compat/FFTARecomp` |
-| Steam Deck AppImage | `.venv/bin/python tools/make_appimage.py --version V --binary build-compat/FFTARecomp` — pinned appimagetool, writable-XDG AppRun, squashfs sweep, packaged FULLY_STATIC smoke |
+| Steam Deck AppImage | `.venv/bin/python tools/make_appimage.py --version V --binary build-compat/FFTARecomp` — pinned appimagetool + type-2 runtime, writable-XDG AppRun, squashfs sweep, packaged FULLY_STATIC smoke |
 | Publish a release (local) | `.venv/bin/python tools/publish_release.py --version vX.Y [--upload-only \| --publish]` — builds all four public artifacts, verifies guards, writes `SHA256SUMS`, uploads to the tag's draft release; GitHub never sees the ROM |
 | MinGW cross prefix (R2) | `.venv/bin/python tools/win_cross_deps.py build` — pinned static raylib into `cross-prefix/` (idempotent `.done` markers; `status`, `clean`, `purge`) |
 | Widescreen smoke | `.venv/bin/python tools/ws_check.py` (fixtures `saves/ws_fixtures/`) |

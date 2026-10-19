@@ -523,7 +523,7 @@ Two tiers, split by what may leave your machine:
   stages the SteamOS-compatible (glibc 2.36) executable instead of the
   host build.
 - The **AppImage packager** (`tools/make_appimage.py`) reuses the same
-  allowlist stage, adds the pinned appimagetool runtime, desktop entry and
+  allowlist stage, adds the pinned appimagetool + type-2 runtime, desktop entry and
   icon, and a writable-XDG `AppRun` wrapper (the game writes `rom.cfg`,
   settings and saves beside its executable; an AppImage mount is
   read-only). It then extracts the finished AppImage and reruns the same
