@@ -9430,6 +9430,13 @@ change and passes with it.
 
 **Evidence.** Framework ctest 86/86; negative control fails at the new
 same-id assertion; game fast gate 7/7; the product build consumes the new
-pin. AppImage rebuild follows this pin.
+pin. Upstream references: raylib's `rtext.c` (default font loaded on
+`InitWindow`, disposed on `CloseWindow`) and raygui's `GuiLoadStyleDefault`
+identity check. Rebuilt Steam Deck AppImage `v1.7-rc2` (sha256
+`23d12a5055ae71e2c59978522815a7456431e17c2c12757185083c20972e992b`,
+34,699,768 B) from compat binary sha256
+`232f04bbd7af57ffaed59e0a73c10de5c4f80c4bc2105ff34023c0f6bed3c9f6`;
+guard + strict 2400-frame smoke passed (`FULLY_STATIC`). This artifact also
+carries the menu rename and the Assist speed row.
 
 **Commit.** `gbarecompx` `8b68302`; game pin in this change.
