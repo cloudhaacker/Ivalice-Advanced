@@ -9440,3 +9440,40 @@ guard + strict 2400-frame smoke passed (`FULLY_STATIC`). This artifact also
 carries the menu rename and the Assist speed row.
 
 **Commit.** `gbarecompx` `8b68302`; game pin in this change.
+
+## 2026-10-19 — v2.0 release cut
+
+**Tag.** `v2.0` = `8a34783` on `main`, annotated `FFTARecomp v2.0`;
+release live at https://github.com/james2doyle/ffta-recomp/releases/tag/v2.0
+(draft shell created by the tag workflow, assets built/uploaded locally).
+
+**Gate.** `tools/cycle.py` (63,134 units, dispatch aligned, attract
+`1EF4C118…`) then `tools/check.py` **17/17 PASS** on release prep `3810b99`.
+The tag moved only over non-binary release-tooling fixes (`c7b6bf9`
+workflow repo context; `8a34783` publisher zip-mode preservation), checked
+with actionlint/verifier runs; the merged PR's CI was green.
+
+**Artifacts** (SHA-256; `SHA256SUMS-v2.0.txt` uploaded):
+
+- `FFTARecomp-v2.0-linux-x64.zip` —
+  `fdfee8c7cd572f66825520e68be178428a6d002e348702970593857562cef24a`
+- `FFTARecomp-v2.0-linux-x86_64.AppImage` —
+  `25bae8617091369c4a7e58465964d86808fdd998dfc9a43c1a039c0c5d41eb03`
+  (34,699,768 B; compat binary
+  `232f04bbd7af57ffaed59e0a73c10de5c4f80c4bc2105ff34023c0f6bed3c9f6`)
+- `FFTARecomp-v2.0-windows-x64.zip` —
+  `bef4b57935d49ae25005a85c56165adf29c2fb6fc46b6aca5482f36b535e639e`
+- `FFTARecomp-v2.0-android-arm64-v8a.apk` —
+  `09858a46c2ae5a5e1cd2c24f24784403e87b2f5569f6709ac9f52c23d940c245`
+  (`versionCode=2`, `versionName=2.0`; debug-signed)
+
+**Release-tool fixes found by the cut.** The tag workflow ran without a
+checkout, so `gh release view/create` had no repo context; `GH_REPO` now
+fixes both draft creation and dispatch recovery. The publisher's
+`zipfile.extractall` dropped Unix mode bits, making valid Linux/Windows
+zips look executable-less to `sweep_stage`; `--upload-only` now restores
+each entry's archived mode before the sweep. The artifacts themselves were
+already correct (`zipinfo` showed `-rwxr-xr-x`).
+
+**Notes.** No ROM or retail BIOS material uploaded; APK remains debug-signed
+and is the open release-signing decision.

@@ -130,7 +130,7 @@ cmake --build build --target FFTARecomp --parallel 8
 | `mods/` `inputs/` `symbols/` `reference/` | Widescreen catalog; input traces; symbol seeds; study notes |
 | `gbarecompx/` | Pinned submodule = the framework fork (`james2doyle/gbarecompx`, **public**; every former patch is committed history there; owns the framework tests + agent rules `gbarecompx/AGENTS.md`) — do not update casually (pin bumps: `reference/dev-gotchas.md` § Submodules) |
 
-## Status (2026-10-18)
+## Status (2026-10-19)
 
 All phases complete; **every executed path strict-FULLY_STATIC**; corpus
 **63,134 emitted units** (device-resume healing batch, BRINGUP late);
@@ -144,7 +144,7 @@ relaunch lifecycle — guide `android/README.md`); **emibios migration**
 **release track** (issue #3) complete through the Steam Deck AppImage —
 Linux zip, public APK, **static MinGW Windows exe**, and the
 **glibc-2.35 AppImage** built in the pinned Debian 12 container, all
-guarded, deterministic where applicable, and live on v1.5/v1.6 (packager +
+guarded, deterministic where applicable, and live on **v2.0** (packager +
 cross-prefix + compat machinery: `tools/make_release.py`,
 `tools/win_cross_deps.py`, `tools/compat_build.py`,
 `tools/make_appimage.py`). Releases are built and uploaded locally
