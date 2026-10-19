@@ -58,6 +58,11 @@ APPIMAGETOOL_URL = (
     "appimagetool-x86_64.AppImage")
 APPIMAGETOOL_SHA256 = (
     "ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0")
+APPIMAGE_RUNTIME_URL = (
+    "https://github.com/AppImage/type2-runtime/releases/download/continuous/"
+    "runtime-x86_64")
+APPIMAGE_RUNTIME_SHA256 = (
+    "156f4bdbde9c52d01814600013e0a273f0118dc2de98975f3c8c63427ec79074")
 
 APPIMAGE_README = """
 ## AppImage
@@ -143,6 +148,43 @@ def ensure_appimagetool(override=None):
     tmp.chmod(0o755)
     tmp.replace(tool)
     return tool
+
+
+def ensure_runtime(override=None):
+    """Pinned AppImage type-2 runtime.
+
+    appimagetool 1.9.1 downloads a *moving* `continuous` runtime when
+    --runtime-file is omitted. Pin it so a release cannot silently change
+    its launcher/runtime bytes.
+    """
+    if override:
+        runtime = Path(override).resolve()
+        if not runtime.is_file():
+            die(f"AppImage runtime not found: {runtime}")
+        return runtime
+    runtime = cache_root() / "runtime-x86_64"
+    if runtime.is_file() and sha256_file(runtime) == APPIMAGE_RUNTIME_SHA256:
+        return runtime
+    runtime.parent.mkdir(parents=True, exist_ok=True)
+    tmp = runtime.with_suffix(".download")
+    print(f"appimage: fetching type-2 runtime -> {runtime}", flush=True)
+    req = urllib.request.Request(
+        APPIMAGE_RUNTIME_URL, headers={"User-Agent": "ffta-recomp-appimage/1"})
+    try:
+        with urllib.request.urlopen(req, timeout=180) as r, open(tmp, "wb") as f:
+            shutil.copyfileobj(r, f)
+    except Exception as exc:
+        tmp.unlink(missing_ok=True)
+        die(f"could not download the AppImage runtime: {exc}",
+            hint="install it manually and pass --runtime-file PATH")
+    got = sha256_file(tmp)
+    if got != APPIMAGE_RUNTIME_SHA256:
+        tmp.unlink(missing_ok=True)
+        die(f"AppImage runtime sha256 mismatch: got {got}, "
+            f"want {APPIMAGE_RUNTIME_SHA256}")
+    tmp.chmod(0o644)
+    tmp.replace(runtime)
+    return runtime
 
 
 def payload_id(payload):
@@ -262,7 +304,7 @@ def source_epoch():
     return "0"
 
 
-def run_appimagetool(tool, appdir, output):
+def run_appimagetool(tool, runtime, appdir, output):
     if output.exists():
         output.unlink()
     env = dict(os.environ)
@@ -273,8 +315,9 @@ def run_appimagetool(tool, appdir, output):
     })
     # Absolute paths: appimagetool extracts itself to a temp dir when
     # APPIMAGE_EXTRACT_AND_RUN is set, so relative paths are ambiguous.
-    r = subprocess.run([str(tool), "--no-appstream", str(appdir),
-                        str(output)], cwd=str(OUT_DIR), env=env,
+    r = subprocess.run([str(tool), "--no-appstream",
+                        "--runtime-file", str(runtime),
+                        str(appdir), str(output)], cwd=str(OUT_DIR), env=env,
                        capture_output=True, text=True)
     if r.returncode != 0:
         tail = "\n".join((r.stdout + r.stderr).strip().splitlines()[-20:])
@@ -360,6 +403,9 @@ def main(argv=None):
     ap.add_argument("--appimagetool", default=None,
                     help="use a local appimagetool instead of the pinned "
                          "download")
+    ap.add_argument("--runtime-file", default=None,
+                    help="use a local AppImage type-2 runtime instead of the "
+                         "pinned download")
     ap.add_argument("--no-strip", action="store_true",
                     help="do not strip the staged executable")
     ap.add_argument("--frames", type=int, default=2400,
@@ -400,8 +446,9 @@ def main(argv=None):
     print(f"appimage: payload {payload.name} id={app_id}", flush=True)
 
     tool = ensure_appimagetool(a.appimagetool)
+    runtime = ensure_runtime(a.runtime_file)
     output = OUT_DIR / f"FFTARecomp-{version}-linux-x86_64.AppImage"
-    run_appimagetool(tool, appdir, output)
+    run_appimagetool(tool, runtime, appdir, output)
     guard_appimage(output)
 
     smoke = "skipped"

@@ -9239,7 +9239,7 @@ release workflow ROM-free:
   private vfs store when the default overlay-on-btrfs storage is unusable;
   Docker uses the same Containerfile.
 - `tools/make_appimage.py`: stages the same allowlisted Linux payload,
-  pins appimagetool 1.9.1 by SHA-256, and builds
+  pins appimagetool 1.9.1 and the type-2 runtime by SHA-256, and builds
   `FFTARecomp-<version>-linux-x86_64.AppImage`. `AppRun` unpacks the
   payload into `$XDG_DATA_HOME/ffta-recomp/app` (writable sidecars:
   `rom.cfg`, settings, saves) and copies updates over the payload without
@@ -9258,6 +9258,10 @@ release workflow ROM-free:
   marker (it made every fresh bootstrap die) and fixed the step count.
 - `build_apk.py`: `device_attached()` returns false when `adb` is absent;
   a headless APK build no longer requires platform-tools.
+- `gbarecompx/packaging`: replaced the SDL-era Flatpak/Linux/macOS scripts
+  with current raylib-era `package_linux.sh` (portable + AppImage),
+  `package_macos.sh`, and `package_release.ps1`; the test now exercises the
+  Linux staging/AppDir contract without PyYAML or Flatpak.
 - `gbarecompx` `window_backend.h`: `Video::logical_size` is pure again
   (the seam guard had caught the defaulted body introduced in `0efbe87`);
   `RecordingVideo` carries the explicit override.
@@ -9270,7 +9274,7 @@ release workflow ROM-free:
   max `GLIBC_2.35`.
 - `tools/make_appimage.py --version v1.7-rc1 --binary
   build-compat/FFTARecomp` → AppImage sha256
-  `0ceb200c6168384deefeee0a7c01da850ee53f8aa5570f13e2013e7bad862c60`,
+  `9fd96b6bfca41f157190a890879875dc5fc0d06b7e9a1dfa314348d91d7d996e`,
   34,695,672 B; host smoke FULLY_STATIC.
 - The same AppImage booted inside the Debian 12 container (glibc 2.35)
   for 600 frames: `FULLY_STATIC`, 0 misses — the SteamOS floor proof.
@@ -9279,7 +9283,7 @@ release workflow ROM-free:
   `tests/python/test_tools.py` 56 tests.
 - `actionlint` + `shellcheck -S warning tools/*.sh` clean.
 
-**Commits.** `gbarecompx` `7a56fd0`; game `5c8229d` (pin bump) + `e4fc597` (release/AppImage tooling).
+**Commits.** `gbarecompx` `7a56fd0` (seam) + `559b1db` (packaging); game `5c8229d` (pin bump) + `c2a27b6` (release/AppImage tooling) + `ac29798` (packaging pin/runtime pin).
 
 **Open.** Release signing key still debug; the release branch/pin decision
 and the first real tag remain (local publisher requires a clean tree whose
