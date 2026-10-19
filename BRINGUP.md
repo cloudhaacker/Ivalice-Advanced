@@ -9226,3 +9226,61 @@ same APK.
 - Coverage continuity: the fork's CI runs the moved tests per fork push
   (the game's bump pins that exact commit); the game's CI re-verifies
   its own three per game push. CI watch after the pushes next.
+
+## 2026-10-19 — Steam Deck AppImage + ROM-free release workflow
+
+**Action.** Added a Steam Deck/Linux AppImage path and made the GitHub
+release workflow ROM-free:
+
+- `tools/compat_build.py` + `tools/compat/Containerfile`: build
+  `build-compat/FFTARecomp` in a pinned Debian 12 container (glibc 2.36
+  floor; the produced binary requires `GLIBC_2.35`). The host CachyOS build
+  required `GLIBC_2.43`, which SteamOS does not provide. Podman uses a
+  private vfs store when the default overlay-on-btrfs storage is unusable;
+  Docker uses the same Containerfile.
+- `tools/make_appimage.py`: stages the same allowlisted Linux payload,
+  pins appimagetool 1.9.1 by SHA-256, and builds
+  `FFTARecomp-<version>-linux-x86_64.AppImage`. `AppRun` unpacks the
+  payload into `$XDG_DATA_HOME/ffta-recomp/app` (writable sidecars:
+  `rom.cfg`, settings, saves) and copies updates over the payload without
+  deleting player files. `SteamDeck=1` adds borderless fullscreen +
+  resize-driven view unless a display flag was passed
+  (`FFTA_APPIMAGE_NO_DECK_DEFAULTS=1` disables it). The finished AppImage is
+  extracted and swept for private material, then booted from a fresh data
+  dir for a strict 2400-frame FULLY_STATIC smoke.
+- `tools/publish_release.py`: local build → verify → upload pipeline for
+  the Linux zip, public APK, static Windows zip, AppImage, and
+  `SHA256SUMS-<tag>.txt`. `.github/workflows/release.yml` is now
+  GitHub-hosted and only creates a draft release shell; it never checks out
+  the game tree or asks GitHub for the ROM. The ROM-derived corpus remains
+  a local-only input by policy.
+- `build.py`: dropped the stale `recomp-ui/CMakeLists.txt` submodule
+  marker (it made every fresh bootstrap die) and fixed the step count.
+- `build_apk.py`: `device_attached()` returns false when `adb` is absent;
+  a headless APK build no longer requires platform-tools.
+- `gbarecompx` `window_backend.h`: `Video::logical_size` is pure again
+  (the seam guard had caught the defaulted body introduced in `0efbe87`);
+  `RecordingVideo` carries the explicit override.
+- `tools/make_release.py`: `--binary` selects the compat executable;
+  the freshness gate now also watches `gbarecompx/build/gba_recompile`.
+
+**Evidence.**
+- `tools/compat_build.py` → `build-compat/FFTARecomp`, sha256
+  `d1987e8914e1080479c68978e1d01a151d13bff80e5c0f9fd9f8415e7532f08a`,
+  max `GLIBC_2.35`.
+- `tools/make_appimage.py --version v1.7-rc1 --binary
+  build-compat/FFTARecomp` → AppImage sha256
+  `0ceb200c6168384deefeee0a7c01da850ee53f8aa5570f13e2013e7bad862c60`,
+  34,695,672 B; host smoke FULLY_STATIC.
+- The same AppImage booted inside the Debian 12 container (glibc 2.35)
+  for 600 frames: `FULLY_STATIC`, 0 misses — the SteamOS floor proof.
+- `gbarecompx` ctest 86/86; `tools/check.py --fast` ALL PASS 7/7
+  then the full gate ALL PASS 17/17 (raylib-backend now passes);
+  `tests/python/test_tools.py` 56 tests.
+- `actionlint` + `shellcheck -S warning tools/*.sh` clean.
+
+**Commits.** `gbarecompx` `7a56fd0`; game `5c8229d` (pin bump) + `e4fc597` (release/AppImage tooling).
+
+**Open.** Release signing key still debug; the release branch/pin decision
+and the first real tag remain (local publisher requires a clean tree whose
+HEAD is the tag).

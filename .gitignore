@@ -186,8 +186,10 @@ hang_trace.csv
 hang_fp_tail.csv
 hang_dump.log
 
-# release packaging output (tools/make_release.py)
+# release packaging output (tools/make_release.py, tools/make_appimage.py)
 release-stage/
+*.AppImage
+*.AppDir/
 
 # windows cross build (tools/win_cross_deps.py, tools/make_release.py --windows)
 cross-prefix/

@@ -107,6 +107,9 @@ art from [Justme488/3-D-Box-Art](https://github.com/Justme488/3-D-Box-Art)
 - **SHA-256:** `b375d9884033d55995bacc93cd8dfe34d48bfbac85d5e81fb2a9064b2f7db766`
   (the committed file must stay byte-identical to the upstream download; no
   re-encodes).
+- **AppImage icon:** `recomp/launcher/appimage-icon.png` is a 512x512
+  padded/resized derivative of the same box art, used only for the
+  AppImage/desktop icon.
 - **Posture decision:** this repo's default posture is "no game content in
   this repository". Shipping retail cover art of unknown provenance is a
   deliberate, explicitly signed-off exception (2026-10-16) made for the

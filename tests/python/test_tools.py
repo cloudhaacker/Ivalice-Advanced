@@ -838,6 +838,113 @@ vma:            Hint    Time      Forward  DLL       First
 
 
 
+class AppImageTests(unittest.TestCase):
+    """tools/make_appimage.py + tools/compat_build.py pure contracts.
+
+    The AppImage's two non-obvious promises are testable without building
+    or downloading anything: the AppRun wrapper must unpack into a
+    writable XDG data directory (the game writes sidecars beside its
+    executable) and must not delete player files on an update; the glibc
+    validator must reject a symbol floor newer than the SteamOS target.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        import compat_build  # noqa: E402 (tools/ on sys.path)
+        import make_appimage  # noqa: E402
+        cls.ai = make_appimage
+        cls.cb = compat_build
+
+    def test_apprun_uses_writable_xdg_data_dir(self):
+        s = self.ai.apprun_script("v1.7-deadbeef")
+        self.assertIn("XDG_DATA_HOME", s)
+        self.assertIn('DATA_ROOT="$XDG_DATA_HOME/ffta-recomp"', s)
+        self.assertIn('DEST="$DATA_ROOT/app"', s)
+        self.assertIn('cp -a "$APPDIR/usr/bin/." "$DEST/"', s)
+        self.assertIn('exec "$DEST/FFTARecomp" "$@"', s)
+
+    def test_apprun_update_preserves_player_files(self):
+        s = self.ai.apprun_script("v1.7-deadbeef")
+        # Updates copy the payload over the data dir; they must not wipe
+        # rom.cfg/config.ini/saves/ (the reason the wrapper exists).
+        self.assertNotIn('rm -rf "$DEST"', s)
+        self.assertIn("player files", s)
+
+    def test_apprun_steam_deck_defaults(self):
+        s = self.ai.apprun_script("v1.7-deadbeef")
+        self.assertIn('"${SteamDeck:-0}" = "1"', s)
+        self.assertIn("--fullscreen=1 --resize-view", s)
+        self.assertIn("FFTA_APPIMAGE_NO_DECK_DEFAULTS", s)
+        self.assertIn('*" --fullscreen"*', s)
+
+    def test_desktop_entry(self):
+        d = self.ai.desktop_entry("v1.7")
+        for line in ("Type=Application", "Name=FFTA Recomp",
+                     "Exec=FFTARecomp", "Icon=ffta-recomp",
+                     "Categories=Game;", "X-AppImage-Version=v1.7"):
+            self.assertIn(line, d)
+
+    def test_payload_id_is_content_addressed(self):
+        import tempfile
+        with tempfile.TemporaryDirectory(dir="/tmp") as td:
+            root = pathlib.Path(td)
+            (root / "a").write_bytes(b"one")
+            (root / "sub").mkdir()
+            (root / "sub" / "b").write_bytes(b"two")
+            first = self.ai.payload_id(root)
+            self.assertEqual(first, self.ai.payload_id(root))
+            self.assertEqual(len(first), 12)
+            (root / "sub" / "b").write_bytes(b"changed")
+            self.assertNotEqual(first, self.ai.payload_id(root))
+
+    def test_glibc_version_parser(self):
+        text = ("  (GLIBC_2.34) foo\n  (GLIBC_2.2.5) bar\n"
+                "  (GLIBC_2.43) baz\n")
+        self.assertEqual(self.cb.parse_glibc_versions(text),
+                         [(2, 2), (2, 34), (2, 43)])
+        self.assertEqual(self.cb.version_tuple("2.36"), (2, 36))
+        with self.assertRaises(self.cb.Fail):
+            self.cb.version_tuple("debian")
+
+    def test_glibc_floor_is_a_real_release_check(self):
+        # The exact failure that made the compat container necessary:
+        # a CachyOS build advertised GLIBC_2.43. The validator must treat
+        # anything above the pinned floor as a hard failure.
+        text = "  (GLIBC_2.43) atan2f\n"
+        versions = self.cb.parse_glibc_versions(text)
+        self.assertGreater(versions[-1], self.cb.version_tuple("2.36"))
+
+
+class PublishReleaseTests(unittest.TestCase):
+    """tools/publish_release.py — local build/verify/upload contract."""
+
+    @classmethod
+    def setUpClass(cls):
+        import publish_release
+        cls.pr = publish_release
+
+    def test_artifact_names(self):
+        n = self.pr.artifact_names("v1.7")
+        self.assertEqual(n["linux"], "FFTARecomp-v1.7-linux-x64.zip")
+        self.assertEqual(n["windows"], "FFTARecomp-v1.7-windows-x64.zip")
+        self.assertEqual(n["appimage"],
+                         "FFTARecomp-v1.7-linux-x86_64.AppImage")
+        self.assertEqual(n["apk"],
+                         "FFTARecomp-v1.7-android-arm64-v8a.apk")
+
+    def test_sums_text_is_sorted_and_sha256(self):
+        import tempfile
+        with tempfile.TemporaryDirectory(dir="/tmp") as td:
+            a = pathlib.Path(td) / "b.bin"
+            b = pathlib.Path(td) / "a.bin"
+            a.write_bytes(b"one")
+            b.write_bytes(b"two")
+            text = self.pr.sums_text([a, b])
+            self.assertEqual([line.split("  ")[1] for line in
+                              text.strip().splitlines()], ["a.bin", "b.bin"])
+            self.assertIn(hashlib.sha256(b"one").hexdigest(), text)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)
 

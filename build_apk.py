@@ -259,6 +259,10 @@ def step_preflight(skip_stale=False, installing=True):
 
 
 def device_attached():
+    # Packaging runs on headless runners that may not have platform-tools
+    # on PATH; no adb means no device to check, not a build failure.
+    if shutil.which("adb") is None:
+        return False
     r = run(["adb", "devices"], capture=True)
     if r.returncode != 0:
         return False

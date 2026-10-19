@@ -15,7 +15,10 @@ fallback) and the attract-mode regression hash stable since pinning. The
 Windows build is a static MinGW cross-compile from the same tree
 (`tools/make_release.py --windows` — zero DLL dependencies, import-table
 guarded, wine-smoked, byte-reproducible; see tests/README.md § the release
-packager). Android is
+packager). Linux/Steam Deck ships as a portable zip and an AppImage built
+in a Debian 12 container for a SteamOS-safe glibc floor (2.36); the
+AppImage's `AppRun` unpacks to a writable XDG data directory because the
+game keeps `rom.cfg`, settings and saves beside its executable. Android is
 device-verified on a Xiaomi Poco X3 Pro (Android 14): boot,
 press-acceptance, and the suspend/kill/relaunch lifecycle gates passed
 2026-10-09. Builds are experimental, so back up important saves and report
@@ -82,6 +85,28 @@ Headless flags (`--frames N`, `--no-window`, `--dump-png`, `--load-state`,
 not for play. Run modes and their traps:
 [tests/README.md](../tests/README.md) and
 [reference/dev-gotchas.md](../reference/dev-gotchas.md).
+
+## Releasing
+
+The public release never involves the ROM on GitHub. A `v*` tag workflow
+(GitHub-hosted) only creates a **draft** release shell; the maintainer
+builds and verifies the artifacts locally, where the dump lives:
+
+```sh
+python3 build.py
+.venv/bin/python tools/check.py --jobs 8
+.venv/bin/python tools/publish_release.py --version vX.Y
+# inspect the draft, then:
+.venv/bin/python tools/publish_release.py --version vX.Y --upload-only --publish
+```
+
+`publish_release.py` builds the Linux zip, public APK, static Windows zip,
+and Steam Deck AppImage (desktop binaries from the pinned Debian 12 compat
+container), re-verifies each artifact's guard, writes
+`SHA256SUMS-vX.Y.txt`, and uploads them to the tag's draft. The artifacts
+are ROM-less production builds: players pick their own dump in the
+launcher. `workflow_dispatch` on the tag workflow prepares the draft for an
+existing tag as a recovery path.
 
 ## Manual build route
 

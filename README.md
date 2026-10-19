@@ -55,8 +55,9 @@ or the system Back gesture (Esc again steps back inside the menu).
 
 ### Using a release binary (no build)
 
-Grab the latest release zip from [releases](../../releases) — Linux x64
-(`FFTARecomp-*-linux-x64.zip`) or Windows x64
+Grab the latest release from [releases](../../releases) — Linux x64
+(`FFTARecomp-*-linux-x64.zip`), Steam Deck/Linux AppImage
+(`FFTARecomp-*-linux-x86_64.AppImage`), or Windows x64
 (`FFTARecomp-*-windows-x64.zip`, statically linked, no DLLs) — then:
 
 1. Extract the folder anywhere **writable** — the ROM pick, menu
@@ -68,6 +69,28 @@ Grab the latest release zip from [releases](../../releases) — Linux x64
    and select **Play**. The pick is remembered, so later boots open ready
    to play — **Select ROM** re-picks, and dropping a `.gba` file onto the
    window works too.
+
+#### Steam Deck / AppImage
+
+Run the AppImage directly (Desktop Mode file manager, or add it as a
+non-Steam game). On first run it unpacks beside your user data under
+`~/.local/share/ffta-recomp/app` and runs from there, because the game
+writes `rom.cfg`, settings and saves beside the executable and an
+AppImage mount is read-only. Updating the AppImage refreshes the game
+files but keeps those player files.
+
+In Game Mode it defaults to borderless fullscreen with the
+resize-driven widescreen view; pass `--window`, `--scale` or
+`--view-width` to override, or set `FFTA_APPIMAGE_NO_DECK_DEFAULTS=1`.
+The launch-screen file picker uses the system dialog (zenity/kdialog on
+SteamOS). If that is unavailable, add `--rom /path/to/ffta.gba` as a
+Steam launch option once; the pick is remembered. If FUSE is unavailable,
+run with `APPIMAGE_EXTRACT_AND_RUN=1` or `--appimage-extract-and-run`.
+
+The release AppImage and Linux zip are built in a Debian 12 container
+(`tools/compat_build.py`) so their glibc floor (2.36) runs on SteamOS;
+a binary built on a rolling host can require a newer glibc than SteamOS
+ships.
 
 The launch BIOS is bundled — a clean-room, freely redistributable
 **emibios** build

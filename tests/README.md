@@ -476,12 +476,13 @@ Two tiers, split by what may leave your machine:
 - **Tier 2 — the full gate (`attract`, `ws_smoke`, route replays).** Needs
   `game.gba` + the sha-pinned local fixtures (`saves/ws_fixtures/`,
   `saves/regress/`), which are game-derived and never committed. Run it on
-  a **self-hosted runner with the material pre-placed**, or a job that
-  fetches a private fixture bundle under a token — gated to
-  `push`/`workflow_dispatch` and **never** exposed to fork-PR workflows
-  (a PR job on a runner that can read the ROM is an exfiltration path).
+  the **maintainer's machine**, or on a self-hosted runner with the
+  material pre-placed; it is never a GitHub-hosted job (the ROM-derived
+  corpus cannot be regenerated from a clean public checkout). The release
+  path is local: `tools/publish_release.py` builds, gates, and uploads the
+  artifacts; the tag workflow only creates the draft release shell.
   The sha pins (regress save + the ws fixtures) fail loudly if the
-  runner's fixtures drift.
+  fixtures drift.
 - The **`raylib-backend` job** (`.github/workflows/ci.yml`) is a second,
   independent tier-1 job for the experimental raylib backend
   (`gbarecompx/`, opt-in via `-DGBARECOMP_USE_RAYLIB=ON`). It runs
@@ -518,18 +519,32 @@ Two tiers, split by what may leave your machine:
   `GBARECOMP_STATIC_RELEASE`), guards the PE import table (system DLLs
   only — link-time `-s`, never post-link strip, per the R2 determinism
   lesson), sweeps the same ROM/BIOS/binary rules, and wine-smokes the
-  bare extraction to FULLY_STATIC.
-- **Release — `.github/workflows/release.yml` (tier 2, tag-triggered).**
-  A `v*` tag push (write access — fork PRs can never trigger it)
-  bootstraps the full tree on the self-hosted runner — the ROM comes from
-  the runner's `FFTA_ROM` env var (pre-placed outside the workspace, never
-  in git) and is copied in for the corpus regen only — then runs the full
-  gate and packages every artifact (`tools/make_release.py --apk`, and
-  the static Windows cross-build `--windows` once the prefix exists).
-  Every attached file is content-guarded **before** the release exists:
-  the zips by the make_release sweep (ROM sha1 under any name; the
-  Windows exe additionally by the PE static-link guard and a wine
-  FULLY_STATIC smoke), the APK by `android_apk_check --expect
-  public`. `workflow_dispatch` runs the whole pipeline except the attach
-  step — a rehearsal that publishes nothing.
+  bare extraction to FULLY_STATIC. `--binary build-compat/FFTARecomp`
+  stages the SteamOS-compatible (glibc 2.36) executable instead of the
+  host build.
+- The **AppImage packager** (`tools/make_appimage.py`) reuses the same
+  allowlist stage, adds the pinned appimagetool runtime, desktop entry and
+  icon, and a writable-XDG `AppRun` wrapper (the game writes `rom.cfg`,
+  settings and saves beside its executable; an AppImage mount is
+  read-only). It then extracts the finished AppImage and reruns the same
+  private-material sweep, and boots the packaged AppImage from a fresh
+  data dir to FULLY_STATIC. `tools/compat_build.py` builds the binary in
+  the pinned Debian 12 container (glibc 2.36) and fails if the required
+  GLIBC symbols are newer than the SteamOS floor.
+- **Release — `.github/workflows/release.yml` (GitHub-hosted, no
+  private material).** A `v*` tag push (write access — fork PRs can never
+  trigger it) creates a **draft** release shell for the tag. It does not
+  check out the game tree, run the corpus regen, or ask GitHub for the
+  ROM: the static corpus is ROM-derived and can only be produced on the
+  maintainer's machine. `workflow_dispatch` prepares the draft for an
+  existing tag as a recovery path. The maintainer runs
+  `tools/publish_release.py --version <tag>` locally: it builds the Linux
+  zip/APK, static Windows zip, and Steam Deck AppImage (the desktop
+  binaries from the pinned Debian 12 compat container), verifies every
+  artifact's guard (sweep, PE import table, AppImage squashfs + strict
+  smoke, APK `--expect public`), writes `SHA256SUMS-<tag>.txt`, uploads
+  them to the draft, and publishes only when `--publish` is passed. This
+  is the tier-2 posture with the private material kept entirely off
+  GitHub; the public artifacts stay ROM-less and ask the player for their
+  own dump in the launcher.
 

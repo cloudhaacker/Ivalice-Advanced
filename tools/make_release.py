@@ -42,7 +42,12 @@ than the corpus → refuse.
 
 Usage:
   .venv/bin/python tools/make_release.py [--version V] [--no-strip] [--clean]
+  .venv/bin/python tools/make_release.py --binary build-compat/FFTARecomp
   .venv/bin/python tools/make_release.py --apk   # + the public Android APK
+
+``--binary`` selects the Linux executable to stage (default
+``build/FFTARecomp``). Release cuts pass ``build-compat/FFTARecomp`` so
+the portable zip shares the AppImage's SteamOS-compatible glibc floor.
 
 Output (release-stage/, gitignored):
   FFTARecomp-<version>-linux-x64.zip    deterministic portable zip
@@ -382,7 +387,8 @@ def _check_corpus_fresh():
             hint="run tools/cycle.py (cold regen + build) before packaging")
     symbols = sorted((REPO / "symbols").glob("*.tsv"))
     src = [p for p in (REPO / "src").rglob("*") if p.is_file()]
-    inputs = ([REPO / "game.toml", REPO / "CMakeLists.txt", REPO / "generated"]
+    inputs = ([REPO / "game.toml", REPO / "CMakeLists.txt", REPO / "generated",
+               REPO / "gbarecompx/build/gba_recompile"]
               + symbols + src)
     missing = [str(p) for p in inputs if not p.exists()]
     if missing:
@@ -397,7 +403,7 @@ def _check_corpus_fresh():
                      "rewrites files lands here too; one cycle clears it)")
 
 
-def check_freshness():
+def check_freshness(binary=None):
     """Refuse to package a stale artifact (mirrors build_apk.py's gate).
 
     Three rules:
@@ -413,13 +419,14 @@ def check_freshness():
          no-op regen moves nothing and this stays true; a real corpus
          change is only linked by a rebuild, which moves the binary.
     """
-    if not BINARY.is_file():
-        die(f"missing {BINARY}",
+    binary = Path(binary) if binary else BINARY
+    if not binary.is_file():
+        die(f"missing {binary}",
             hint="build first: python3 build.py (or AGENTS.md § Commands)")
     _check_corpus_fresh()
     corpus_newest = newest_mtime([REPO / "generated"])
-    if BINARY.stat().st_mtime < corpus_newest:
-        die("build/FFTARecomp is older than the generated/ corpus",
+    if binary.stat().st_mtime < corpus_newest:
+        die(f"{binary} is older than the generated/ corpus",
             hint="re-run tools/cycle.py (rebuild), then package")
 
 
@@ -669,10 +676,19 @@ def stage_apk(version):
           f"size={dst.stat().st_size} (guard: --expect public)")
 
 
-def stage_release(version, strip=True):
-    """Build the allowlisted stage. Returns (stage_dir, folder_name)."""
-    folder = f"FFTARecomp-{version}-linux-x64"
-    stage = OUT_DIR / folder
+def stage_release(version, strip=True, binary=None, out_dir=None, folder=None,
+                  mods_dir=None):
+    """Build the allowlisted stage. Returns (stage_dir, folder_name).
+
+    ``binary``/``out_dir``/``folder``/``mods_dir`` let the AppImage builder
+    reuse the same allowlist + README staging for a compat-built executable
+    in its own output directory.
+    """
+    binary = Path(binary) if binary else BINARY
+    out_dir = Path(out_dir) if out_dir else OUT_DIR
+    folder = folder or f"FFTARecomp-{version}-linux-x64"
+    mods_dir = Path(mods_dir) if mods_dir else BUILD / "mods"
+    stage = out_dir / folder
     if stage.exists():
         shutil.rmtree(stage)
     stage.mkdir(parents=True)
@@ -682,9 +698,9 @@ def stage_release(version, strip=True):
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dst)
 
-    # Binary (stripped in-stage; build/FFTARecomp keeps its symbols for
+    # Binary (stripped in-stage; the source binary keeps its symbols for
     # dev-side addr2line crash triage).
-    cp_file(BINARY, "FFTARecomp")
+    cp_file(binary, "FFTARecomp")
     if strip:
         r = subprocess.run(["strip", str(stage / "FFTARecomp")],
                            capture_output=True, text=True)
@@ -692,7 +708,10 @@ def stage_release(version, strip=True):
             die("strip failed: " + r.stderr.strip(), hint="--no-strip skips it")
     os.chmod(stage / "FFTARecomp", 0o755)
 
-    shutil.copytree(BUILD / "mods", stage / "mods")
+    if not mods_dir.is_dir():
+        die(f"missing mods directory: {mods_dir}",
+            hint="build with -DGBARECOMP_ENABLE_MODS=ON (build.py does)")
+    shutil.copytree(mods_dir, stage / "mods")
 
     # Launch-screen box art — the raygui launcher loads assets/img/boxart.png
     # beside the exe via GetApplicationDirectory() (the dev build stages the
@@ -761,6 +780,10 @@ def main(argv=None):
                     help="override the version (default: git describe)")
     ap.add_argument("--no-strip", action="store_true",
                     help="ship the binary with symbols")
+    ap.add_argument("--binary", default=None,
+                    help="Linux executable to stage (default: "
+                         "build/FFTARecomp; release cuts pass "
+                         "build-compat/FFTARecomp)")
     ap.add_argument("--clean", action="store_true",
                     help="remove the stage dir after zipping")
     ap.add_argument("--apk", action="store_true",
@@ -783,11 +806,12 @@ def main(argv=None):
         OUT_DIR.mkdir(exist_ok=True)
         stage_windows(version, strip=not a.no_strip, jobs=8)
         return 0
-    check_freshness()
+    check_freshness(a.binary)
     version = a.version or git_version()
     OUT_DIR.mkdir(exist_ok=True)
 
-    stage, folder = stage_release(version, strip=not a.no_strip)
+    stage, folder = stage_release(version, strip=not a.no_strip,
+                                  binary=a.binary)
     violations = sweep_stage(stage)
     if violations:
         shutil.rmtree(stage)

@@ -47,12 +47,11 @@ REGEN_INPUTS = [
 ]
 SUBMODULE_MARKERS = [
     REPO / "gbarecompx/CMakeLists.txt",
-    REPO / "recomp-ui/CMakeLists.txt",
     REPO / "gbarecompx/external/arm-recomp-core/CMakeLists.txt",
     REPO / "gbarecompx/external/rbengine/CMakeLists.txt",
     REPO / "gbarecompx/external/recomp-net/CMakeLists.txt",
 ]
-N_STEPS = 9
+N_STEPS = 8
 
 
 class Fail(Exception):

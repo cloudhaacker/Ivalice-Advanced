@@ -103,7 +103,10 @@ cmake --build build --target FFTARecomp --parallel 8
 | CI subset (no dumps needed) | `--only unit-cpp,unit-py,android-static` — `.github/workflows/ci.yml` |
 | Android static checks (device-free) | `tools/android_static_check.py` — suite `android-static` in `tools/check.py` |
 | Android APK content guard | `tools/android_apk_check.py [--apk …] [--expect public/private]` — opt-in `check.py --only android-apk` |
-| Release packager (issue #3 R-track) | `.venv/bin/python tools/make_release.py [--apk \| --windows] [--version V]` — allowlist stage → private-material sweep → deterministic portable zip (Linux zip + public APK + static Windows exe) |
+| Release packager (issue #3 R-track) | `.venv/bin/python tools/make_release.py [--apk \| --windows] [--binary build-compat/FFTARecomp] [--version V]` — allowlist stage → private-material sweep → deterministic portable zip (Linux zip + public APK + static Windows exe) |
+| SteamOS compat binary (Steam Deck floor) | `.venv/bin/python tools/compat_build.py [--jobs N]` — Debian 12 container (glibc 2.36), refuses newer GLIBC symbols; output `build-compat/FFTARecomp` |
+| Steam Deck AppImage | `.venv/bin/python tools/make_appimage.py --version V --binary build-compat/FFTARecomp` — pinned appimagetool, writable-XDG AppRun, squashfs sweep, packaged FULLY_STATIC smoke |
+| Publish a release (local) | `.venv/bin/python tools/publish_release.py --version vX.Y [--upload-only \| --publish]` — builds all four public artifacts, verifies guards, writes `SHA256SUMS`, uploads to the tag's draft release; GitHub never sees the ROM |
 | MinGW cross prefix (R2) | `.venv/bin/python tools/win_cross_deps.py build` — pinned static raylib into `cross-prefix/` (idempotent `.done` markers; `status`, `clean`, `purge`) |
 | Widescreen smoke | `.venv/bin/python tools/ws_check.py` (fixtures `saves/ws_fixtures/`) |
 | Playtest (windowed, instrumented) | `tools/play.sh [--scale N \| --resize-view \| --tcp-observe PORT]` |
@@ -138,14 +141,18 @@ gap roll-in — issue #30 fixes);
 re-verified on device 2026-10-09 (boot gate, press acceptance, suspend/kill/
 relaunch lifecycle — guide `android/README.md`); **emibios migration**
 (issue #17) complete — launch BIOS is committed clean-room repo material;
-**release track** (issue #3) complete through R2 — Linux zip, public APK,
-and **static MinGW Windows exe**, all guarded, deterministic, and live on
-v1.5 (packager + cross-prefix machinery: `tools/make_release.py`,
-`tools/win_cross_deps.py`, `tools/mingw-x64.cmake`). Remaining:
+**release track** (issue #3) complete through the Steam Deck AppImage —
+Linux zip, public APK, **static MinGW Windows exe**, and the
+**glibc-2.35 AppImage** built in the pinned Debian 12 container, all
+guarded, deterministic where applicable, and live on v1.5/v1.6 (packager +
+cross-prefix + compat machinery: `tools/make_release.py`,
+`tools/win_cross_deps.py`, `tools/compat_build.py`,
+`tools/make_appimage.py`). Releases are built and uploaded locally
+(`tools/publish_release.py`); the tag workflow is GitHub-hosted and
+ROM-free — it only creates the draft release shell. Remaining:
 offline-push re-trial (gated on an interior-split policy), f6000+ contact
 sheet, upstream note on the bridge stop-contract, APK release-signing key
-(`gbaKeystore` vs debug — still debug-signed), runner registration
-(`release.yml` tag job still queues). History, evidence,
+(`gbaKeystore` vs debug — still debug-signed). History, evidence,
 crash playbooks: `BRINGUP.md`.
 
 ### CI, test ownership, and controller input (2026-10-17, complete)
