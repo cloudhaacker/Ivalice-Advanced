@@ -25,6 +25,11 @@ no Nintendo BIOS dump is required.
 - Keyboard, controller, and touchscreen controls
 - Windowed and fullscreen desktop play
 - Validated widescreen view up to 448 px
+- Present-time shader stack: MMPX edge smoothing, sharp scaling, pixel
+  grid, LCD subpixel grille, LCD boost, dither, and deband — each toggleable
+  in the in-game menu
+- Frame enhancements: frame interpolation (experimental) and LCD ghosting
+  (frame blending), also configurable in the in-game menu
 - Cartridge saves and save states
 - Fast-forward speed boost — hold `Tab` / right trigger, tap the `FF`
   touch pill, or latch it from the menu; speed (2–10x) set in Assist Tools

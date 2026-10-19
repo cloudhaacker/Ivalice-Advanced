@@ -9323,6 +9323,9 @@ material into `docs/manual-build.md`:
 - Made Steam Deck/SteamOS explicit in the intro, features, quick start,
   and system requirements, including the AppImage's writable XDG unpack,
   Game Mode display defaults, FUSE fallback, and the glibc 2.35 floor.
+- Features now lists the present-time shader stack (MMPX edge smoothing,
+  sharp scaling, pixel grid, LCD grille/boost/dither/deband) and frame
+  enhancements (interpolation, LCD ghosting/frame blending).
 - Removed the old SDL2/recomp-ui dependency claims from the player-facing
   text. Note: `origin/main` still carries the pre-raylib README; it updates
   only when PR #29 is merged.
