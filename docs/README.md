@@ -32,8 +32,9 @@ Dated evidence, history, and crash playbooks: [BRINGUP.md](../BRINGUP.md).
 
 This is not an emulator. *Final Fantasy Tactics Advance*'s ARM/Thumb
 machine code is statically translated ahead-of-time into host C++ by
-[gbarecomp](https://github.com/mstan/gbarecomp), compiled, and executed
-natively. The bundled clean-room BIOS
+[gbarecompx](https://github.com/james2doyle/gbarecompx) (the project's
+actively developed fork of [gbarecomp](https://github.com/mstan/gbarecomp)),
+compiled, and executed natively. The bundled clean-room BIOS
 ([bios/README.md](../bios/README.md)) is recompiled and linked like the rest
 of the machine.
 

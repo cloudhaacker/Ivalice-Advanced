@@ -1,10 +1,11 @@
 # Final Fantasy Tactics Advance Recomp
 
 > **Experimental preview.** This recompilation is built on
-> [gbarecomp](https://github.com/mstan/gbarecomp), the reusable
-> static-recompilation framework whose reference games are its proving
-> ground. This is not a finished commercial port, so expect rough edges and
-> please report problems. For more context, read
+> [gbarecompx](https://github.com/james2doyle/gbarecompx), the actively
+> developed fork of [gbarecomp](https://github.com/mstan/gbarecomp) — the
+> reusable static-recompilation framework whose reference games are its
+> proving ground. This is not a finished commercial port, so expect rough
+> edges and please report problems. For more context, read
 > [Recomp + AI: 5 Months Later »](https://1379.tech/recomp-ai-5-months-later/).
 
 Static recompilation of **Final Fantasy Tactics Advance** for Linux,

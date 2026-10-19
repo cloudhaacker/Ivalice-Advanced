@@ -9307,6 +9307,9 @@ material into `docs/manual-build.md`:
   Windows zip, the Steam Deck/SteamOS AppImage, and the public Android APK.
   Source-build requirements, the `build.py` route, the manual pipeline, the
   Android build, and contributor notes moved to `docs/manual-build.md`.
+- The top docblock now names `gbarecompx` — the actively developed fork
+  this project builds on — rather than upstream `gbarecomp`;
+  `docs/README.md`'s "What this is" follows.
 - Corrected the in-game menu trigger from `Esc` to `Del` (`HK_MENU` default
   `Delete`, `raylib_keymap.h`; see also `input_translate.h`). The menu
   navigates with the D-Pad/arrows, A confirms, B goes back; `Del`/Guide
