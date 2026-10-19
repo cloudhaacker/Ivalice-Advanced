@@ -40,6 +40,8 @@ jobs:
       - name: Create the draft release shell
         env:
           GH_TOKEN: ${{ github.token }}
+          # No checkout in this job: give gh the repository explicitly.
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
           set -e
