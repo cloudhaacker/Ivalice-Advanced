@@ -9404,3 +9404,32 @@ artifacts.
 `https://recomp.fyi/schema/v1.json` (draft 2020-12).
 
 **Commit.** This change.
+
+## 2026-10-19 — AppImage settings menu text: raygui same-texture-id font heal
+
+**Report.** Steam Deck/AppImage, launcher → select ROM → open the settings
+menu: the panel and widget shapes drew, but no menu text.
+
+**Root cause.** raylib disposes its default font on `CloseWindow` and reloads
+it on the next `InitWindow`; raygui's `GuiLoadStyleDefault` rebind guard
+compared only the font texture id. When the driver reused the launcher
+texture id for the game window's font, the guard short-circuited while
+`guiFont.recs`/`glyphs` still pointed into freed launcher-context memory.
+Shapes rendered (their texture is re-established by raylib's font load),
+text did not. `--rom` reproduces neither window transition, which is why the
+same build looked correct on the direct-boot path. Upstream raylib source
+confirms the default font's `CloseWindow` disposal; raygui source confirms
+the id-only identity check.
+
+**Fix.** `gbarecompx` `8b68302`: the raygui identity guard also compares the
+glyph-table pointers and rebinds the live default font. The existing
+unload/free path stays behind the different-id condition, so the same-id
+dangling tables are never freed a second time. Added a same-texture-id
+regression test (`corrupt_font_same_texture`); it fails without the guard
+change and passes with it.
+
+**Evidence.** Framework ctest 86/86; negative control fails at the new
+same-id assertion; game fast gate 7/7; the product build consumes the new
+pin. AppImage rebuild follows this pin.
+
+**Commit.** `gbarecompx` `8b68302`; game pin in this change.
