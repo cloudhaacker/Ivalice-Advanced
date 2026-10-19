@@ -229,6 +229,7 @@ dropped.
 | Harness traps: run modes, capture envs, close handling, RAM-dispatch, saves, submodule pins, Android native build + input traps | `reference/dev-gotchas.md` |
 | Oracle + frame-diff protocol (park phase, sync rules, builds) | `reference/oracle-harness.md` |
 | Widescreen internals + validation | `reference/widescreen.md` |
+| Fast-forward controls, 2–10x speed setting, expected behavior | `docs/fast-forward.md` |
 | Event VM + scripts | `reference/event-vm.md` |
 | Community source summaries (decomp, engine hacks, FAQs, notes) | `reference/{ffta-decomp,fergusson-mechanics,bcrobert-notes,jokyr-hack-guide,ffta-gamefaqs-code-guides}.md` |
 | BIOS boot/SoftReset/System-SPSR semantics (validated vs GBATEK + mGBA source) | `reference/gba-bios-boot-and-spsr.md` |

@@ -158,7 +158,7 @@ public path itself — preflight via `build_apk.py`, a **clean repackage**
 (`android/app/build` removed first; native objects under `android/app/.cxx`
 survive, so incremental-repackage slack can never strand bytes in the zip —
 the junk class the APK guard's packaging-sanity check rejects), then the
-[`tools/android_apk_check.py`](tools/android_apk_check.py) gate with
+[`tools/android_apk_check.py`](../tools/android_apk_check.py) gate with
 `--expect public` before staging `release-stage/FFTARecomp-<version>-android-arm64-v8a.apk`
 (debug-signed; the release-key decision is tracked on issue #3).
 
@@ -417,6 +417,10 @@ game directly, with the same mapping as desktop:
 | D-Pad | D-pad or the left stick (25% deadzone) |
 | Fast-forward (hold) | right trigger |
 | Settings menu | the pad's menu/center button, or the device Back key |
+
+Fast-forward speed (2–10x) is set in the in-game menu's **Assist** section,
+alongside the same control on desktop. Full controls and behavior:
+[`docs/fast-forward.md`](../docs/fast-forward.md).
 
 Why a capture layer exists (the short version): Android tags every input
 event with source flags, and some devices (the Odin, measured:

@@ -82,6 +82,14 @@ The screen model is also settable via `[video].screen` in
 `--view-width` changes the widescreen *view*, not the window — use
 `--scale` for window size.
 
+### Fast-forward
+
+Fast-forward controls, the in-game **Assist → Fast-forward speed** row
+(2–10x), and expected audio/frame behavior are documented in
+[fast-forward.md](fast-forward.md).
+
+### Headless flags
+
 Headless flags (`--frames N`, `--no-window`, `--dump-png`, `--load-state`,
 `--tcp-observe PORT`, …) exist for scripts, regression gates, and debugging,
 not for play. Run modes and their traps:

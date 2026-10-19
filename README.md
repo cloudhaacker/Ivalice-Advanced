@@ -31,8 +31,9 @@ no Nintendo BIOS dump is required.
 - Frame enhancements: frame interpolation (experimental) and LCD ghosting
   (frame blending), also configurable in the in-game menu
 - Cartridge saves and save states
-- Fast-forward speed boost — hold `Tab` / right trigger, tap the `FF`
-  touch pill, or latch it from the menu; speed (2–10x) set in Assist Tools
+- Fast-forward speed boost — hold `Tab` / right trigger, or tap the `FF`
+  touch pill to latch it; speed (2–10x) is set in the in-game menu's
+  **Assist** section
 - Strict fully-static execution — zero interpreter fallback on any executed
   path, kept that way by a self-healing coverage loop
 - GBA screen simulation: `raw`, `unlit`, `frontlit`, `backlit`, `classic`
@@ -51,16 +52,19 @@ no Nintendo BIOS dump is required.
 | Fast-forward (hold) | Tab | Right trigger |
 | In-game menu | Del | Guide button |
 
-Controllers are detected automatically, and button mappings can be changed
-in the in-game menu. The left analog stick doubles as the D-Pad. Inside the
-menu, the D-Pad/arrows move, A selects, and B goes back; `Del` or the Guide
-button opens and closes it. Fast-forward runs the game faster while held;
-its speed (2–10x) and key/pad bindings are configurable in the in-game menu.
+Controllers are detected automatically. The left analog stick doubles as
+the D-Pad. Inside the menu, the D-Pad/arrows move, A selects, and B goes
+back; `Del` or the Guide button opens and closes it. Fast-forward runs the
+game faster while held or latched; its speed (2–10x) is configurable in the
+in-game menu's **Assist** section.
 
 On Android, use the on-screen touch controls — tap the `FF` pill at the top
 of the screen to toggle the speed boost; open the menu with a long-press,
 three-finger tap, or the system Back gesture. Use the on-screen A/B buttons
 to select and go back inside the menu.
+
+Fast-forward controls, the 2–10x speed setting, and expected behavior are
+covered in [docs/fast-forward.md](docs/fast-forward.md).
 
 ## Quick start
 

@@ -9345,3 +9345,35 @@ save import (size-validated, mirrors to the external `saves/` dir);
 tools/check.py`; `git diff --check`.
 
 **Commit.** This change.
+
+## 2026-10-19 — Fast-forward speed exposed in the in-game menu
+
+**Issue.** The README claimed a 2–10x fast-forward speed adjustable in
+Assist Tools, but the raygui migration dropped recomp-ui's Assist page and
+the generic menu had no speed row. Only the hidden `config.ini [Launcher]`
+key and the 4x default reached the backend.
+
+**Action.** Added the missing control:
+
+- `Input::set_fast_forward_multiplier(int)` is a pure seam method (clamped
+  2–10) implemented by the raylib backend and test fakes.
+- The in-game menu has a new **Assist** section with a **Fast-forward
+  speed** StepInt row (2–10). The row updates the backend immediately.
+- The value persists in `config.ini [Menu]`; startup applies it after the
+  legacy `[Launcher]` loader so the menu's choice wins. Absent `[Menu]`
+  leaves the backend/game default untouched.
+- README corrected: removed the “latch it from the menu” and in-menu
+  key/pad-binding claims; speed is now documented in the Assist section.
+- Added `docs/fast-forward.md` — controls, 2–10x tuning and persistence,
+  audio/frame behavior, the touch latch's session lifetime, and
+  troubleshooting — linked from the root README, `docs/README.md`, and the
+  Android guide.
+
+**Evidence.** `gbarecompx` ctest 86/86; `host_menu_tests`,
+`menu_settings_tests`, `raylib_backend_v2_tests`, and
+`backend_v2_types_tests` pass; seam guard reports 61 interface methods
+across 7 surfaces; `tools/check.py --fast` ALL PASS 7/7; `FFTARecomp`
+builds.
+
+**Commit.** `gbarecompx` `ace70b3` (menu row + persistence) and
+`7c319eb` (capture-safe recomp-ui context update); game pin in this change.
