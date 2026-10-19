@@ -416,7 +416,7 @@ game directly, with the same mapping as desktop:
 | Start / Select | Start / Select |
 | D-Pad | D-pad or the left stick (25% deadzone) |
 | Fast-forward (hold) | right trigger |
-| Settings menu | the pad's menu/center button, or the device Back key |
+| Settings menu | the pad's menu/center button, the device Back key, or a screen long-press / three-finger tap |
 
 Fast-forward speed (2–10x) is set in the in-game menu's **Assist** section,
 alongside the same control on desktop. Full controls and behavior:
