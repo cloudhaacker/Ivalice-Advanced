@@ -9377,3 +9377,15 @@ builds.
 
 **Commit.** `gbarecompx` `ace70b3` (menu row + persistence) and
 `7c319eb` (capture-safe recomp-ui context update); game pin in this change.
+
+## 2026-10-19 — Menu section: System → Save states
+
+**Action.** Renamed the generic in-game menu section from **System** to
+**Save states**. Its rows are unchanged: Slot, Save state, Load state, and
+the trailing Resume game action. Updated the product-path menu and renderer
+tests to the new title; the old recomp-ui path keeps its historical
+"System"/"Assist Tools" labels because it is not the shipping surface.
+
+**Evidence.** `gbarecompx` ctest 86/86; seam guard 61/61.
+
+**Commit.** `gbarecompx` `7c95fac`; game pin in this change.
