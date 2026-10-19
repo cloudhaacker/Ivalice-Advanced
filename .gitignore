@@ -116,6 +116,8 @@ android/.gradle/
 android/local.properties
 .cxx/
 android/artifacts/
+# Shared raylib FetchContent base for Android builds (one checkout per ABI)
+android/.fetchcontent/
 android/signing.local.properties
 *.apk
 *.aab
@@ -184,10 +186,17 @@ hang_trace.csv
 hang_fp_tail.csv
 hang_dump.log
 
-# release packaging output (tools/make_release.py)
+# release packaging output (tools/make_release.py, tools/make_appimage.py)
 release-stage/
+*.AppImage
+*.AppDir/
 
 # windows cross build (tools/win_cross_deps.py, tools/make_release.py --windows)
 cross-prefix/
 cross-build/
 build-win/
+
+# -----------------------------------------------------------------------------
+# (removed 2026-10-18: the gbarecompx fork became the gbarecomp submodule —
+# see BRINGUP § Phase 7 close-out; no in-tree dev tree anymore)
+# -----------------------------------------------------------------------------

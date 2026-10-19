@@ -8,15 +8,15 @@ real hours once.
 ## Environment
 
 - Linux (Arch). No `pip3`/`arm-none-eabi-*`: use `uv` + `.venv/` (capstone).
-  Disassemble with `tools/disarm.py <start> <end> [arm|thumb]` (hex GBA
+  Disassemble with `gbarecompx/tools/disarm.py <start> <end> [arm|thumb]` (hex GBA
   addresses) via `.venv/bin/python`.
 - BIOS: `[bios] hle = false` requires a real dump at
-  `gbarecomp/bios/gba_bios.bin` (user-supplied, never committed; SHA-1
+  `gbarecompx/bios/gba_bios.bin` (user-supplied, never committed; SHA-1
   `300c20df6731a33952ded8c436f7f186d25d3492`). Never download a BIOS.
 - System mGBA (`mgba-qt` 0.10.5) is for manual eyeballing only — the
   validation harness uses the framework's own oracle:
   `reference/oracle-harness.md`.
-- `tools/disarm.py` halts silently at the first undecodable halfword — use
+- `gbarecompx/tools/disarm.py` halts silently at the first undecodable halfword — use
   narrow windows anchored on known boundaries, and always state the mode
   (`arm`/`thumb`): wrong-mode output reads as plausible garbage.
 - Data-vs-code traps: pointer tables masquerade as code (cross-check the
@@ -54,7 +54,7 @@ real hours once.
   IWRAM miss), `GBARECOMP_IWRAM_DUMP` (exit state), `GBARECOMP_WRAM_TRACE`
   +`_LO/_HI` (per-frame write diff), `GBARECOMP_INSN_TRACE=1` +
   `GBARECOMP_FP_SAVE` (per-instruction ring, ~8.4 M-insn window — size
-  `--frames` so the event lands inside; query with `tools/ringscan.py`).
+  `--frames` so the event lands inside; query with `gbarecompx/tools/ringscan.py`).
 - Pinned TCP surface: `step`/`run_frames`/`set_keyinput`/`screenshot`/
   `registers`/`state_hash` + memory reads exist; `run_to_pc`/`get_registers`/
   `call_stack`/`rdb_*` do not.
@@ -65,13 +65,39 @@ real hours once.
   session-5 acceptance replay runs 112,000 frames headless). Strict runs are
   faster and are the acceptance.
 
+## Pre-boot launch screen (the 2026-10 raygui launcher)
+
+- **Bare invocation opens the launch screen** — a real raylib window. Every
+  scripted/headless run must pass an explicit path or a headless flag:
+  `--rom`, `--bios`, `--no-window`, `--frames`, `--load-state`, `--tcp`
+  each skip the screen (`gbarecomp::launcher_should_skip_screen`); anything
+  else shows it. A CI job that boots the binary bare gets a window (or a
+  GL failure) instead of a game — that is the trap, not a hang.
+- **The screen never validates a ROM itself.** Picks flow through
+  `gbarecomp::resolve_asset` (hash + CRC validation, writes `rom.cfg`).
+  **Select ROM** uses the picker's forced path (bypasses a valid cache —
+  2026-10 repick fix); the first-boot auto-open uses the normal cache
+  fast path.
+- **No dialog provider = clean failure, never stdin.** Before showing a
+  dialog the picker probes with `tinyfd_openFileDialog("tinyfd_query", …)`:
+  `no_solution` (or any console mode) returns a hard error
+  ("no file dialog available; use --rom"). Headless/SSH/CI and wine
+  bare-extraction runs fail loudly instead of blocking. The wine release
+  smoke therefore always passes `--rom`/`--bios` explicitly
+  (`tools/make_release.py wine_smoke`).
+- **Box art is optional at runtime**: the launcher loads
+  `assets/img/boxart.png` beside the executable (CMake `stage_boxart`
+  target in dev builds; release staging copies it from
+  `recomp/launcher/boxart.png`). Missing file → the text fallback renders;
+  not an error.
+
 ## Sessions and close handling
 
 - Close with **ESC in-game** (verified clean, rc≈0, ~2 s teardown). The
   titlebar X / Alt+F4 close request is NOT delivered under the current SDL
   stack (binary links `sdl2-compat` = an SDL3 shim; BRINGUP § "Close-hang
   investigation"); SIGTERM/SIGINT are not close mechanisms either. Scripted
-  fallback: `.venv/bin/python tools/quit.py <tcp-observe port>` — play.sh
+  fallback: `.venv/bin/python gbarecompx/tools/quit.py <tcp-observe port>` — play.sh
   archives savestates/traces and flushes the miss frag on either path.
 - The `--tcp-observe` server serves ONE client at a time — disconnect
   watchers before probing or commands will time out.
@@ -113,7 +139,7 @@ recipe below is validated there.
   flag-read=1 count == exit count), then diff pc histograms between two
   dumps bracketing the event — a new/vanishing pc population is the
   behavioral delta (the SWI-family diff pinned the 2026-10-09 hang).
-  `tools/ringscan.py` queries the same files.
+  `gbarecompx/tools/ringscan.py` queries the same files.
 - **Guard-gate signature**: a depth-gated guard that never fires while the
   stack visibly grows → print `g_irq_nest_depth` at mainline PCs; a stuck
   ≥1 (poisoned by a guest-return × IRQ interleave) disables the
@@ -178,13 +204,6 @@ recipe below is validated there.
   (8.4M records; `<Q18I`: cycles, pc, cpsr, r0-r12, sp, lr) dumps without
   needing a clean process exit. This caught the 2026-10-09 handler-loss
   chain end to end (BRINGUP § true root).
-- **Recorded patch generation**: `git -C gbarecomp diff --no-ext-diff
-  --no-color -- <paths> > tools/patches/<name>.patch` — without both flags
-  the output is difft-rendered and/or ANSI-colored and fails `git apply`
-  (`tools/check.py --only patches` catches it). When exporting the OUTER
-  repo's consolidated patch, exclude a dirty nested submodule's gitlink
-  (`-- . ':(exclude)external/arm-recomp-core'`): GNU patch cannot apply a
-  `Subproject commit …-dirty` hunk.
 
 ## Android device forensics (no root)
 
@@ -236,8 +255,8 @@ access, which is enough:
 
 ## BIOS recompile, build, stack
 
-- BIOS recompile must run with cwd = `gbarecomp/` **and pass
-  `--config bios/gba_bios.toml`** — else output lands in the wrong
+- BIOS recompile must run with cwd = `gbarecompx/` **and pass
+  `--config ../bios/emibios_gba_bios.toml`** — else output lands in the wrong
   `src/runtime/generated_bios/`, or only 666 of 770 functions are discovered
   and strict runs abort on a miss at pc `0x300`. After generating, **re-run
   CMake configure** (not just build) so the framework re-detects
@@ -246,10 +265,10 @@ access, which is enough:
   (`src/main.cpp` `raise_stack_limit`; hard limit must be unlimited).
 - Windows cross build (`tools/make_release.py --windows`): the exception
   is prefix poisoning, not flags. If the exe links a third-party DLL
-  (objdump guard names it — `SDL2/libstdc++/libgcc/winpthread/freetype/
-  harfbuzz/zlib`), the cross prefix leaked a dynamic artifact: rebuild it
+  (objdump guard names it — `libstdc++/libgcc/winpthread/raylib deps`),
+  the cross prefix leaked a dynamic artifact: rebuild it
   (`tools/win_cross_deps.py build` prunes `*.dll`/`*.dll.a` after every
-  install by design), then the exe. If the game configure "loses" SDL2,
+  install by design), then the exe. If the game configure "loses" raylib,
   `GBARECOMP_MINGW_PREFIX_UNIX` must point at the prefix and
   `CMAKE_PREFIX_PATH` at the toolchain's `FFTACROSS_PREFIX` — the engine
   falls back to `C:/msys64/…` paths that don't exist on a Linux cross
@@ -276,38 +295,86 @@ access, which is enough:
   `.venv/bin/python tools/savecheck.py <save>` (raw 64 KiB images + RTN5
   containers; checksum = the game's own CRC, reversed + verified).
 - `[[code_copy]]` maps decoding only; runtime entry PCs inside a copied span
-  still need `[[extra_func]]` seeds (probe with `tools/misspack.py` +
+  still need `[[extra_func]]` seeds (probe with `gbarecompx/tools/misspack.py` +
   a source-side prologue scan).
 
-## Submodules and local framework patches
+## Submodules (the framework is the gbarecompx fork)
 
-- Pins (2026-10-06): gbarecomp @ `ecc9c55` (newest main, chosen
-  deliberately), recomp-ui @ `cac2b8f` (still the pin on 2026-10-12; it now
-  carries `tools/patches/recomp-ui-local.patch` as a working-tree edit —
-  39 upstream commits behind, a deliberate milestone to bump);
-  nested: arm-recomp-core @ 15fc7b7, rbengine @ 2a03e7, recomp-net @ c58f125.
-- `tools/patches/*.patch` are working-tree edits to `gbarecomp/`. Re-apply
-  after submodule updates with the **consolidated** patches — there are three
-  since 2026-10-12: `gbarecomp-local.patch` (one pristine→dev diff of
-  gbarecomp; exports with the nested gitlink excluded),
-  `arm-recomp-core-local.patch` (the nested `external/arm-recomp-core`
-  repo's first local patch) and `recomp-ui-local.patch` (the `recomp-ui/`
-  submodule; settings-overlay list scrolling, ffta-recomp issue #24 — the
-  runtime UI is recomp-ui code, so a menu behavior fix lives there, not in
-  `src/`); the per-feature files are reference diffs
-  only — their contexts interleave and do not stack in any order (verified
-  2026-10-09). `tools/check.py --only patches` validates all of them
-  (forward against the pristine pin, reverse when applied;
-  `arm-recomp-core-*` and `recomp-ui-*` files are routed to those repos by
-  filename prefix) and
-  **replays pin + each consolidated patch, requiring a byte-match with the
-  corresponding dev tree** — it fails on drift or a stale consolidated
-  patch. The recomp-ui tests that cover the patch run as suite `ui-tests`
-  (`tools/ui_check.py`). Re-export commands: `tools/patches/README.md`.
+- The `gbarecompx` submodule points at **james2doyle/gbarecompx**
+  (`https://github.com/james2doyle/gbarecompx.git`) — the framework fork
+  carrying every former local patch as committed history (launch screen,
+  tinyfiledialogs picker, emibios default BIOS, host-stack guard, SWI
+  ledger, mmio cap, …) plus the post-fork work (LCD/menu stack). There are
+  **no working-tree patches**: framework changes are fork commits, pushed,
+  then the game repo's gitlink moves.
+- Nested pins (inside the fork's own `.gitmodules`): arm-recomp-core →
+  james2doyle/arm-recomp-core @ `cd010b5`
+  (`feat/in-body-forward-goto` — in-body forward gotos, how the split
+  vblank loop stays in one host frame; master `1f13cdf` merged
+  `fix/link-startup-cycles`), rbengine @ `2a03e7`, recomp-net @ `c58f125`.
+- Framework upstream sync = merge `mstan/gbarecomp` main into the fork,
+  re-verify (attract + strict replays), push, then move the game repo's
+  gitlink — a deliberate milestone, not a routine pull (the 2026-10-12
+  drift lesson still applies; the `check.py --fast` gates referee it).
+- Dev-box fetch/push: on boxes where `https://github.com` hangs at a
+  credential prompt (headless, no helper), set a repo-local rewrite once —
+  `git config url."git@github.com:".insteadOf "https://github.com/"` — so
+  submodule fetches AND the raylib FetchContent clone go over SSH;
+  `.gitmodules` keeps the https URL for CI and fresh clones. Beware the
+  orphaned-`ninja` trap when killing a build: kill the `ninja` child too,
+  or the next `cycle.py` build races it and loses `.o` files at link.
+
+## Android native build + input traps (2026-10-17)
+
+- **`#if __ANDROID__` code has no desktop compile gate.** The stub and
+  headless tiers compile it out entirely; the first real syntax check is
+  the APK build's NDK compile. Commit AFTER an APK build verifies, not
+  before — the pad-hook work landed two android-only compile errors this
+  way (incomplete `android_app` type, then a missing include dir), both
+  invisible to every desktop tier.
+- **Gradle does not track submodule CMakeLists changes.** The `.cxx`
+  configure stays stale while edited sources recompile against old
+  include dirs ("file not found" for a header whose include dir was
+  just added). `touch CMakeLists.txt` (the GAME's — a tracked configure
+  input) forces the reconfigure — which then trips the APK preflight's
+  regen-stamp freshness check, so re-run `tools/cycle.py` to re-stamp
+  before rebuilding the APK.
+- **KeyCharacterMap fallback synthesis** (the "menu on B" mechanism): an
+  UNHANDLED key event makes the InputDispatcher synthesize the device
+  keymap's fallback — `Generic.kcm` maps `BUTTON_B→BACK`,
+  `BUTTON_A→DPAD_CENTER`, `BUTTON_X→DEL`, `BUTTON_SELECT→MENU` —
+  arriving ~36 ms after the raw press with
+  `AKEY_EVENT_FLAG_FALLBACK` (0x400) and keyboard auto-repeat while
+  held. Invisible to `getevent` (injected dispatcher-side, not via
+  uinput), so kernel captures look clean while the app sees doubles.
+  The runtime's Android pad hook consumes the gamepad-button range plus
+  fallback-tagged BACK/CENTER (`android_gamepad.h`; keycode-trust, not
+  source-trust), so real Back presses (no fallback flag) keep the menu
+  gesture. Debugging "button X opens the menu": the `pad-census:`
+  logcat lines print keycode, source AND flags — check the flag first.
 
 ## Run examples
 
 - Strict smoke: `GBARECOMP_STRICT_STATIC=1 ./build/FFTARecomp --bios
-  gbarecomp/bios/gba_bios.bin --rom game.gba --frames 2400 --no-window`
-- Session replay: `tools/resolve.py --trace <csv>`; coverage:
+  bios/emibios_gba_bios.bin --rom game.gba --frames 2400 --no-window`
+- Session replay: `gbarecompx/tools/resolve.py --trace <csv>`; coverage:
   `tools/coverage_report.py`.
+
+## Device gate: unattended runs bounce to the launcher (2026-10-16)
+
+`validate_android.sh` failed only "resumed activity" on a phone nobody
+was touching, while the app itself ran fine (log: cpu_backend, no misses,
+crash buffer clean — 5/6 checks passed). Reproduced: after
+force-stop + `am start` of `GbaSetupActivity` (AUTOSTART), the game
+resumes, then ~10 s later `ResumedActivity` reports the launcher —
+the ROM's `mUserActivityTimeoutOverrideFromWindowManager=10000` counts
+user-activity idle in 10 s when no human input lands, and the phone
+dozes/locks, bouncing the task to the launcher inside the gate's 40 s
+wait. adb `monkey`/`am start` do NOT reset that timer; the screen
+staying on (`stay_on_while_plugged_in=7`) does not either. Every gate
+that passed earlier ran with the phone attended. Recipe: wake + unlock
+(face/PIN) and have the user touch the phone around the gate's wait, or
+accept the 5-check evidence for an unattended install and re-run the
+resumed-activity check at the next attended session. (A future gate
+option: a `--wait-under-40` or an adb `input keyevent WAKEUP` inside the
+wait loop — untested; do not add blind.)

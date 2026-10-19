@@ -10,7 +10,7 @@ format_version = 1
 
 [[package]]
 id = "ffta.enhancement.widescreen"
-version = "1.0.0"
+version = "1.0.1"
 
 [[feature]]
 package_id = "ffta.enhancement.widescreen"

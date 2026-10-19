@@ -20,13 +20,15 @@ debugging recipe.
 ## How the port is structured
 
 The **app shell lives in the engine**, not this repo:
-`gbarecomp/platform/android/` (present at the pinned engine revision) carries
-the shared Gradle template (`gbarecomp-app.gradle`), the Java activities
-(`org.gbarecomp.GbaSetupActivity` — SAF file picker with size/SHA-1
-verification → app-private storage; `org.gbarecomp.GbaGameActivity`), the
-vendored SDLActivity sources, and the CMake root that builds SDL2 and then
-the game project. The game project must define a **SHARED target named
-`main`** (`libmain.so`, loaded by SDLActivity).
+`gbarecompx/platform/android/` (the raylib framework; the pinned submodule
+still carries the retired shell) carries the shared Gradle template
+(`gbarecomp-app.gradle`), the Java activities (`org.gbarecomp.GbaSetupActivity`
+— SAF file picker with size/SHA-1 verification → app-private storage;
+`org.gbarecomp.GbaGameActivity`, a `NativeActivity` subclass since Phase 4f),
+and the CMake root that builds the game project. The game project must define
+a **SHARED target named `main`** (`libmain.so`; the manifest's
+`android.app.lib_name` loads it, and the vendored `native_app_glue` runs
+`android_main` on its 256 MiB thread).
 
 This repo therefore adds only a thin surface:
 
@@ -37,8 +39,8 @@ This repo therefore adds only a thin surface:
 | `android/payload/mods/state.toml` | Default mod selection for fresh installs (widescreen on — see "Mods state" below) |
 | `android/{build,settings}.gradle`, `gradle.properties`, wrapper | Gradle 8.11.1 / AGP 8.10.1 project |
 | `android/app/src/main/res/…` | `app_name`, original vector launcher icon (no third-party art) |
-| `CMakeLists.txt` (`if(ANDROID)`) | Target `main` instead of `FFTARecomp`; forced mods; SDL/UI guards |
-| `src/main.cpp` | `mobile_prepare_process` preflight, phone run options, `SDL_main` via a 256 MiB pthread |
+| `CMakeLists.txt` (`if(ANDROID)`) | Target `main` instead of `FFTARecomp`; forced mods; raylib entry guards |
+| `src/main.cpp` | `mobile_prepare_process` preflight, phone run options, the NativeActivity `main` on the glue thread |
 | `tools/validate_android.sh` | Device acceptance gate (assertions + evidence pull) |
 | `tools/android_press_test.py` | On-device press acceptance over the observe TCP (savestate load → `set_keyinput` A press → frames/anomaly/crash assertions) |
 | `tools/android_lifecycle_test.py` | On-device suspend/kill/relaunch lifecycle gate (15 assertions: flush, marker survival, auto-resume, reconnect) |
@@ -91,7 +93,7 @@ runtime args can only arrive via an app-private `debug-args.txt` (adb
 - **Pad idle auto-hide**: the touch pad hides after 15 s of screen-wide
   touch inactivity (`touch_pad_idle_hide_seconds = 15` in `src/main.cpp`);
   any touch reveals it and then acts normally — a tap after the quiet
-  period is never swallowed (engine patch: `touch-pad-idle-hide.patch`).
+  period is never swallowed (framework fork feature).
 
 ## Mods state (why `payload/mods/state.toml` ships)
 
@@ -105,6 +107,11 @@ toggle the feature in the runtime settings menu (long-press / three-finger
 tap). Candidate upstream note for gbarecomp.
 
 ## Build (Linux)
+
+> The framework-level APK packaging rules (the scaffold contract, the
+> private/distributable personalities, corpus freshness, repackage
+> hygiene, versionName) live in `gbarecompx/packaging/README.md` §
+> Android (APK) — this section is the per-game operational recipe.
 
 One command wraps the whole private-build pipeline (preflight → Gradle →
 content guard → install + device gate):
@@ -120,9 +127,10 @@ follows.
 
 Prerequisites (this machine): JDK 21 (`/usr/lib/jvm/java-21-openjdk` — the
 default JDK 27 is too new for Gradle 8.11.1), Android SDK at
-`/opt/android-sdk` (platform 35, build-tools 35, cmake 3.22.1, NDK
-27.1.12297006), `adb`, and the engine's SDL submodule initialized
-(`git -C gbarecomp submodule update --init platform/android/third_party/SDL`).
+`/opt/android-sdk` (platform 35, build-tools 35, cmake 3.30.3, NDK
+28.2.13676358), `adb`, and the `gbarecompx` framework checkout (the Android
+scaffold base since Phase 4f; the Gradle project picks it up automatically
+when the directory exists).
 
 ```sh
 cd android
@@ -150,9 +158,18 @@ public path itself — preflight via `build_apk.py`, a **clean repackage**
 (`android/app/build` removed first; native objects under `android/app/.cxx`
 survive, so incremental-repackage slack can never strand bytes in the zip —
 the junk class the APK guard's packaging-sanity check rejects), then the
-[`tools/android_apk_check.py`](tools/android_apk_check.py) gate with
+[`tools/android_apk_check.py`](../tools/android_apk_check.py) gate with
 `--expect public` before staging `release-stage/FFTARecomp-<version>-android-arm64-v8a.apk`
 (debug-signed; the release-key decision is tracked on issue #3).
+
+**APK archive (device A/B comparisons)**: outgoing builds are kept under
+`android/artifacts/apk-archive/` (gitignored, like every APK output — private
+builds embed the ROM and are never committed) with a `MANIFEST.txt` and
+`SHA256SUMS.txt` naming each build's base; public release baselines live in
+`release-stage/`. Archive the outgoing build before a base swap (the Phase 4f
+raylib/NativeActivity move keeps the pre-4f build there), so device behavior
+can be compared side by side. All builds share the debug key, so
+`adb install -r` swaps them in place with saves preserved.
 
 ## Run + verify on device
 
@@ -179,6 +196,41 @@ adb shell run-as org.gbarecomp.fftarecomp cat files/android-runtime.log
 
 For TCP debugging: `adb forward tcp:19888 tcp:19888` plus `--tcp-observe
 19888` in `files/debug-args.txt`.
+
+## The Android pre-boot surface
+
+The **setup screen (`GbaSetupActivity`) is the Android launcher** — pure
+Android, laid out like the desktop launch screen: box-art panel (from the
+engine template's `launchBoxartRes` mechanism — staged as a
+`drawable-nodpi/launcher_boxart.png` from the tracked
+`recomp/launcher/boxart.png`, the same file the desktop build stages),
+title, the resolved ROM path in the status line, **PLAY**, **SELECT ROM**
+(the system file sheet — SAF, with size/SHA-1 verification), an optional
+save import, and the "skip this screen on launch when ready" checkbox.
+There is exactly one pre-boot screen per platform: this one on Android, the
+C++ raygui launch screen on desktop.
+
+Why the C++ launch screen is desktop-only (2026-10-16 device session): the
+mobile platform appends `--no-launcher` (the device gate and the
+suspend/resume lifecycle depend on an unattended boot), Android has no
+desktop file-dialog backends (tinyfiledialogs' no-backend path prints a
+banner and reads stdin), and a NativeActivity's event pump lives on the
+native thread — a modal pick across the SAF sheet starves it. The pure
+Android screen sidesteps all three.
+
+Debug affordances, all honored through the mutated-args skip
+classification (the native entry's argv is raylib's synthetic `{"raylib"}`,
+so classification must read the argument vector, not raw argv — guarded by
+`android-static`):
+
+- `--no-launcher` skips the desktop launch screen; `run_game` tolerates the
+  flag (a fatal "unknown argument" there once killed every mobile boot —
+  PLAY appeared dead).
+- `debug-args.txt` is **one-shot**: consumed and removed on the boot that
+  reads it, so a forced flag can't persist across relaunches. Write
+  `--launcher` (`adb shell run-as …`) to force the desktop screen for
+  development — its ROM picker has no Android backend and fails cleanly
+  (log line, never stdin).
 
 ## On-device suspend/resume protocol (the manual gate)
 
@@ -320,8 +372,8 @@ once a valid save exists in either location, `○ Not provided` otherwise —
 and PLAY is never gated on it (fresh start without a save stays one tap).
 The card only appears when the build declares `saveFile`/`saveSize`
 (`android/app/build.gradle`; engine placeholders `gbaSaveFile`/`gbaSaveSize`
-→ manifest `gbarecomp.save_file`/`save_size` → `GbaGameConfig`; local patch
-`tools/patches/android-save-picker.patch`).
+→ manifest `gbarecomp.save_file`/`save_size` → `GbaGameConfig`; framework
+fork code).
 
 Example — loading a desktop/emulator save on the phone (the battery save
 is always named `ffta_us.sav` regardless of where the original came from):
@@ -338,19 +390,51 @@ same rule). The one-time outward migration never overwrites an existing
 external copy, so an imported file is safe from it.
 
 How it works: `src/main.cpp` (Android only) resolves the external directory
-via `SDL_AndroidGetExternalStoragePath()`, one-time migrates any existing
+from the baked applicationId (`/sdcard/Android/data/<pkg>/files`), one-time
+migrates any existing
 app-private files outward (copy + size-verify + remove original, only when
 the external copy is absent — a player-imported file is never overwritten;
 the `.suspend.pending` marker is deliberately not migrated), then appends
 `--save-path` / `--state-dir` (CLI wins over the staged TOML). The engine
-knows `--state-dir` through a local patch (`tools/patches/
-android-external-state-dir.patch` — slots/suspend keep the ROM basename
-under that directory). When external storage is unavailable the staged
+knows `--state-dir` as framework fork code (slots/suspend keep the ROM
+basename under that directory). When external storage is unavailable the staged
 `game_android.toml` fallback (`files/saves/ffta_us.sav`, states next to the
 ROM in `files/roms/`) stands. The device lifecycle gate
 (`tools/android_lifecycle_test.py`) asserts the external locations, and
 `tools/android_static_check.py` pins the wiring (filenames ↔ `romFile` ↔
 TOML) device-free.
+
+## Controller support (2026-10-17)
+
+A gamepad — built-in, like the AYN Odin's, or USB/Bluetooth — drives the
+game directly, with the same mapping as desktop:
+
+| Action | Controller |
+|---|---|
+| A / B | A / B (label-wise) |
+| L / R | LB / RB |
+| Start / Select | Start / Select |
+| D-Pad | D-pad or the left stick (25% deadzone) |
+| Fast-forward (hold) | right trigger |
+| Settings menu | the pad's menu/center button, the device Back key, or a screen long-press / three-finger tap |
+
+Fast-forward speed (2–10x) is set in the in-game menu's **Assist** section,
+alongside the same control on desktop. Full controls and behavior:
+[`docs/fast-forward.md`](../docs/fast-forward.md).
+
+Why a capture layer exists (the short version): Android tags every input
+event with source flags, and some devices (the Odin, measured:
+`KEYBOARD | GAMEPAD | JOYSTICK`) flag their *button* events as keyboard
+too — raylib's Android backend then drops them, and the OS "helpfully"
+synthesizes fallback keys for the unhandled presses (the device keymap
+maps `BUTTON_B→BACK`, `BUTTON_A→DPAD_CENTER`: the classic "B opens the
+menu" symptom, arriving ~36 ms late with keyboard auto-repeat while
+held). The runtime captures gamepad events at the glue level and trusts
+the keycode, not the source bits — face buttons play as GBA buttons, the
+d-pad still reaches raylib's keyboard table for menu navigation, and a
+real Back press keeps its menu gesture (`android_gamepad.h` in the
+framework; the mechanism is written up in
+`reference/dev-gotchas.md`).
 
 ## Known behavior
 
@@ -362,8 +446,8 @@ TOML) device-free.
   `{0x08000428u, 1u, 1u, gf_vblank_wait_loop}` — a resume alias). The
   IRQ abandon-close (`d152a46`) additionally closes a handler that never
   iret'd, so a stalled spin can no longer leave `g_irq_nest_depth` stuck.
-- **Host-stack guard** (`tools/patches/host-stack-guard-desktop.patch`):
-  retained as the second line of defense — a spin that still fails to
+- **Host-stack guard** (framework fork code): retained as the second line
+  of defense — a spin that still fails to
   unwind (any other split loop) unwinds through the runtime's standard
   yield path before the 256 MiB game-thread stack is exhausted, logging
   `runtime: host-stack guard unwind count=… pc=…` to `android-runtime.log`.

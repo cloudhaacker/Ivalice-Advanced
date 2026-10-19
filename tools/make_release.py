@@ -8,11 +8,12 @@ produces a deterministic, portable archive (fixed timestamps, sorted
 entries, forward-slash names, permissions preserved).
 
 Layout — everything resolves beside the executable at runtime
-(launcher_seam state_path + GBARECOMP_DEFAULT_GAME_CONFIG="game.toml"):
+(GBARECOMP_DEFAULT_GAME_CONFIG="game.toml"; the pre-boot launch screen and
+the asset picker use the same sidecar chain):
 
     FFTARecomp-<version>-linux-x64/
       FFTARecomp                    stripped copy of build/FFTARecomp
-      assets/                       recomp-ui launcher fonts/img
+      assets/img/boxart.png         launch-screen box art
       mods/                         preloaded mod catalog (default-enabled)
       game.toml
       bios/emibios_gba_bios.bin     committed clean-room BIOS (LGPL)
@@ -20,8 +21,9 @@ Layout — everything resolves beside the executable at runtime
       README.md                     generated, self-contained (no dead links)
       LICENSE, LICENSES/, THIRD_PARTY_ATTRIBUTION.md
 
-config.ini/keybinds.ini/rom.cfg and saves/ are created beside the
-executable at runtime — extract to a writable folder.
+rom.cfg (the ROM pick's cache), config.ini/keybinds.ini (in-game menu
+state) and saves/ are created beside the executable at runtime — extract
+to a writable folder.
 
 Sweep (sweep_stage, unit-tested in tests/python/test_tools.py):
   - forbidden extensions .gba/.agb/.sav/.srm/.apk
@@ -30,7 +32,7 @@ Sweep (sweep_stage, unit-tested in tests/python/test_tools.py):
     under ANY name
   - no symlinks (a staged link could point outside the tree)
   - the required set present: binary (+ exec bit), config, pinned BIOS,
-    assets, mod manifest, README, LICENSE, LICENSES/LGPL, THIRD_PARTY
+    box art, mod manifest, README, LICENSE, LICENSES/LGPL, THIRD_PARTY
 
 Refuses a stale artifact (the build_apk.py gate, mirrored): no regen stamp
 → refuse; any regen input newer than generated/.regen_stamp → refuse (a
@@ -40,7 +42,12 @@ than the corpus → refuse.
 
 Usage:
   .venv/bin/python tools/make_release.py [--version V] [--no-strip] [--clean]
+  .venv/bin/python tools/make_release.py --binary build-compat/FFTARecomp
   .venv/bin/python tools/make_release.py --apk   # + the public Android APK
+
+``--binary`` selects the Linux executable to stage (default
+``build/FFTARecomp``). Release cuts pass ``build-compat/FFTARecomp`` so
+the portable zip shares the AppImage's SteamOS-compatible glibc floor.
 
 Output (release-stage/, gitignored):
   FFTARecomp-<version>-linux-x64.zip    deterministic portable zip
@@ -78,16 +85,13 @@ REQUIRED_FILES = [
     "README.md",
     "LICENSE",
     "LICENSES/LGPL-3.0-or-later.txt",
-    "LICENSES/ZLIB.txt",
-    "LICENSES/FTL.txt",
-    "LICENSES/MIT-harfbuzz.txt",
-    "LICENSES/ZLIB-SDL2.txt",
+    "LICENSES/ZLIB-raylib.txt",
+    "LICENSES/ZLIB-tinyfiledialogs.txt",
+    "LICENSES/ZLIB-raygui.txt",
     "THIRD_PARTY_ATTRIBUTION.md",
-    "mods/packages/ffta.enhancement.widescreen/1.0.0/manifest.toml",
+    "mods/packages/ffta.enhancement.widescreen/1.0.1/manifest.toml",
 ]
 REQUIRED_DIRS = [
-    "assets/fonts",
-    "assets/img",
 ]
 
 
@@ -100,8 +104,9 @@ def licenses_required():
     """Every license document required in every staged artifact (module
     helper so the sweep AND the unit test read the same contract)."""
     return ["LICENSE", "LICENSES/LGPL-3.0-or-later.txt",
-            "LICENSES/ZLIB.txt", "LICENSES/FTL.txt",
-            "LICENSES/MIT-harfbuzz.txt", "LICENSES/ZLIB-SDL2.txt"]
+            "LICENSES/ZLIB-raylib.txt",
+            "LICENSES/ZLIB-tinyfiledialogs.txt",
+            "LICENSES/ZLIB-raygui.txt"]
 
 
 def required_files(platform):
@@ -126,17 +131,20 @@ Linux x86-64, plus system libraries (packages):
 
 | Distro | Packages |
 |---|---|
-| Debian/Ubuntu | `libsdl2-2.0-0 libopengl0 libfreetype6 libharfbuzz0b` |
-| Fedora | `SDL2 mesa-libGL freetype harfbuzz` |
-| Arch | `sdl2 libgl freetype2 harfbuzz` |
+| Debian/Ubuntu | `libgl1 libglu1-mesa libx11-6` (any desktop install already has these) |
+| Fedora | `mesa-libGL mesa-libGLU` |
+| Arch | `mesa` (OpenGL; the X11 client libs are part of every desktop install) |
 
 ## Run
 
-1. Extract the folder anywhere **writable** — launcher settings and saves
-   are kept beside the executable.
-2. Run `./FFTARecomp`.
-3. In the launcher, pick your legally obtained *Final Fantasy Tactics
-   Advance* (USA) ROM, then **Play**.
+1. Extract the folder anywhere **writable** — your ROM pick, menu
+   settings, and saves are kept beside the executable.
+2. Run `./FFTARecomp` — the launch screen opens; the first boot opens the
+   native file picker right away.
+3. Pick your legally obtained *Final Fantasy Tactics Advance* (USA) ROM,
+   then **Play**. The pick is remembered (`rom.cfg`), so later boots open
+   ready to play; **Select ROM** re-picks, and passing `--rom <file>`
+   skips the screen entirely.
 
 The launch BIOS is bundled (`bios/emibios_gba_bios.bin` — a clean-room,
 freely redistributable build, LGPL-3.0-or-later). You never need a Nintendo
@@ -153,8 +161,8 @@ window-aspect-driven view; `--scale N` sets the window size
 
 ## Where files land (beside the executable)
 
-- `config.ini`, `keybinds.ini`, `rom.cfg` — launcher state, created on
-  first run
+- `rom.cfg` — the ROM pick's sidecar cache (created on first run)
+- `config.ini`, `keybinds.ini` — in-game menu settings and key bindings
 - `saves/ffta_us.sav` — the cartridge battery save
 
 ## Legal
@@ -186,7 +194,7 @@ WINE_FRAMES = 240
 # to dynamic (the exact regression D. static-release machinery exists to
 # prevent — and it fails silently at configure/link, so this is the gate).
 STATIC_FORBIDDEN_DLLS = frozenset({
-    "SDL2.DLL", "LIBSTDC++-6.DLL", "LIBGCC_S_SEH-1.DLL",
+"LIBSTDC++-6.DLL", "LIBGCC_S_SEH-1.DLL",
     "LIBWINPTHREAD-1.DLL", "FREETYPE-6.DLL", "HARFBUZZ-0.DLL",
     "ZLIB1.DLL",
 })
@@ -222,8 +230,7 @@ def win_configure_needed():
 def win_build_exe(jobs, strip):
     """Configure (if needed) + build the static release exe."""
     marker = CROSS_PREFIX / ".done"
-    missing = [d for d in ("zlib", "freetype", "harfbuzz", "sdl2")
-               if not any(marker.glob(f"{d}-*"))]
+    missing = [d for d in ("raylib",) if not any(marker.glob(f"{d}-*"))]
     if missing:
         die("cross prefix incomplete: " + ", ".join(missing),
             hint="run .venv/bin/python tools/win_cross_deps.py build "
@@ -235,7 +242,7 @@ def win_build_exe(jobs, strip):
         print(f"windows: (re)configuring build-win/ ({reason})")
         if WIN_BUILD.exists():
             shutil.rmtree(WIN_BUILD)
-        # -static-libgcc/-static-libstdc++: engine rule (gbarecomp
+        # -static-libgcc/-static-libstdc++: engine rule (the framework
         # CMakeLists — add_link_options in the subdir cannot reach the
         # parent exe target, so it comes via CMAKE_EXE_LINKER_FLAGS).
         # -s: strip at LINK time, not post-link (binutils strip rewrites
@@ -253,7 +260,6 @@ def win_build_exe(jobs, strip):
              "-DCMAKE_BUILD_TYPE=Release",
              f"-DCMAKE_EXE_LINKER_FLAGS={linker}",
              "-DGBARECOMP_STATIC_RELEASE=ON",
-             f"-DGBARECOMP_MINGW_PREFIX_UNIX={CROSS_PREFIX}",
              "-DFFTA_BUILD_TESTS=OFF"], env=env)
         if r.returncode != 0:
             die("windows cmake configure failed",
@@ -282,15 +288,22 @@ def check_static_link(exe):
         die("static release exe imports third-party DLLs: "
             + ", ".join(bad),
             hint="GBARECOMP_STATIC_RELEASE=ON fell back to dynamic "
-                 "(libSDL2.dll.a won over libSDL2.a?) — see the prefix "
-                 "prune_dynamic() rule in tools/win_cross_deps.py")
+                 "linking — see the prune_dynamic() rule in "
+                 "tools/win_cross_deps.py")
     return len(parse_import_dlls(r.stdout))
 
 
 def wine_smoke(zip_path, folder):
-    """Boot the packaged exe from a bare extraction under wine: launcher
-    config files beside the binary, --no-window headless, strict
-    FULLY_STATIC assertion (mirrors the desktop_accept acceptance shape).
+    """Boot the packaged exe from a bare extraction under wine: config
+    files beside the binary, --no-window headless, strict FULLY_STATIC
+    assertion (mirrors the desktop_accept acceptance shape).
+
+    The run passes the ROM explicitly (--rom/--bios): under wine there is
+    no native file dialog provider (no zenity/GetOpenFileName provider is
+    guaranteed), so a bare-extraction run would hard-fail at the picker's
+    fail-fast probe, not block — that is the designed behavior, not a
+    regression. Seeding rom.cfg into the extraction would also work; the
+    explicit flags are the simpler seed.
     """
     import tempfile
     tmp = Path(tempfile.mkdtemp(prefix="win-smoke-"))
@@ -305,8 +318,6 @@ def wine_smoke(zip_path, folder):
         env["WINEARCH"] = "win64"
         env["WINEPREFIX"] = str(tmp / "winehome")
         env["WINEDLLOVERRIDES"] = "mscoree,mshtml="
-        env["SDL_VIDEODRIVER"] = "dummy"
-        env["SDL_AUDIODRIVER"] = "dummy"
         r = subprocess.run(
             ["wine", str(root / "FFTARecomp.exe"),
              "--bios", "bios/emibios_gba_bios.bin",
@@ -376,7 +387,8 @@ def _check_corpus_fresh():
             hint="run tools/cycle.py (cold regen + build) before packaging")
     symbols = sorted((REPO / "symbols").glob("*.tsv"))
     src = [p for p in (REPO / "src").rglob("*") if p.is_file()]
-    inputs = ([REPO / "game.toml", REPO / "CMakeLists.txt", REPO / "generated"]
+    inputs = ([REPO / "game.toml", REPO / "CMakeLists.txt", REPO / "generated",
+               REPO / "gbarecompx/build/gba_recompile"]
               + symbols + src)
     missing = [str(p) for p in inputs if not p.exists()]
     if missing:
@@ -391,7 +403,7 @@ def _check_corpus_fresh():
                      "rewrites files lands here too; one cycle clears it)")
 
 
-def check_freshness():
+def check_freshness(binary=None):
     """Refuse to package a stale artifact (mirrors build_apk.py's gate).
 
     Three rules:
@@ -407,13 +419,14 @@ def check_freshness():
          no-op regen moves nothing and this stays true; a real corpus
          change is only linked by a rebuild, which moves the binary.
     """
-    if not BINARY.is_file():
-        die(f"missing {BINARY}",
+    binary = Path(binary) if binary else BINARY
+    if not binary.is_file():
+        die(f"missing {binary}",
             hint="build first: python3 build.py (or AGENTS.md § Commands)")
     _check_corpus_fresh()
     corpus_newest = newest_mtime([REPO / "generated"])
-    if BINARY.stat().st_mtime < corpus_newest:
-        die("build/FFTARecomp is older than the generated/ corpus",
+    if binary.stat().st_mtime < corpus_newest:
+        die(f"{binary} is older than the generated/ corpus",
             hint="re-run tools/cycle.py (rebuild), then package")
 
 
@@ -507,9 +520,9 @@ def readme_for(platform):
         body = rep(body,
             """| Distro | Packages |
 |---|---|
-| Debian/Ubuntu | `libsdl2-2.0-0 libopengl0 libfreetype6 libharfbuzz0b` |
-| Fedora | `SDL2 mesa-libGL freetype harfbuzz` |
-| Arch | `sdl2 libgl freetype2 harfbuzz` |
+| Debian/Ubuntu | `libgl1 libglu1-mesa libx11-6` (any desktop install already has these) |
+| Fedora | `mesa-libGL mesa-libGLU` |
+| Arch | `mesa` (OpenGL; the X11 client libs are part of every desktop install) |
 """,
             "")
         body = rep(body, "./FFTARecomp", "FFTARecomp.exe")
@@ -521,8 +534,9 @@ def stage_windows(version, strip=True, jobs=8):
     """Cross-configure (if needed) + build the static release exe, guard it,
     strip it in-stage, and stage the Windows layout (issue #3, R2).
 
-    The launcher boots from game.toml beside the exe; the ROM pick is the
-    player's own dump (issue #3 "bring your own ROM"). No ROM is embedded —
+    The launch screen boots from game.toml beside the exe; the ROM pick is
+    the player's own dump (issue #3 "bring your own ROM"). No ROM is
+    embedded —
     the sweep below proves it. build-win/ is preserved for inspection.
     """
     exe = win_build_exe(jobs, strip)
@@ -545,9 +559,9 @@ def stage_windows(version, strip=True, jobs=8):
     cp_file(exe, "FFTARecomp.exe")
     os.chmod(stage / "FFTARecomp.exe", 0o755)
 
-    # Runtime layout beside the exe (assets + mods land in build-win/ via
-    # the engine's POST_BUILD staging, exactly like build/ on Linux).
-    for sub in ("assets", "mods"):
+    # Runtime layout beside the exe (mods land in build-win/ via
+    # PostBuild staging).
+    for sub in ("mods",):
         src = WIN_BUILD / sub
         if not src.is_dir():
             die(f"windows build produced no {sub}/ beside the exe",
@@ -562,6 +576,11 @@ def stage_windows(version, strip=True, jobs=8):
     cp_file(REPO / "THIRD_PARTY_ATTRIBUTION.md", "THIRD_PARTY_ATTRIBUTION.md")
     (stage / "README.md").write_text(readme_for("windows"),
                                      encoding="utf-8")
+
+    # Launch-screen box art — the raygui launcher loads assets/img/boxart.png
+    # beside the exe via GetApplicationDirectory() (the dev build stages the
+    # same file from the same source via CMake's stage_boxart target).
+    cp_file(REPO / "recomp/launcher/boxart.png", "assets/img/boxart.png")
 
     violations = sweep_stage(stage, platform="windows")
     if violations:
@@ -590,8 +609,9 @@ def stage_apk(version):
 
     Gradle without -PprivateRom embeds no ROM: the app boots into the SAF
     setup flow (issue #3 "bring your own ROM"). Reuses build_apk.py's
-    preflight (JDK/SDK/NDK discovery + SDL submodule + dump verification —
-    the release runner carries the ROM for the bootstrap anyway), but its
+    preflight (JDK/SDK/NDK discovery + the raylib Android scaffold + dump
+    verification — the release runner carries the ROM for the bootstrap
+    anyway), but its
     own gradle call: build_apk.step_gradle bakes in -PprivateRom.
 
     The artifact passes tools/android_apk_check.py --expect public (the
@@ -633,7 +653,7 @@ def stage_apk(version):
     if r.returncode != 0:
         die("gradle assembleDebug (public) failed",
             hint="android/README.md § Build — JDK 21, SDK platform 35, NDK, "
-                 "SDL submodule are the usual suspects")
+                 "and the gbarecompx scaffold are the usual suspects")
     # AGP's debug output path; the engine's *-PRIVATE-rom-included rename
     # only applies to private builds, and build_apk.newest_apk() globs that
     # PRIVATE marker only — a public build is always right here.
@@ -656,10 +676,19 @@ def stage_apk(version):
           f"size={dst.stat().st_size} (guard: --expect public)")
 
 
-def stage_release(version, strip=True):
-    """Build the allowlisted stage. Returns (stage_dir, folder_name)."""
-    folder = f"FFTARecomp-{version}-linux-x64"
-    stage = OUT_DIR / folder
+def stage_release(version, strip=True, binary=None, out_dir=None, folder=None,
+                  mods_dir=None):
+    """Build the allowlisted stage. Returns (stage_dir, folder_name).
+
+    ``binary``/``out_dir``/``folder``/``mods_dir`` let the AppImage builder
+    reuse the same allowlist + README staging for a compat-built executable
+    in its own output directory.
+    """
+    binary = Path(binary) if binary else BINARY
+    out_dir = Path(out_dir) if out_dir else OUT_DIR
+    folder = folder or f"FFTARecomp-{version}-linux-x64"
+    mods_dir = Path(mods_dir) if mods_dir else BUILD / "mods"
+    stage = out_dir / folder
     if stage.exists():
         shutil.rmtree(stage)
     stage.mkdir(parents=True)
@@ -669,9 +698,9 @@ def stage_release(version, strip=True):
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dst)
 
-    # Binary (stripped in-stage; build/FFTARecomp keeps its symbols for
+    # Binary (stripped in-stage; the source binary keeps its symbols for
     # dev-side addr2line crash triage).
-    cp_file(BINARY, "FFTARecomp")
+    cp_file(binary, "FFTARecomp")
     if strip:
         r = subprocess.run(["strip", str(stage / "FFTARecomp")],
                            capture_output=True, text=True)
@@ -679,8 +708,15 @@ def stage_release(version, strip=True):
             die("strip failed: " + r.stderr.strip(), hint="--no-strip skips it")
     os.chmod(stage / "FFTARecomp", 0o755)
 
-    shutil.copytree(BUILD / "assets", stage / "assets")
-    shutil.copytree(BUILD / "mods", stage / "mods")
+    if not mods_dir.is_dir():
+        die(f"missing mods directory: {mods_dir}",
+            hint="build with -DGBARECOMP_ENABLE_MODS=ON (build.py does)")
+    shutil.copytree(mods_dir, stage / "mods")
+
+    # Launch-screen box art — the raygui launcher loads assets/img/boxart.png
+    # beside the exe via GetApplicationDirectory() (the dev build stages the
+    # same file from the same source via CMake's stage_boxart target).
+    cp_file(REPO / "recomp/launcher/boxart.png", "assets/img/boxart.png")
 
     cp_file(REPO / "game.toml", "game.toml")
     cp_file(REPO / "bios/emibios_gba_bios.bin", "bios/emibios_gba_bios.bin")
@@ -744,6 +780,10 @@ def main(argv=None):
                     help="override the version (default: git describe)")
     ap.add_argument("--no-strip", action="store_true",
                     help="ship the binary with symbols")
+    ap.add_argument("--binary", default=None,
+                    help="Linux executable to stage (default: "
+                         "build/FFTARecomp; release cuts pass "
+                         "build-compat/FFTARecomp)")
     ap.add_argument("--clean", action="store_true",
                     help="remove the stage dir after zipping")
     ap.add_argument("--apk", action="store_true",
@@ -766,11 +806,12 @@ def main(argv=None):
         OUT_DIR.mkdir(exist_ok=True)
         stage_windows(version, strip=not a.no_strip, jobs=8)
         return 0
-    check_freshness()
+    check_freshness(a.binary)
     version = a.version or git_version()
     OUT_DIR.mkdir(exist_ok=True)
 
-    stage, folder = stage_release(version, strip=not a.no_strip)
+    stage, folder = stage_release(version, strip=not a.no_strip,
+                                  binary=a.binary)
     violations = sweep_stage(stage)
     if violations:
         shutil.rmtree(stage)

@@ -1,7 +1,7 @@
 # CI tier 1 — fork-safe, no private material (no ROM/savestates; the launch
 # BIOS is committed clean-room repo material — bios/, issue #17).
-# Runs the host unit tests (C++/Python), the recomp-ui runtime-UI tests,
-# patch integrity, and the device-free Android checks on a fresh checkout. The full gate (attract,
+# Runs the host unit tests (C++/Python) and the device-free Android checks
+# on a fresh checkout. The full gate (attract,
 # widescreen smoke, route replays) needs game.gba + BIOS + the local
 # fixtures and belongs on a self-hosted runner gated to trusted events —
 # see tests/README.md § Continuous integration.
@@ -34,22 +34,169 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            ninja-build libsdl2-dev libgl-dev libfreetype-dev libharfbuzz-dev
+            ninja-build libgl-dev ccache
 
-      # unit-py imports tools/misspack.py, which needs capstone. Local runs
-      # always use .venv (docs/manual-build.md); the runner needs the same dep on
-      # the interpreter that runs check.py (sys.executable). Pinned to the
-      # .venv version; manylinux py3-none wheel, nothing to build.
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ffta-pip-${{ runner.os }}-py312-${{ hashFiles('.venv/pyvenv.cfg') }}
+          restore-keys: |
+            ffta-pip-${{ runner.os }}-py312-
+
+      # Cache ccache so C++ compiles reuse prior objects across runs.
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ffta-ccache-${{ runner.os }}-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: |
+            ffta-ccache-${{ runner.os }}-
+
+      # Cache the CMake build dir so `ffta_unit_tests` rebuilds incrementally.
+      - name: Cache CMake build dir
+        uses: actions/cache@v4
+        with:
+          path: build
+          key: ffta-build-${{ runner.os }}-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: |
+            ffta-build-${{ runner.os }}-
+
+      # The framework-protocol tools (misspack/disarm) moved into the
+      # gbarecompx submodule — their tests run in the fork's own guard job,
+      # so tier 1 needs no Python deps beyond the stdlib.
       - name: Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - name: Python deps (unit-py)
-        run: python3 -m pip install "capstone==5.0.7"
-
+      # The Phase 4c default (raylib ON) stands: the gbarecompx submodule
+      # (the framework fork) is fetched by the submodule step above, so
+      # GBARECOMP_ROOT resolves to it and the raylib gate is live.
+      # Tier-1 pins the stub backend (-DGBARECOMP_USE_RAYLIB=OFF): it is the
+      # cheap fork-safe gate (unit tests, no ROM, no raylib fetch). The
+      # raylib-backend job below runs the product configuration.
+      #
+      # rm -f CMakeCache.txt first: a restored build/ dir (cache step below,
+      # restore-keys fallback) carries cache values from older trees, and
+      # set(... CACHE) never overwrites an existing entry — the pre-rename
+      # GBARECOMP_ROOT (= gbarecomp) survived the gbarecompx rename and failed
+      # the checkout guard here (2026-10-17 CI incident). Deleting the cache
+      # file forces a clean reconfigure; ccache still makes the rebuild fast.
+      #
+      # run: | (literal block): the backslash continuations must stay real
+      # line continuations. In a folded plain scalar "\ " becomes an escaped
+      # space and the -D flags arrive as positional junk ("Ignoring extra
+      # path") — GBARECOMP_USE_RAYLIB=OFF silently never applied.
       - name: Configure
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+        run: |
+          rm -f build/CMakeCache.txt
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DGBARECOMP_USE_RAYLIB=OFF \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_C_COMPILER_LAUNCHER=ccache
 
-      - name: Gate (unit-cpp, unit-py, ui-tests, patches, android-static)
-        run: python3 tools/check.py --only unit-cpp,unit-py,ui-tests,patches,android-static
+      - name: Gate (unit-cpp, unit-py, android-static)
+        run: python3 tools/check.py --only unit-cpp,unit-py,android-static
+
+  raylib-backend:
+    # Compiles the raylib PRODUCT backend (the default since Phase 4c) and RUNS
+    # it headless. The gate configures the canonical `build/` dir with defaults
+    # only, so it also fails if the default flip regresses to the stub.
+    #
+    # GitHub's ubuntu runners have no GPU, no /dev/dri and no X server, so this
+    # is where the raylib path gets its first real signal from something other
+    # than a developer's desktop: Xvfb supplies a virtual X server and
+    # LIBGL_ALWAYS_SOFTWARE=1 puts Mesa's llvmpipe rasterizer underneath, which
+    # satisfies raylib's OpenGL 3.3 core requirement with no hardware. The gate
+    # picks that up automatically when there is no DISPLAY.
+    #
+    # Live since the gbarecompx fork became the gbarecompx submodule
+    # (2026-10-18): the framework — and its raylib backend — is fetched by
+    # the submodule step, so this job exercises the product configuration
+    # on every push.
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Pinned submodules
+        run: |
+          git submodule update --init --recursive
+          git submodule update --checkout --recursive
+
+      - name: System packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build pkg-config git ca-certificates \
+            libgl-dev libx11-dev libxrandr-dev libxinerama-dev \
+            libxcursor-dev libxi-dev libxkbcommon-dev \
+            xvfb libgl1-mesa-dri ccache
+
+      # Cache ccache across runs; the raylib _deps cache (below) stays keyed on
+      # gbarecompx/CMakeLists.txt so a pin bump re-clones cleanly.
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ffta-ccache-raylib-${{ runner.os }}-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: |
+            ffta-ccache-raylib-${{ runner.os }}-
+
+      # Configures build/ with default flags (raylib is the product default
+      # since Phase 4c) and builds gbarecomp_raylib_backend. The present-
+      # pipeline runtime coverage moved to the framework's own CI
+      # (gbarecompx raylib job: tests/runtime/raylib_present_test.cpp under
+      # Xvfb+llvmpipe) with the 2026-10-17 ownership split — this job keeps
+      # the product-config compile + the default-flip guard.
+      # Deliberately builds nothing that needs the ROM: generated/ is
+      # gitignored, and the backend link is lean (raylib +
+      # gbarecomp_raylib_backend only) precisely so it works on a fresh
+      # checkout.
+      # Pre-Phase-7 this job skips (no gbarecompx tree); once the framework is
+      # tracked, the suite configures build/ and fetches raylib — cache the
+      # clone + build so runs reuse it.
+      - name: Cache raylib FetchContent (clone + build)
+        uses: actions/cache@v4
+        with:
+          path: build/_deps
+          key: ffta-raylib-deps-${{ runner.os }}-${{ hashFiles('gbarecompx/CMakeLists.txt') }}
+
+      - name: "Gate (raylib-compile: build + run headless under Xvfb)"
+        run: CC="ccache gcc" CXX="ccache g++" python3 tools/check.py --only raylib-compile
+
+  android-lint:
+    # Android Lint over the app module (the engine-template activities) plus
+    # shellcheck over tools/*.sh. The gate is zero lint ERRORS: the current
+    # baseline is 12 warnings, all documented deliberate choices (the
+    # landscape lock, the Gradle pin, the dynamic box-art resource) — a new
+    # warning is visible in the report, a new error fails the build. No ROM
+    # or private material: the public lint path only. ubuntu runners ship
+    # the Android SDK; setup-java pins the JDK the wrapper wants (JDK 21,
+    # android/README.md) and caches Gradle.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Pinned submodules
+        run: |
+          git submodule update --init --recursive
+          git submodule update --checkout --recursive
+
+      - name: Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Android Lint
+        run: |
+          cd android
+          ./gradlew :app:lintDebug --console=plain
+
+      - name: ShellCheck (tools/*.sh)
+        run: shellcheck -S warning tools/*.sh

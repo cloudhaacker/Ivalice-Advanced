@@ -1,0 +1,35 @@
+# Steam-Deck-compatible Linux build environment (AppImage + portable zip).
+#
+# The host release build is intentionally not the compatibility baseline:
+# a rolling distro (CachyOS/Arch) links the executable against its current
+# glibc (GLIBC_2.43 at the time of writing), which SteamOS does not provide.
+# Build the shipped desktop binary inside this pinned Debian 12 image
+# (glibc 2.36), then package that binary for Linux/AppImage.
+#
+# Pinned by digest: a moving debian:12-slim tag must not silently change
+# the compatibility floor. Update the digest and tools/compat_build.py's
+# default max glibc together when deliberately raising the floor.
+FROM docker.io/library/debian:12-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      build-essential \
+      ca-certificates \
+      cmake \
+      git \
+      ninja-build \
+      pkg-config \
+      python3 \
+      libgl-dev \
+      libglu1-mesa-dev \
+      libx11-dev \
+      libxrandr-dev \
+      libxinerama-dev \
+      libxcursor-dev \
+      libxi-dev \
+      libxkbcommon-dev \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src

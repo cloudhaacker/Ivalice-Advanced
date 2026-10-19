@@ -16,7 +16,7 @@ Usage:
 --log uses an existing native run log instead of running (implies --no-run).
 The trials always regenerate from game.toml into a throwaway temp dir with a
 cold cache; game.toml and generated/ are never touched. Assumes build/ and
-gbarecomp/build/gba_recompile are up to date.
+gbarecompx/build/gba_recompile are up to date.
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-RECOMPILER = ROOT / "gbarecomp/build/gba_recompile"
+RECOMPILER = ROOT / "gbarecompx/build/gba_recompile"
 NATIVE = ROOT / "build/FFTARecomp"
 GAME_TOML = ROOT / "game.toml"
 

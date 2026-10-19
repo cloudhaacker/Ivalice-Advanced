@@ -123,7 +123,7 @@ def oracle_seq():
     proc = subprocess.Popen(
         [str(ORACLE), "--bios", str(BIOS), "--rom", str(pathlib.Path(tmp) / "game.gba"),
          "--port", str(port)],
-        cwd=str(REPO / "gbarecomp"), stdout=subprocess.DEVNULL,
+        cwd=str(REPO / "gbarecompx"), stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL)
     c = Client(port, timeout=120)
     out = []

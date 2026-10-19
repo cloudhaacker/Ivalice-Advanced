@@ -11,6 +11,10 @@ build, and self-tests the device gate script against a fake `adb`:
             enabled (the second-launch fix) and matches the preloaded catalog
   hygiene   no ROM/save/APK/binary artifacts tracked; android build outputs
             stay gitignored
+  scaffold  the Android base is the raylib/NativeActivity scaffold: no SDL
+            submodule entry/gitlink, no SDLActivity, no SDL CMake subproject,
+            no sdlRoot in the Gradle plugin (Phase 4f). The retired desktop
+            SDL stack (Track L) is out of scope.
   gate      tools/validate_android.sh passes a clean fake-device run (evidence
             pulled) and fails SELF-HEAL / missing-log / crash-buffer /
             setup-still-resumed runs; usage errors exit 2
@@ -33,10 +37,11 @@ try:
 except ModuleNotFoundError:  # Python 3.10 (tomllib landed in 3.11)
     _tomllib = None
 
-# Standard GBA BIOS dump hash, mirrored by the engine template's default.
-RETAIL_BIOS_SHA1 = "300c20df6731a33952ded8c436f7f186d25d3492"
 # The committed clean-room BIOS pin (emibios main @c4d5d71,
-# https://github.com/coolbho3k/emibios — LGPL-3.0-or-later).
+# https://github.com/coolbho3k/emibios — LGPL-3.0-or-later) — the engine
+# template's default since the 2026-10-18 fork flip. The retail dump hash
+# lives in the engine (gba_bios.h kExpectedSha1) and
+# THIRD_PARTY_ATTRIBUTION.md; it is no longer a default anywhere.
 EMIBIOS_SHA1 = "0c0d404d16c6b55b3071aba714f82077da132f14"
 
 
@@ -217,8 +222,8 @@ def check_bios_pins():
     # The launch BIOS is the committed clean-room emibios (issue #17):
     # every pin — both game TOMLs, the build.gradle manifest pin, and the
     # committed bin itself — must agree, the payload must stage it, and the
-    # engine-side acceptance (launcher pin-set + public-guard exemption)
-    # must exist in the tree or the recorded patch (fresh clones).
+    # engine-side acceptance (bios pin-set + public-guard exemption) must
+    # exist in the framework tree (the gbarecompx fork submodule).
     game = load_toml("game.toml")
     android = load_toml("android/game_android.toml")
     for name, toml in (("game.toml", game), ("android/game_android.toml", android)):
@@ -252,47 +257,44 @@ def check_bios_pins():
     need("bios/emibios_gba_bios.bin\"), into: \"bios\"" in gradle,
          "android/app/build.gradle payloadDirs must stage "
          "bios/emibios_gba_bios.bin into the payload bios/ dir")
-    # Upstream's engine template keeps the retail default as the fallback
-    # for games that do not declare their own BIOS; our build.gradle
-    # override is the pin that reaches the manifest. A change here means
-    # upstream moved the default and the exemption review needs a re-look.
-    template = REPO / "gbarecomp/platform/android/gbarecomp-app.gradle"
+    # Upstream's engine template carried a retail default as the fallback
+    # for games that do not declare their own BIOS; the gbarecompx fork
+    # flipped that default to the clean-room emibios (2026-10-18). The
+    # game's build.gradle override is the pin that reaches the manifest.
+    # Any OTHER value means the default moved again — re-review the
+    # public-guard exemption (emibios-public-guard-bundled semantics).
+    template = REPO / "gbarecompx/platform/android/gbarecomp-app.gradle"
     need(template.is_file(),
          "%s missing — initialize the gbarecomp submodule"
          % template.relative_to(REPO))
     default = one(r'gbaBiosSha1:\s*g\.biosSha1\s*\?:\s*"([0-9a-f]{40})"',
                   template.read_text(encoding="utf-8"),
                   "engine biosSha1 default")
-    need(default == RETAIL_BIOS_SHA1,
-         "engine template biosSha1 default changed from the retail "
-         "fallback %s to %s — deliberate? Re-review the public-guard "
-         "exemption (emibios-public-guard-bundled.patch)" % (RETAIL_BIOS_SHA1, default))
+    need(default == EMIBIOS_SHA1,
+         "engine template biosSha1 default %s != the emibios default %s "
+         "— deliberate? Re-review the public-artifact guard exemption "
+         "(a declared pin equal to the retail hash must stay "
+         "unbundleable)" % (default, EMIBIOS_SHA1))
 
 
 def check_emibios_engine_acceptance():
     # The engine must actually accept the clean-room BIOS on both surfaces:
-    # the launcher's bios_verify (pin set {retail, emibios}) and the Android
-    # public-artifact guard (declared-bundled-BIOS exemption). On a fresh
-    # clone (pristine submodule) the acceptance lives in the recorded
-    # patches, so accept either form (the `patches` suite pins fidelity).
+    # the bios pin-set (gba_bios.h kEmibiosSha1 — pin set {retail, emibios},
+    # recognized by the asset picker) and the Android public-artifact guard
+    # (declared-bundled-BIOS exemption). On a fresh clone (pristine
+    # submodule) the acceptance lives in the recorded patches, so accept
+    # either form (the `patches` suite pins fidelity).
     sources = ""
-    for rel in ("gbarecomp/src/gba/gba_bios.h",
-                "gbarecomp/src/runtime/launcher_seam.h",
-                "gbarecomp/platform/android/gbarecomp-app.gradle"):
+    for rel in ("gbarecompx/src/gba/gba_bios.h",
+                "gbarecompx/src/runtime/launcher_seam.h",
+                "gbarecompx/platform/android/gbarecomp-app.gradle"):
         path = REPO / rel
         if path.is_file():
             sources += path.read_text(encoding="utf-8")
-    recorded = ""
-    for rel in ("tools/patches/gbarecomp-local.patch",
-                "tools/patches/emibios-launcher-pin-set.patch",
-                "tools/patches/emibios-public-guard-bundled.patch"):
-        path = REPO / rel
-        if path.is_file():
-            recorded += path.read_text(encoding="utf-8") + "\n"
     def present(token, what):
-        need(token in sources or token in recorded,
-             "%s missing from both the gbarecomp tree and the recorded "
-             "patches" % what)
+        need(token in sources,
+             "%s missing from the gbarecomp framework tree (the "
+             "gbarecompx fork submodule)" % what)
     present("kEmibiosSha1", "the emibios pin constant (gba_bios.h)")
     present("GbaBios::kEmibiosSha1",
             "the launcher pin-set verify (launcher_seam.h)")
@@ -369,21 +371,16 @@ def check_save_picker_wiring():
     need(save_size == android["save"]["size"] == game["save"]["size"],
          "saveSize mismatch: build.gradle=%d game_android.toml=%d game.toml=%d"
          % (save_size, android["save"]["size"], game["save"]["size"]))
-    # Engine template + manifest plumbing (working tree or recorded patch —
-    # fresh clones check out pristine submodules; see check_save_external_wiring).
-    template = read_text("gbarecomp/platform/android/gbarecomp-app.gradle")
-    manifest = read_text("gbarecomp/platform/android/AndroidManifest.xml")
+    # Engine template + manifest plumbing (the gbarecompx fork submodule —
+    # the fork carries the save-picker wiring as committed code; see
+    # check_save_external_wiring).
+    template = read_text("gbarecompx/platform/android/gbarecomp-app.gradle")
+    manifest = read_text("gbarecompx/platform/android/AndroidManifest.xml")
     config_java = read_text(
-        "gbarecomp/platform/android/java/org/gbarecomp/GbaGameConfig.java")
+        "gbarecompx/platform/android/java/org/gbarecomp/GbaGameConfig.java")
     setup_java = read_text(
-        "gbarecomp/platform/android/java/org/gbarecomp/GbaSetupActivity.java")
-    recorded = ""
-    for rel in ("tools/patches/gbarecomp-local.patch",
-                "tools/patches/android-save-picker.patch"):
-        path = REPO / rel
-        if path.is_file():
-            recorded += path.read_text(encoding="utf-8") + "\n"
-    combined = template + manifest + config_java + setup_java + recorded
+        "gbarecompx/platform/android/java/org/gbarecomp/GbaSetupActivity.java")
+    combined = template + manifest + config_java + setup_java
     for token, what in (
             ("gbaSaveFile", "engine placeholder gbaSaveFile"),
             ("gbaSaveSize", "engine placeholder gbaSaveSize"),
@@ -395,7 +392,7 @@ def check_save_picker_wiring():
             ("installVerifiedSave", "setup save installer"),
             ("hasSaveImport", "setup save-card gate"),
             ("externalSaveFile", "setup external mirror"),
-            ("Save data (optional)", "setup save card")):
+            ("IMPORT SAVE", "setup save affordance (launch-screen redesign)")):
         need(token in combined,
              "save-picker token %r missing (%s)" % (token, what))
     # The import is optional: ready() must not consult the save state.
@@ -422,7 +419,9 @@ def check_save_external_wiring():
          "game_android.toml [save].path must keep the app-private fallback "
          "saves/ffta_us.sav, found %r" % android["save"]["path"])
     main = read_text("src/main.cpp")
-    need("SDL_AndroidGetExternalStoragePath" in main,
+    # The lookup is the baked applicationId (the raylib/NativeActivity base
+    # since Phase 4f; the pre-4f shell asked its own storage API instead).
+    need("GBARECOMP_ANDROID_PACKAGE" in main and "/sdcard/Android/data/" in main,
          "src/main.cpp lost the external-storage lookup (issue #6)")
     for token in ("--save-path", "--state-dir", "saves/ffta_us.sav",
                   "ffta_usa.state", "ffta_usa.suspend.state",
@@ -436,27 +435,12 @@ def check_save_external_wiring():
          "from it)")
     need("ffta_usa" in main,
          "src/main.cpp state basenames drifted from romFile ffta_usa.gba")
-    runtime = read_text("gbarecomp/src/runtime/runtime.cpp")
+    runtime = read_text("gbarecompx/src/runtime/runtime.cpp")
     runtime_ok = ('"--state-dir"' in runtime and "args->state_dir" in runtime
                   and "state_base" in runtime)
-    if not runtime_ok:
-        # Fresh clones (CI tier 1) check out pristine submodules, so the
-        # knob lives only in the recorded patches until applied. Accept
-        # the working tree or the recorded diff (the `patches` suite pins
-        # patch<->pin fidelity separately).
-        recorded = ""
-        for rel in ("tools/patches/gbarecomp-local.patch",
-                    "tools/patches/android-external-state-dir.patch"):
-            path = REPO / rel
-            if path.is_file():
-                recorded += path.read_text(encoding="utf-8") + "\n"
-        runtime_ok = ('"--state-dir"' in recorded
-                      and "args->state_dir" in recorded
-                      and "state_base" in recorded)
     need(runtime_ok,
-         "engine --state-dir knob missing from gbarecomp/src/runtime/"
-         "runtime.cpp and the recorded patches (slots/suspend would stay "
-         "app-private)")
+         "engine --state-dir knob missing from gbarecompx/src/runtime/"
+         "runtime.cpp (slots/suspend would stay app-private)")
     lifecycle = read_text("tools/android_lifecycle_test.py")
     need("/sdcard/Android/data/" in lifecycle
          and "/states/ffta_usa" in lifecycle
@@ -480,18 +464,11 @@ def check_logs_external_wiring():
                   "mobile.log_file", '/ "logs"'):
         need(token in main,
              "src/main.cpp missing diagnostics-redirect token %r" % token)
-    plat = read_text("gbarecomp/src/runtime/mobile_platform.cpp")
+    plat = read_text("gbarecompx/src/runtime/mobile_platform.cpp")
     plat_ok = ("__android_log_print" in plat and "cannot open log" in plat)
-    if not plat_ok:
-        recorded = ""
-        path = REPO / "tools/patches/gbarecomp-local.patch"
-        if path.is_file():
-            recorded = path.read_text(encoding="utf-8")
-        plat_ok = ("__android_log_print" in recorded
-                   and "cannot open log" in recorded)
     need(plat_ok,
-         "engine log-open fallback missing from gbarecomp/src/runtime/"
-         "mobile_platform.cpp and the recorded patch (silent-log class)")
+         "engine log-open fallback missing from gbarecompx/src/runtime/"
+         "mobile_platform.cpp (silent-log class)")
 
 
 # ---------------------------------------------------------------------------
@@ -578,6 +555,7 @@ def check_tracked_artifacts():
 def check_ignored_outputs():
     paths = [
         "android/artifacts/last-run/screenshot.png",
+        "android/.fetchcontent/arm64-v8a/raylib-subbuild/CMakeCache.txt",
         "android/app/build/outputs/apk/debug/app-debug.apk",
         "android/local.properties",
         "android/signing.local.properties",
@@ -592,6 +570,49 @@ def check_ignored_outputs():
         if completed.returncode != 0:
             missing.append(rel)
     need(not missing, "path(s) no longer gitignored: %s" % ", ".join(missing))
+
+
+def check_scaffold_sdl_free():
+    """The Android base is the raylib/NativeActivity scaffold (Phase 4f).
+
+    Scans the framework's platform/android scaffold and the game's android/
+    project for SDL: submodule entry/gitlink, SDLActivity, the SDL CMake
+    subproject, sdlRoot. Build outputs, artifacts and the framework's
+    third_party tree are excluded; the retired desktop SDL stack (Track L,
+    recomp-ui — removed in the 2026-10 launcher track) is out of scope."""
+    engine = REPO / "gbarecompx"
+    if not (engine / "platform/android").is_dir():
+        return  # the raylib tree is absent (CI before Phase 7): nothing to scan
+    offenders = []
+
+    gitmodules = engine / ".gitmodules"
+    if gitmodules.is_file() and "third_party/SDL" in gitmodules.read_text():
+        offenders.append("gbarecompx/.gitmodules still lists the SDL submodule")
+    if (engine / "platform/android/third_party/SDL").exists():
+        offenders.append("platform/android/third_party/SDL still exists")
+
+    token = re.compile(r"sdl", re.IGNORECASE)
+    skip_parts = {"third_party", ".cxx", ".fetchcontent", "build", ".gradle",
+                  "artifacts"}
+    exts = {".gradle", ".java", ".xml", ".txt", ".md", ".ps1", ".c", ".h",
+            ".cmake", ".toml", ".properties"}
+    for root in (engine / "platform/android", REPO / "android"):
+        for path in sorted(root.rglob("*")):
+            if not path.is_file() or path.suffix not in exts:
+                continue
+            if any(part in skip_parts for part in path.parts):
+                continue
+            try:
+                text = path.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            for line_no, line in enumerate(text.splitlines(), 1):
+                if token.search(line):
+                    offenders.append(
+                        "%s:%d: %s" % (path.relative_to(REPO), line_no,
+                                       line.strip()[:80]))
+    need(not offenders, "SDL references in the Android scaffold:\n    " +
+         "\n    ".join(offenders[:12]))
 
 
 # ---------------------------------------------------------------------------
@@ -641,7 +662,13 @@ case "$cmd" in
           printf 'Starting: Intent { cmp=org.gbarecomp.fftarecomp/org.gbarecomp.GbaSetupActivity }\\n'
         fi ;;
       dumpsys)
-        if [ "$scenario" = "setup-resumed" ]; then
+        if [ "${args[2]:-}" = "package" ]; then
+          # Stale-build guard: only the stale-version scenario carries a
+          # versionName; every other scenario reports none (guard skips).
+          if [ "$scenario" = "stale-version" ]; then
+            printf '    versionName=1.6-0-goldcommit\\n'
+          fi
+        elif [ "$scenario" = "setup-resumed" ]; then
           printf '    topResumedActivity=ActivityRecord{1 u0 org.gbarecomp.fftarecomp/org.gbarecomp.GbaSetupActivity t1}\\n'
         else
           printf '    topResumedActivity=ActivityRecord{1 u0 org.gbarecomp.fftarecomp/org.gbarecomp.GbaGameActivity t1}\\n'
@@ -682,6 +709,18 @@ esac
 exit 0
 '''
 
+# Fake `git` beside the fake adb: a deterministic `describe --tags` so the
+# gate's stale-build assertion compares against a fixed checkout version
+# (real repos vary; tag-less CI checkouts would skip — this pins the FAIL
+# path device-free).
+FAKE_GIT = '''\
+#!/usr/bin/env bash
+case "${1:-} ${2:-}" in
+  "describe --tags") printf 'v1.6-99-gnewcommit\\n' ;;
+  *) exit 0 ;;
+esac
+'''
+
 
 def run_gate(scenario, extra_args=()):
     """Run tools/validate_android.sh with the fake adb; returns the completed
@@ -693,6 +732,9 @@ def run_gate(scenario, extra_args=()):
         adb = bindir / "adb"
         adb.write_text(FAKE_ADB, encoding="utf-8")
         adb.chmod(0o755)
+        git = bindir / "git"
+        git.write_text(FAKE_GIT, encoding="utf-8")
+        git.chmod(0o755)
         evidence = tmp_path / "evidence"
         env = dict(os.environ)
         env["PATH"] = str(bindir) + os.pathsep + env.get("PATH", "")
@@ -773,6 +815,15 @@ def check_gate_setup_resumed():
          % tail(completed))
 
 
+def check_gate_stale_version():
+    completed, _ = run_gate("stale-version")
+    need(completed.returncode == 1,
+         "a stale installed APK should fail the gate (rc=%d)"
+         % completed.returncode)
+    need("is not this checkout" in completed.stdout,
+         "expected the stale-build assertion to fail: %s" % tail(completed))
+
+
 def check_gate_usage():
     helped = run_gate_cli("--help")
     need(helped.returncode == 0 and "Usage:" in helped.stdout,
@@ -789,6 +840,65 @@ def check_gate_usage():
 # Entry point
 # ---------------------------------------------------------------------------
 
+def check_boxart_drawable_wiring():
+    """Launch-screen box art must flow through the engine template's
+    launchBoxartRes mechanism (staged as drawable-nodpi/launcher_boxart.png,
+    resolved by name via getIdentifier), never as an APK asset — the assets
+    contract is payload-only."""
+    gradle = read_text("android/app/build.gradle")
+    need("launchBoxartRes" in gradle,
+         "build.gradle must set the engine template's launchBoxartRes "
+         "(the boxart staging mechanism)")
+    need("recomp/launcher/boxart.png" in gradle,
+         "build.gradle must point launchBoxartRes at the tracked "
+         "recomp/launcher/boxart.png")
+    setup_java = read_text(
+        "gbarecompx/platform/android/java/org/gbarecomp/GbaSetupActivity.java")
+    need('"launcher_boxart", "drawable"' in setup_java,
+         "GbaSetupActivity must resolve the launcher_boxart drawable by "
+         "name (getIdentifier — game-namespace-agnostic)")
+    need((REPO / "recomp/launcher/boxart.png").is_file(),
+         "recomp/launcher/boxart.png missing (the tracked boxart source)")
+
+
+def check_launch_screen_skip_classification():
+    """src/main.cpp must classify the MUTATED args vector — the Android
+    native entry's argv is raylib's synthetic {"raylib"}, invisible to
+    appended flags; classifying the raw argv made the launch screen
+    un-skippable on Android (2026-10-16 device finding)."""
+    main_cpp = read_text("src/main.cpp")
+    need("launcher_should_skip_screen(args)" in main_cpp,
+         "src/main.cpp must classify the mutated args vector "
+         "(launcher_should_skip_screen(args)), not the raw argv")
+    need("launcher_should_skip_screen(argc" not in main_cpp,
+         "src/main.cpp must not classify the raw argv (invisible on Android)")
+    need("launcher_wants_screen(args)" in main_cpp,
+         "src/main.cpp must honor an explicit --launcher force "
+         "(launcher_wants_screen(args))")
+
+
+    need((REPO / "recomp/launcher/boxart.png").is_file(),
+         "recomp/launcher/boxart.png missing (the tracked boxart source)")
+
+
+def check_launch_screen_skip_classification():
+    """src/main.cpp must classify the MUTATED args vector — the Android
+    native entry's argv is raylib's synthetic {"raylib"}, invisible to
+    appended flags; classifying the raw argv made the launch screen
+    un-skippable on Android (2026-10-16 device finding). The Android posture
+    (user decision, 2026-10-16): the platform setup activity is the pre-boot
+    surface; the raygui launch screen is desktop-only."""
+    main_cpp = read_text("src/main.cpp")
+    need("launcher_should_skip_screen(args)" in main_cpp,
+         "src/main.cpp must classify the mutated args vector "
+         "(launcher_should_skip_screen(args)), not the raw argv")
+    need("launcher_should_skip_screen(argc" not in main_cpp,
+         "src/main.cpp must not classify the raw argv (invisible on Android)")
+    need("launcher_wants_screen(args)" in main_cpp,
+         "src/main.cpp must honor an explicit --launcher force "
+         "(launcher_wants_screen(args))")
+
+
 CHECKS = [
     ("identity: applicationId and gate package/activity constants",
      check_package_constants),
@@ -799,7 +909,7 @@ CHECKS = [
      "staging)", check_bios_pins),
     ("identity: committed emibios bin matches its TOML pin (16 KiB)",
      check_emibios_integrity),
-    ("identity: engine accepts the clean-room BIOS (launcher pin-set + "
+    ("identity: engine accepts the clean-room BIOS (bios pin-set + "
      "public-guard exemption)", check_emibios_engine_acceptance),
     ("identity: save type/size mirror the desktop config", check_save_config),
     ("identity: optional .sav import on setup (issue #20)",
@@ -818,13 +928,20 @@ CHECKS = [
     ("payload: resize_view opt-in present", check_resize_view),
     ("hygiene: no ROM/save/APK/bin artifacts tracked", check_tracked_artifacts),
     ("hygiene: android outputs stay gitignored", check_ignored_outputs),
+    ("scaffold: the Android base is SDL-free (raylib/NativeActivity)",
+     check_scaffold_sdl_free),
     ("gate: clean fake-device run passes and pulls evidence", check_gate_clean),
     ("gate: SELF-HEAL runtime log fails the gate", check_gate_selfheal),
     ("gate: missing runtime log fails the gate", check_gate_missing_log),
     ("gate: crash-buffer entry fails the gate", check_gate_crash),
     ("gate: setup-still-resumed fails the gate", check_gate_setup_resumed),
+    ("gate: stale installed APK fails the gate", check_gate_stale_version),
     ("gate: usage contract (--help 0, bad --wait 2, unknown option 2)",
      check_gate_usage),
+    ("identity: launch-screen box art staged as a drawable",
+     check_boxart_drawable_wiring),
+    ("android: launch-screen skip classification uses the mutated args "
+     "vector", check_launch_screen_skip_classification),
 ]
 
 

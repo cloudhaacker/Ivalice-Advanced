@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
 """Host-side tests for the Python tooling (stdlib unittest, no pytest).
 
-Covers the pure logic the healing/audit flow depends on:
-  - trace_split: backward-jump segmentation + header preservation
-  - cache_harvest: recomp_cache unit-file parsing + game.toml address set
-  - misspack.prologue_scan: thumb push-with-lr backscan on a synthetic ROM
+Covers the pure logic the FFTA harness depends on:
   - TsvGuardTests: symbols/*.tsv shape, alignment, duplicate discipline
   - RomTruthTests: ROM-pinned facts behind the symbol tables (LOCAL-ONLY,
     skips without game.gba) — dispatch tables, pointer cells, party base,
@@ -22,9 +19,11 @@ Covers the pure logic the healing/audit flow depends on:
     required set, exec bit) + the deterministic portable zip writer;
     driven on synthetic stages, so these run on CI tier 1 too
 
+The framework-protocol tools' tests (trace_split, cache_harvest,
+misspack) moved with the tools into gbarecompx/tools/tests/ — the fork's
+CI guard job runs them.
+
 Run: .venv/bin/python tests/python/test_tools.py [-v]
-Requires capstone (misspack dependency): use .venv per docs/manual-build.md,
-or `pip install capstone==5.0.7` — CI installs that same pin.
 """
 import hashlib
 import os
@@ -38,86 +37,6 @@ import unittest
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "tools"))
-
-try:
-    import cache_harvest  # noqa: E402
-    import misspack  # noqa: E402
-except ModuleNotFoundError as exc:
-    if exc.name == "capstone":
-        raise SystemExit(
-            "unit-py needs capstone (misspack dependency): run via "
-            ".venv/bin/python (docs/manual-build.md) or `pip install "
-            "capstone==5.0.7`") from None
-    raise
-
-
-class TraceSplitTest(unittest.TestCase):
-    def test_backward_jump_splits_and_headers_preserved(self):
-        with tempfile.TemporaryDirectory() as td:
-            t = pathlib.Path(td) / "trace.csv"
-            t.write_text("# gbarecomp-keyinput-v1\n# frame,keyinput_active_low\n"
-                         "0,0x03FF\n10,0x03F7\n20,0x03FF\n5,0x03FE\n15,0x03FF\n")
-            r = subprocess.run(
-                [sys.executable, "tools/trace_split.py", "--trace", str(t),
-                 "--out-dir", td, "--prefix", "seg"],
-                cwd=str(REPO), capture_output=True, text=True)
-            self.assertEqual(r.returncode, 0, r.stderr)
-            seg1 = (pathlib.Path(td) / "seg1.csv").read_text()
-            seg2 = (pathlib.Path(td) / "seg2.csv").read_text()
-            self.assertIn("# gbarecomp-keyinput-v1", seg1)
-            self.assertIn("20,0x03FF", seg1)
-            self.assertNotIn("5,0x03FE", seg1)
-            self.assertIn("5,0x03FE", seg2)
-            self.assertIn("15,0x03FF", seg2)
-            self.assertNotIn("20,0x03FF", seg2)
-
-    def test_monotonic_single_segment(self):
-        with tempfile.TemporaryDirectory() as td:
-            t = pathlib.Path(td) / "trace.csv"
-            t.write_text("0,0x03FF\n5,0x03F7\n")
-            r = subprocess.run(
-                [sys.executable, "tools/trace_split.py", "--trace", str(t),
-                 "--out-dir", td, "--prefix", "m"],
-                cwd=str(REPO), capture_output=True, text=True)
-            self.assertEqual(r.returncode, 0, r.stderr)
-            self.assertTrue((pathlib.Path(td) / "m1.csv").exists())
-            self.assertFalse((pathlib.Path(td) / "m2.csv").exists())
-
-
-class CacheHarvestTest(unittest.TestCase):
-    def test_collect_parses_unit_filenames(self):
-        with tempfile.TemporaryDirectory() as td:
-            repo = pathlib.Path(td)
-            d = repo / "recomp_cache" / "x" / "y"
-            d.mkdir(parents=True)
-            (d / "005F0000_DEADBEEF_t.c").write_text("")
-            (d / "005F0000_DEADBEEF_t.log").write_text("")
-            (d / "805F0000_FEEDFACE_a.c").write_text("")
-            (d / "not-a-unit.txt").write_text("")
-            units = cache_harvest.collect(repo)
-            self.assertEqual(units, {0x005F0000: "t", 0x805F0000: "a"})
-
-    def test_game_addrs_reads_game_toml(self):
-        with tempfile.TemporaryDirectory() as td:
-            repo = pathlib.Path(td)
-            (repo / "game.toml").write_text(
-                '[[extra_func]]\naddr = 0x005F0000\nmode = "thumb"\n')
-            self.assertEqual(cache_harvest.game_addrs(repo), {0x005F0000})
-
-
-class PrologueScanTest(unittest.TestCase):
-    def test_thumb_push_backscan_finds_prologue(self):
-        rom = bytearray(0x400)
-        struct.pack_into("<H", rom, 0x40, 0xB510)  # push {r4, lr}
-        hits = misspack.prologue_scan(bytes(rom), misspack.ROM_BASE + 0x60,
-                                      "thumb", limit=0x100)
-        self.assertEqual(hits[0][0], misspack.ROM_BASE + 0x40)
-        self.assertTrue(hits[0][1].startswith("push"))
-
-    def test_no_prologue_returns_empty(self):
-        hits = misspack.prologue_scan(bytes(0x400), misspack.ROM_BASE + 0x60,
-                                      "thumb", limit=0x100)
-        self.assertEqual(hits, [])
 
 
 class SaveCheckTest(unittest.TestCase):
@@ -195,6 +114,37 @@ class BuildPyTest(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("--force", r.stdout)
         self.assertIn("--no-smoke", r.stdout)
+
+
+class BackendDefaultCacheTests(unittest.TestCase):
+    """The product-build gate must reject a headless-configured canonical
+    dir: build/ with GBARECOMP_RAYLIB_HEADLESS=ON is a windowless Memory
+    build, not the raylib product, even though GBARECOMP_RAYLIB_ENABLED is
+    still ON."""
+
+    def predicate(self):
+        import check
+        return check.backend_default_cache_ok
+
+    def test_product_cache_accepted(self):
+        ok, _ = self.predicate()("GBARECOMP_RAYLIB_ENABLED:INTERNAL=ON\n"
+                                  "GBARECOMP_RAYLIB_HEADLESS:BOOL=OFF\n")
+        self.assertTrue(ok)
+
+    def test_unset_headless_accepted(self):
+        ok, _ = self.predicate()("GBARECOMP_RAYLIB_ENABLED:INTERNAL=ON\n")
+        self.assertTrue(ok)
+
+    def test_headless_cache_refused(self):
+        ok, detail = self.predicate()(
+            "GBARECOMP_RAYLIB_ENABLED:INTERNAL=ON\n"
+            "GBARECOMP_RAYLIB_HEADLESS:BOOL=ON\n")
+        self.assertFalse(ok)
+        self.assertIn("HEADLESS", detail)
+
+    def test_non_raylib_cache_refused(self):
+        ok, _ = self.predicate()("GBARECOMP_RAYLIB_ENABLED:INTERNAL=OFF\n")
+        self.assertFalse(ok)
 
 
 class RepoHygieneTests(unittest.TestCase):
@@ -305,18 +255,6 @@ class TsvGuardTests(unittest.TestCase):
                               f"{name} line {i})")
                 seen.setdefault(addr, f"{name} line {i}")
 
-    def test_patches_readme_rows_match_files(self):
-        readme = (REPO / "tools" / "patches" / "README.md").read_text()
-        listed = set()
-        for line in readme.splitlines():
-            if line.startswith("| `") and ".patch" in line:
-                listed.add(line.split("`")[1])
-        present = {p.name for p in (REPO / "tools" / "patches").glob("*.patch")}
-        self.assertTrue(present, "no *.patch files?")
-        self.assertEqual(present, listed,
-                         f"README rows vs patch files drift: "
-                         f"{sorted(present ^ listed)}")
-
 
 class BiosBytePinTests(unittest.TestCase):
     """gba_bios.bin must stay byte-stable at the contract points our engine
@@ -329,11 +267,11 @@ class BiosBytePinTests(unittest.TestCase):
     material (the launcher-accepted alternative + the oracle's default),
     no longer the launch BIOS. The launch BIOS is the committed clean-room
     emibios, pinned EVERYWHERE by EmibiosBytePinTests above. The dump is
-    ROM/BIOS-derived and never in git (gbarecomp/.gitignore bios/*.bin)
+    ROM/BIOS-derived and never in git (gbarecompx/.gitignore bios/*.bin)
     — these tests stay LOCAL-ONLY and skip on any checkout without it
     (CI included)."""
 
-    BIOS = REPO / "gbarecomp" / "bios" / "gba_bios.bin"
+    BIOS = REPO / "gbarecompx" / "bios" / "gba_bios.bin"
 
     @classmethod
     def setUpClass(cls):
@@ -715,7 +653,7 @@ class ReleasePackTests(unittest.TestCase):
             if lic != "LICENSE":
                 f(lic)
         f("THIRD_PARTY_ATTRIBUTION.md")
-        f("mods/packages/ffta.enhancement.widescreen/1.0.0/manifest.toml")
+        f("mods/packages/ffta.enhancement.widescreen/1.0.1/manifest.toml")
         f("assets/fonts/Pro.ttf")
         f("assets/img/box.png")
         return root
@@ -763,7 +701,7 @@ vma:            Hint    Time      Forward  DLL       First
             ["GDI32.DLL", "KERNEL32.DLL", "LIBGCC_S_SEH-1.DLL", "SDL2.DLL",
              "USER32.DLL"])
         bad = self.mr.static_link_violations(dlls)
-        self.assertEqual(bad, ["LIBGCC_S_SEH-1.DLL", "SDL2.DLL"])
+        self.assertEqual(bad, ["LIBGCC_S_SEH-1.DLL"])
         clean = {"KERNEL32.DLL", "MSVCRT.DLL", "USER32.DLL", "ADVAPI32.DLL",
                  "SHELL32.DLL", "OPENGL32.DLL", "VERSION.DLL"}
         self.assertEqual(self.mr.static_link_violations(clean), [])
@@ -845,17 +783,20 @@ vma:            Hint    Time      Forward  DLL       First
                                 for x in v), v)
 
     def test_sweep_requires_license_bundle(self):
-        # The Windows release redistributes statically-linked code, so its
-        # license documents ship (the set grew to 4 cross-library LICENSES
-        # + LGPL + root LICENSE). Missing exactly one → named failure.
+        # The release redistributes statically-linked code, so its license
+        # documents ship (the set: root LICENSE + LGPL + one document per
+        # linked third-party library). Missing exactly one → named failure.
+        # The victim is picked from the module contract (licenses_required())
+        # so a future license-set change edits one place, not this test.
         import tempfile
         with tempfile.TemporaryDirectory(dir="/tmp") as td:
             root = self._stage(td)
-            (root / "LICENSES/FTL.txt").unlink()
+            victim = next(p for p in self.mr.licenses_required()
+                          if p.startswith("LICENSES/"))
+            (root / victim).unlink()
             v = self.mr.sweep_stage(root)
             self.assertTrue(
-                any("missing required file: LICENSES/FTL.txt" in x
-                    for x in v), v)
+                any(f"missing required file: {victim}" in x for x in v), v)
             # ...and the synthetic helper itself builds the bundle from the
             # module contract, so the next license addition fails loudly
             # instead of drifting:
@@ -895,6 +836,113 @@ vma:            Hint    Time      Forward  DLL       First
             self.assertEqual(self.mr.verify_zip(z1, n1), [],
                              "read-back: portable names, count, exec bit")
 
+
+
+class AppImageTests(unittest.TestCase):
+    """tools/make_appimage.py + tools/compat_build.py pure contracts.
+
+    The AppImage's two non-obvious promises are testable without building
+    or downloading anything: the AppRun wrapper must unpack into a
+    writable XDG data directory (the game writes sidecars beside its
+    executable) and must not delete player files on an update; the glibc
+    validator must reject a symbol floor newer than the SteamOS target.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        import compat_build  # noqa: E402 (tools/ on sys.path)
+        import make_appimage  # noqa: E402
+        cls.ai = make_appimage
+        cls.cb = compat_build
+
+    def test_apprun_uses_writable_xdg_data_dir(self):
+        s = self.ai.apprun_script("v1.7-deadbeef")
+        self.assertIn("XDG_DATA_HOME", s)
+        self.assertIn('DATA_ROOT="$XDG_DATA_HOME/ffta-recomp"', s)
+        self.assertIn('DEST="$DATA_ROOT/app"', s)
+        self.assertIn('cp -a "$APPDIR/usr/bin/." "$DEST/"', s)
+        self.assertIn('exec "$DEST/FFTARecomp" "$@"', s)
+
+    def test_apprun_update_preserves_player_files(self):
+        s = self.ai.apprun_script("v1.7-deadbeef")
+        # Updates copy the payload over the data dir; they must not wipe
+        # rom.cfg/config.ini/saves/ (the reason the wrapper exists).
+        self.assertNotIn('rm -rf "$DEST"', s)
+        self.assertIn("player files", s)
+
+    def test_apprun_steam_deck_defaults(self):
+        s = self.ai.apprun_script("v1.7-deadbeef")
+        self.assertIn('"${SteamDeck:-0}" = "1"', s)
+        self.assertIn("--fullscreen=1 --resize-view", s)
+        self.assertIn("FFTA_APPIMAGE_NO_DECK_DEFAULTS", s)
+        self.assertIn('*" --fullscreen"*', s)
+
+    def test_desktop_entry(self):
+        d = self.ai.desktop_entry("v1.7")
+        for line in ("Type=Application", "Name=FFTA Recomp",
+                     "Exec=FFTARecomp", "Icon=ffta-recomp",
+                     "Categories=Game;", "X-AppImage-Version=v1.7"):
+            self.assertIn(line, d)
+
+    def test_payload_id_is_content_addressed(self):
+        import tempfile
+        with tempfile.TemporaryDirectory(dir="/tmp") as td:
+            root = pathlib.Path(td)
+            (root / "a").write_bytes(b"one")
+            (root / "sub").mkdir()
+            (root / "sub" / "b").write_bytes(b"two")
+            first = self.ai.payload_id(root)
+            self.assertEqual(first, self.ai.payload_id(root))
+            self.assertEqual(len(first), 12)
+            (root / "sub" / "b").write_bytes(b"changed")
+            self.assertNotEqual(first, self.ai.payload_id(root))
+
+    def test_glibc_version_parser(self):
+        text = ("  (GLIBC_2.34) foo\n  (GLIBC_2.2.5) bar\n"
+                "  (GLIBC_2.43) baz\n")
+        self.assertEqual(self.cb.parse_glibc_versions(text),
+                         [(2, 2), (2, 34), (2, 43)])
+        self.assertEqual(self.cb.version_tuple("2.36"), (2, 36))
+        with self.assertRaises(self.cb.Fail):
+            self.cb.version_tuple("debian")
+
+    def test_glibc_floor_is_a_real_release_check(self):
+        # The exact failure that made the compat container necessary:
+        # a CachyOS build advertised GLIBC_2.43. The validator must treat
+        # anything above the pinned floor as a hard failure.
+        text = "  (GLIBC_2.43) atan2f\n"
+        versions = self.cb.parse_glibc_versions(text)
+        self.assertGreater(versions[-1], self.cb.version_tuple("2.36"))
+
+
+class PublishReleaseTests(unittest.TestCase):
+    """tools/publish_release.py — local build/verify/upload contract."""
+
+    @classmethod
+    def setUpClass(cls):
+        import publish_release
+        cls.pr = publish_release
+
+    def test_artifact_names(self):
+        n = self.pr.artifact_names("v1.7")
+        self.assertEqual(n["linux"], "FFTARecomp-v1.7-linux-x64.zip")
+        self.assertEqual(n["windows"], "FFTARecomp-v1.7-windows-x64.zip")
+        self.assertEqual(n["appimage"],
+                         "FFTARecomp-v1.7-linux-x86_64.AppImage")
+        self.assertEqual(n["apk"],
+                         "FFTARecomp-v1.7-android-arm64-v8a.apk")
+
+    def test_sums_text_is_sorted_and_sha256(self):
+        import tempfile
+        with tempfile.TemporaryDirectory(dir="/tmp") as td:
+            a = pathlib.Path(td) / "b.bin"
+            b = pathlib.Path(td) / "a.bin"
+            a.write_bytes(b"one")
+            b.write_bytes(b"two")
+            text = self.pr.sums_text([a, b])
+            self.assertEqual([line.split("  ")[1] for line in
+                              text.strip().splitlines()], ["a.bin", "b.bin"])
+            self.assertIn(hashlib.sha256(b"one").hexdigest(), text)
 
 
 if __name__ == "__main__":

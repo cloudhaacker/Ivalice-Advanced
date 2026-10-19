@@ -398,6 +398,20 @@
 0x081224B8	thumb	scene_op_18
 0x08122E7C	thumb	scene_go_to
 0x08122E90	thumb	scene_set_flag
+# Talk-op chain (2026-10-16, chat-bubble widescreen session): scene_char_talk
+# (0x08122DAC) delegates to its implementation 0x0812638C — clears [ctx+6],
+# then spawns a scene-VM thread via 0x08121B8C with (callback 0x08125A5D,
+# frame budget 0xB4=180, &stack struct). All three boundaries verified with
+# disarm.py this session (08121B8C: push {r4,r5,r6,lr}; 08125A5C: push
+# {r4-r7,lr}+regs). Roles are from the call sites + prologues; the callback's
+# interior is unverified beyond "the talk thread's VM entry". Named WITHOUT
+# the scene_ prefix on purpose: the unit-py handler audit requires every
+# scene_* row to dispatch from the ROM opcode tables, and these are the
+# talk pipeline's helpers, not VM ops (the scene_gfx_load exclusion exists
+# for the same reason; see tests/python/test_tools.py).
+0x0812638C	thumb	char_talk_impl
+0x08121B8C	thumb	vm_thread_spawn
+0x08125A5C	thumb	talk_vm_callback
 0x08122EA8	thumb	scene_op_1B
 0x08122EC0	thumb	scene_op_1C
 0x08122EF8	thumb	scene_op_1D

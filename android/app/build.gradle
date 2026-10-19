@@ -2,16 +2,17 @@ plugins {
     id "com.android.application"
 }
 
-// Engine / UI checkouts: the pinned submodules by default; a feature worktree
-// can be selected with -PgbarecompRoot=... / -PrecompUiRoot=... (or the
-// GBARECOMP_ROOT / RECOMP_UI_ROOT environment variables).
+// Engine checkout: the gbarecompx framework submodule (james2doyle/gbarecompx)
+// beside this project — the same root the desktop CMake sets as GBARECOMP_ROOT.
+// A feature worktree can be selected with -PgbarecompRoot=... (or the
+// GBARECOMP_ROOT environment variable).
 def gameRoot = rootDir.parentFile
 def pick = { String prop, String env, File fallback ->
     def v = providers.gradleProperty(prop).orNull ?: System.getenv(env)
     return v ? new File(v) : fallback
 }
-def engineRoot = pick("gbarecompRoot", "GBARECOMP_ROOT", new File(gameRoot, "gbarecomp"))
-def recompUiRoot = pick("recompUiRoot", "RECOMP_UI_ROOT", new File(gameRoot, "recomp-ui"))
+def engineRoot = pick("gbarecompRoot", "GBARECOMP_ROOT",
+    new File(gameRoot, "gbarecompx"))
 
 ext.gbaGame = [
     applicationId : "org.gbarecomp.fftarecomp",
@@ -36,7 +37,7 @@ ext.gbaGame = [
     saveFile      : "ffta_us.sav",
     saveSize      : 65536,
     orientation   : "landscape",
-    payloadVersion: "4",
+    payloadVersion: "6",
     setupNote     : "Landscape tactics: use the on-screen pad and buttons; " +
                     "long-press or three-finger tap for the runtime settings menu.",
     variant       : "final_fantasy_tactics_advance",
@@ -48,7 +49,15 @@ ext.gbaGame = [
     ],
     gameRoot      : gameRoot,
     engineRoot    : engineRoot,
-    recompUiRoot  : recompUiRoot,
+    launchBoxartRes: new File(gameRoot, "recomp/launcher/boxart.png"),
 ]
 
 apply from: new File(engineRoot, "platform/android/gbarecomp-app.gradle")
+
+// Launch-screen box art: the engine template stages it as
+// drawable-nodpi/launcher_boxart.png when launchBoxartRes is set (resolved
+// by name via getIdentifier — the engine's Java stays namespace-agnostic).
+// Source: the tracked recomp/launcher/boxart.png — the same file the desktop
+// CMake stage_boxart target and the release packager stage; no second copy.
+// (Supersedes the game-local staging task: the template mechanism is the
+// generalized home, 2026-10-16.)

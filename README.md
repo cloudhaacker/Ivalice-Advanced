@@ -1,14 +1,16 @@
 # Final Fantasy Tactics Advance Recomp
 
 > **Experimental preview.** This recompilation is built on
-> [gbarecomp](https://github.com/mstan/gbarecomp), the reusable
-> static-recompilation framework whose reference games are its proving
-> ground. This is not a finished commercial port, so expect rough edges and
-> please report problems. For more context, read
+> [gbarecompx](https://github.com/james2doyle/gbarecompx), the actively
+> developed fork of [gbarecomp](https://github.com/mstan/gbarecomp) — the
+> reusable static-recompilation framework whose reference games are its
+> proving ground. This is not a finished commercial port, so expect rough
+> edges and please report problems. For more context, read
 > [Recomp + AI: 5 Months Later »](https://1379.tech/recomp-ai-5-months-later/).
 
-Static recompilation of **Final Fantasy Tactics Advance** for Linux and
-Android, with a validated widescreen view and strict fully-static execution.
+Static recompilation of **Final Fantasy Tactics Advance** for Linux,
+Windows, Android, and Steam Deck, with a validated widescreen view and
+strict fully-static execution.
 
 The game ROM is **not included**. You must provide your own legally obtained
 dump of *Final Fantasy Tactics Advance* (USA). The launch BIOS **is**
@@ -18,18 +20,25 @@ no Nintendo BIOS dump is required.
 
 ## Features
 
-- Native Linux, PC, and Android builds
+- Native Linux, Windows, Android, and Steam Deck builds — portable Linux
+  zip, Steam Deck/SteamOS AppImage, static Windows exe, and an Android APK
 - Keyboard, controller, and touchscreen controls
 - Windowed and fullscreen desktop play
 - Validated widescreen view up to 448 px
+- Present-time shader stack: MMPX edge smoothing, sharp scaling, pixel
+  grid, LCD subpixel grille, LCD boost, dither, and deband — each toggleable
+  in the in-game menu
+- Frame enhancements: frame interpolation (experimental) and LCD ghosting
+  (frame blending), also configurable in the in-game menu
 - Cartridge saves and save states
-- Fast-forward speed boost — hold `Tab` / right trigger, tap the `FF`
-  touch pill, or latch it from the menu; speed (2–10x) set in Assist Tools
+- Fast-forward speed boost — hold `Tab` / right trigger, or tap the `FF`
+  touch pill to latch it; speed (2–10x) is set in the in-game menu's
+  **Assist** section
 - Strict fully-static execution — zero interpreter fallback on any executed
   path, kept that way by a self-healing coverage loop
 - GBA screen simulation: `raw`, `unlit`, `frontlit`, `backlit`, `classic`
-  [recomp-ui](https://github.com/mstan/recomp-ui) launcher; ROM and BIOS
-  hashes verified at launch
+- Launch screen with box art and a native file-dialog ROM picker; ROM and
+  BIOS hashes verified at launch
 
 ## Controls
 
@@ -41,135 +50,118 @@ no Nintendo BIOS dump is required.
 | Select | Backspace | Back (Select) |
 | L / R | C / V | LB / RB |
 | Fast-forward (hold) | Tab | Right trigger |
-| In-game menu | Esc | Guide button |
+| In-game menu | Del | Guide button |
 
-Controllers are detected automatically, and button mappings can be changed
-from the launcher. The left analog stick doubles as the D-Pad.
-Fast-forward runs the game faster while held; its speed
-(2–10x) and key/pad bindings are configurable in the launcher's Assist
-Tools page and the in-game menu. On Android, use the on-screen touch
-controls — tap the `FF` pill at the top of the screen to toggle the speed
-boost; open the menu with a long-press, three-finger tap, or the system
-Back gesture (Esc again steps back inside the menu).
+Controllers are detected automatically. The left analog stick doubles as
+the D-Pad. Inside the menu, the D-Pad/arrows move, A selects, and B goes
+back; `Del` or the Guide button opens and closes it. Fast-forward runs the
+game faster while held or latched; its speed (2–10x) is configurable in the
+in-game menu's **Assist** section.
+
+On Android, use the on-screen touch controls — tap the `FF` pill at the top
+of the screen to toggle the speed boost; open the menu with a long-press,
+three-finger tap, or the system Back gesture. Use the on-screen A/B buttons
+to select and go back inside the menu.
+
+Fast-forward controls, the 2–10x speed setting, and expected behavior are
+covered in [docs/fast-forward.md](docs/fast-forward.md).
 
 ## Quick start
 
-### Using a release binary (no build)
+Release builds are ROM-less: download one, supply your own legally obtained
+*Final Fantasy Tactics Advance* (USA) dump, and pick it on the launch screen.
+The clean-room BIOS is bundled and verified, so no Nintendo BIOS dump is
+needed.
 
-Grab the latest release zip from [releases](../../releases) — Linux x64
-(`FFTARecomp-*-linux-x64.zip`) or Windows x64
-(`FFTARecomp-*-windows-x64.zip`, statically linked, no DLLs) — then:
+Grab the latest release from the
+[releases page](https://github.com/james2doyle/ffta-recomp/releases).
 
-1. Extract the folder anywhere **writable** — launcher settings, the ROM
-   path cache, and saves are kept beside the executable.
-2. Run it — `./FFTARecomp` on Linux, `FFTARecomp.exe` on Windows (no
-   DLLs to install; everything is statically linked).
+| Release | Artifact | System requirements |
+|---|---|---|
+| Linux x64 | `FFTARecomp-*-linux-x64.zip` | x86-64 Linux with OpenGL and X11/XWayland; Debian/Ubuntu: `libgl1 libglu1-mesa libx11-6` (normally preinstalled on desktops) |
+| Windows x64 | `FFTARecomp-*-windows-x64.zip` | Windows 10+ x86-64; static executable, nothing extra |
+| Steam Deck / SteamOS | `FFTARecomp-*-linux-x86_64.AppImage` | SteamOS 3.x, x86-64; FUSE; glibc 2.35 or newer |
+| Android | `FFTARecomp-*-android-arm64-v8a.apk` | Android 9+ (API 28), arm64-v8a |
 
-3. In the launcher, pick your legally obtained *Final Fantasy Tactics
-   Advance* (USA) ROM and select **Play**.
+Apart from the system OpenGL/X11 stack (and the standard C++ runtime), the
+release builds are self-contained; no additional game runtime libraries
+need to be installed.
 
-The launch BIOS is bundled — a clean-room, freely redistributable
-**emibios** build
-([`bios/`](bios/) in the zip, LGPL-3.0-or-later) — so you never need a
-Nintendo BIOS dump. Your ROM is hash-verified at launch: a mismatch error
-means the file is not the expected USA dump.
+### Run
 
-System requirements — Linux x86-64 with SDL2, OpenGL, FreeType, and
-Harfbuzz (Debian/Ubuntu: `libsdl2-2.0-0 libopengl0 libfreetype6
-libharfbuzz0b`); Windows 10+ x86-64 with nothing extra (static exe).
-Display and widescreen options (`--view-width 448`,
-`--resize-view`, `--scale`, fullscreen) are listed in
-[docs/README.md](docs/README.md).
+- **Linux:** extract the zip anywhere writable and run `./FFTARecomp`.
+- **Windows:** extract the zip anywhere writable and run `FFTARecomp.exe`.
+- **Steam Deck / SteamOS:** mark the AppImage executable (`chmod +x`) and
+  run it from Desktop Mode, or add it as a non-Steam game.
+- **Android:** sideload the APK (it is debug-signed, so allow installation
+  from your browser or file manager) and open the app.
 
-### Desktop (Linux)
+### Pick your ROM
 
-1. Clone with submodules and place your legally obtained ROM dump at the
-   repo root:
+The flow is the same on every release:
 
-   ```sh
-   git clone --recurse-submodules https://github.com/james2doyle/ffta-recomp.git
-   cd ffta-recomp
-   cp /path/to/ffta-usa.gba game.gba
-   ```
+1. Start the game. On desktop the launch screen opens (the first boot opens
+   the native file picker right away); on Android the setup screen opens.
+2. Choose **Select ROM** and pick your legally obtained USA dump. On desktop
+   you can also drop a `.gba` file onto the window.
+3. Select **Play**. The ROM is hash-verified, the pick is remembered, and
+   **Select ROM** re-picks later. The bundled BIOS needs no separate pick.
 
-2. Build with the idempotent bootstrap script (dependencies → framework
-   patches → recompilation → build → strict smoke test):
+### Load an old save (optional)
 
-   ```sh
-   python3 build.py
-   ```
+Battery saves are raw 64 KiB (65,536-byte) flash images.
 
-3. Run the self-built binary. With no arguments it opens the launcher —
-   select your **Final Fantasy Tactics Advance (USA)** ROM and select
-   **Play**:
+- **Desktop:** copy your old `.sav` to the game's save file, named
+  `ffta_us.sav`, before launching; exact paths are in the file-location
+  details below.
+- **Android:** on the setup screen, use **Save data (optional)** →
+  **CHOOSE SAVE** and pick the 64 KiB `.sav` file.
 
-   ```sh
-   ./build/FFTARecomp
-   ```
+The game loads the imported battery save on the next launch; in-game saves
+update the same file.
 
-The launcher pre-fills the BIOS with the bundled clean-room build, remembers
-your settings, and your ROM is hash-verified at launch. Enable **Skip
-launcher** (or pass the paths directly) to start the game without the UI:
+<details>
+<summary>Where files live and platform-specific details</summary>
 
-```sh
-./build/FFTARecomp --bios bios/emibios_gba_bios.bin --rom game.gba
-```
+**Linux and Windows zip** (inside the extracted folder):
 
-Display and window options (`--scale`, `--screen`, fullscreen, widescreen)
-are listed in [docs/README.md](docs/README.md).
+- `saves/ffta_us.sav` — cartridge battery save (create `saves/` if needed)
+- `rom.cfg` — remembered ROM path
+- `config.ini`, `keybinds.ini` — menu settings and key bindings
 
-### Android
+**Steam Deck / SteamOS AppImage:** after the first launch the game is
+unpacked to `$XDG_DATA_HOME/ffta-recomp/app` (default
+`~/.local/share/ffta-recomp/app`). That folder holds the executable,
+`saves/ffta_us.sav`, `rom.cfg`, and the config/keybind files; updating the
+AppImage keeps them. In Game Mode it defaults to borderless fullscreen with
+the resize-driven widescreen view. Override with `--window`, `--scale`, or
+`--view-width`, or set `FFTA_APPIMAGE_NO_DECK_DEFAULTS=1`. If FUSE is
+unavailable, run with `APPIMAGE_EXTRACT_AND_RUN=1` or
+`--appimage-extract-and-run`. If the system file picker is unavailable, add
+`--rom /path/to/ffta.gba` as a Steam launch option once.
 
-1. Complete the desktop quick start first — the APK build consumes the
-   generated corpus and embeds your ROM.
-2. Build the app:
+**Android:** the app's external files live under
+`/sdcard/Android/data/org.gbarecomp.fftarecomp/files/`; the battery save is
+`saves/ffta_us.sav`, and save states are in `states/`. To import a save
+manually, force-stop the app first, then copy the 64 KiB file to that
+`saves/ffta_us.sav` path.
 
-   ```sh
-   python3 build_apk.py
-   ```
+The AppImage and Linux zip are built in a pinned Debian 12 container
+(`tools/compat_build.py`) and require glibc 2.35 or newer, which SteamOS 3.x
+provides. A binary built on a rolling host can require a newer glibc than
+SteamOS ships.
 
-3. With a device attached, the script installs the APK and runs the
-   boot-health gate. The ROM is embedded, so the app boots straight into the
-   game. Full build, install, and device-validation instructions live in
-   [`android/README.md`](android/README.md).
+</details>
+
+Display and widescreen options (`--view-width 448`, `--resize-view`,
+`--scale`, fullscreen) are listed in [docs/README.md](docs/README.md).
 
 ## Building from source
 
-Desktop development requires CMake ≥ 3.20, Ninja, GCC or Clang (C++17),
-SDL2 development libraries, git, and Python 3.10+.
-
-`python3 build.py` is the one-command route; re-running after a pull skips
-finished steps. The raw pipeline it wraps — every step by hand, with
-troubleshooting — is documented in
-[`docs/manual-build.md`](docs/manual-build.md):
-
-```sh
-cmake -S gbarecomp -B gbarecomp/build -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build gbarecomp/build --target gba_recompile gba_scan --parallel 8
-./gbarecomp/build/gba_recompile --rom game.gba --config game.toml \
-  --symbols symbols/ffta_symbols.tsv --data-symbols symbols/ffta_data_symbols.tsv \
-  --out generated --max-functions 65536
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DGBARECOMP_ENABLE_MODS=ON
-cmake --build build --target FFTARecomp --parallel 8
-```
-
-Android build and device-validation instructions live in
-[`android/README.md`](android/README.md).
-
-Generation requires the supported ROM revision — *Final Fantasy Tactics
-Advance* (USA, AFXE), SHA-1 `4ac05441f4de70a4ec3dd932116346c61b8783d9`,
-16,777,216 bytes — pinned in [`game.toml`](game.toml); the launch BIOS is
-the bundled clean-room emibios ([`bios/README.md`](bios/README.md)).
-ROM-derived generated code, saves, patches, frame dumps, and build output
-remain local and are never committed.
-
-Contributors can run `.venv/bin/python tools/check.py` for the automated
-regression gate (host unit tests, attract hash, widescreen smoke, strict
-route replays) and `tools/play.sh` for an instrumented playtest session.
-Testing, debugging, coverage, and CI workflows live in
-[`tests/README.md`](tests/README.md); the repository map in
-[`docs/README.md`](docs/README.md); project rules in
-[`AGENTS.md`](AGENTS.md).
+Release players do not need this. Source-build requirements, the
+one-command `python3 build.py` route, the manual pipeline, the Android
+build, and contributor notes are documented in
+[docs/manual-build.md](docs/manual-build.md).
 
 ## License
 

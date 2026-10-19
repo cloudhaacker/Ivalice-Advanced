@@ -1,10 +1,10 @@
 # docs/ — how it works, running the game, and the repository map
 
 Deep-dive documentation. The [root README](../README.md) is the short
-story (quick start, features, controls, building); this folder holds the
-rest: project status, what the recompilation actually is, how to run and
-tune the built binary, the manual build route, the full repository map,
-and the contribution rules.
+story for players (release quick start, features, controls); this folder
+holds the rest: project status, what the recompilation actually is, how to
+run and tune the built binary, the manual build route, the full repository
+map, and the contribution rules.
 
 ## Status
 
@@ -15,7 +15,11 @@ fallback) and the attract-mode regression hash stable since pinning. The
 Windows build is a static MinGW cross-compile from the same tree
 (`tools/make_release.py --windows` — zero DLL dependencies, import-table
 guarded, wine-smoked, byte-reproducible; see tests/README.md § the release
-packager). Android is
+packager). Linux/Steam Deck ships as a portable zip and an AppImage built
+in a Debian 12 container for a SteamOS-safe glibc floor (the produced
+binaries require glibc 2.35); the AppImage's `AppRun` unpacks to a
+writable XDG data directory because the game keeps `rom.cfg`, settings and
+saves beside its executable. Android is
 device-verified on a Xiaomi Poco X3 Pro (Android 14): boot,
 press-acceptance, and the suspend/kill/relaunch lifecycle gates passed
 2026-10-09. Builds are experimental, so back up important saves and report
@@ -28,8 +32,9 @@ Dated evidence, history, and crash playbooks: [BRINGUP.md](../BRINGUP.md).
 
 This is not an emulator. *Final Fantasy Tactics Advance*'s ARM/Thumb
 machine code is statically translated ahead-of-time into host C++ by
-[gbarecomp](https://github.com/mstan/gbarecomp), compiled, and executed
-natively. The bundled clean-room BIOS
+[gbarecompx](https://github.com/james2doyle/gbarecompx) (the project's
+actively developed fork of [gbarecomp](https://github.com/mstan/gbarecomp)),
+compiled, and executed natively. The bundled clean-room BIOS
 ([bios/README.md](../bios/README.md)) is recompiled and linked like the rest
 of the machine.
 
@@ -41,18 +46,18 @@ fallback. The loop itself is documented in
 [tests/README.md](../tests/README.md).
 
 Framework truth supersedes any summary here:
-[gbarecomp/PRINCIPLES.md](../gbarecomp/PRINCIPLES.md),
-[DEBUG.md](../gbarecomp/DEBUG.md), and
-[docs/TOML_SCHEMA.md](../gbarecomp/docs/TOML_SCHEMA.md).
+[gbarecompx/PRINCIPLES.md](../gbarecompx/PRINCIPLES.md),
+[DEBUG.md](../gbarecompx/DEBUG.md), and
+[docs/TOML_SCHEMA.md](../gbarecompx/docs/TOML_SCHEMA.md).
 
 ## Running the built game
 
 For play, run the self-built binary directly. With no arguments it opens
-the [recomp-ui](https://github.com/mstan/recomp-ui) launcher — select your
-ROM and select **Play**. The BIOS is pre-filled from `game.toml` (the
-bundled clean-room build); launcher settings persist in
-`build/config.ini`, and the **Skip launcher** toggle boots straight into
-the game. To bypass the UI entirely:
+the pre-boot launch screen — the first boot opens the native file picker;
+pick your ROM and select **Play**. The BIOS is pre-filled from `game.toml`
+(the bundled clean-room build), the pick is cached in `rom.cfg`, and the
+in-game menu's settings persist in `config.ini`/`keybinds.ini` beside the
+executable. To bypass the screen entirely:
 
 ```sh
 ./build/FFTARecomp --bios bios/emibios_gba_bios.bin --rom game.gba
@@ -77,11 +82,41 @@ The screen model is also settable via `[video].screen` in
 `--view-width` changes the widescreen *view*, not the window — use
 `--scale` for window size.
 
+### Fast-forward
+
+Fast-forward controls, the in-game **Assist → Fast-forward speed** row
+(2–10x), and expected audio/frame behavior are documented in
+[fast-forward.md](fast-forward.md).
+
+### Headless flags
+
 Headless flags (`--frames N`, `--no-window`, `--dump-png`, `--load-state`,
 `--tcp-observe PORT`, …) exist for scripts, regression gates, and debugging,
 not for play. Run modes and their traps:
 [tests/README.md](../tests/README.md) and
 [reference/dev-gotchas.md](../reference/dev-gotchas.md).
+
+## Releasing
+
+The public release never involves the ROM on GitHub. A `v*` tag workflow
+(GitHub-hosted) only creates a **draft** release shell; the maintainer
+builds and verifies the artifacts locally, where the dump lives:
+
+```sh
+python3 build.py
+.venv/bin/python tools/check.py --jobs 8
+.venv/bin/python tools/publish_release.py --version vX.Y
+# inspect the draft, then:
+.venv/bin/python tools/publish_release.py --version vX.Y --upload-only --publish
+```
+
+`publish_release.py` builds the Linux zip, public APK, static Windows zip,
+and Steam Deck AppImage (desktop binaries from the pinned Debian 12 compat
+container), re-verifies each artifact's guard, writes
+`SHA256SUMS-vX.Y.txt`, and uploads them to the tag's draft. The artifacts
+are ROM-less production builds: players pick their own dump in the
+launcher. `workflow_dispatch` on the tag workflow prepares the draft for an
+existing tag as a recovery path.
 
 ## Manual build route
 
@@ -94,10 +129,10 @@ step detects whether it is already done.
 
 | Path | What |
 |---|---|
-| `build.py` | Fresh-clone bootstrap — submodules → dumps → venv → patches → tools → BIOS → corpus → build → smoke ([README § Quick start](../README.md#quick-start)) |
+| `build.py` | Fresh-clone bootstrap — submodules → dumps → venv → tools → BIOS → corpus → build → smoke ([manual-build.md](manual-build.md)) |
 | `build_apk.py` | Android bootstrap — preflight → private Gradle build (ROM embedded; BIOS bundled from `bios/`) → APK content guard → install + device gate ([android/README.md § Build](../android/README.md)) |
 | `game.toml` | Per-game config: identity pin + all audit seeds (evidence in `note`s) |
-| `src/` | Host integration: `main.cpp` (hooks/plugins), launcher boot, stack setup |
+| `src/` | Host integration: `main.cpp` (hooks/plugins, launch-screen boot), `ffta_ram_dispatch.h`, stack setup |
 | `android/` | Android target: Gradle project + engine-shell wiring, runtime TOML, payload defaults, device gate — guide `android/README.md` |
 | `tests/` | Host unit tests + the testing guide — playtesting, healing loop, gates, CI (`tests/README.md`) |
 | `docs/` | This guide + the manual setup route (`docs/manual-build.md`) |
@@ -109,7 +144,7 @@ step detects whether it is already done.
 | `tools/` | The harness — full list in `tools/README.md` |
 | `reference/` | Study notes, sources, and credits — `reference/README.md` |
 | `.agents/skills/` | Project-local agent skills — `gbarecomp-recomp-playbook`, a portable healing-loop/audit playbook |
-| `gbarecomp/`, `recomp-ui/` | Pinned framework submodules — do not update casually (pins + local patches: `reference/dev-gotchas.md`) |
+| `gbarecompx/` | Pinned framework submodule = the fork (`james2doyle/gbarecompx`; every former local patch is committed history there) — do not update casually (pin bumps: `reference/dev-gotchas.md` § Submodules) |
 | `BRINGUP.md` | Decision log — the project's memory; read it |
 | `AGENTS.md` | Rules of engagement for agents and contributors |
 | `THIRD_PARTY_ATTRIBUTION.md` | Third-party terms and redistribution rules |

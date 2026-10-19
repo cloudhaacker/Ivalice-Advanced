@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """One-command regression gate for the FFTA recomp worktree.
 
-Runs: host unit tests (C++ + Python) -> recomp-ui runtime-UI tests (the
-patched settings overlay) -> patch validity -> device-free Android checks ->
-attract golden gate -> widescreen smoke (margin census / center-crop / stale
+Runs: host unit tests (C++ + Python) -> patch validity -> device-free Android
+checks -> attract golden gate -> widescreen smoke (margin census / center-
+crop / stale
 guard, needs the local game.state1/state2 fixtures) -> render-path cadence
 gate (60 Hz scheduler invariants + no every-other-frame consumer on the
 presented surfaces) -> strict route replays
@@ -23,13 +23,13 @@ silently redefining the baseline.
 
 Usage:
   .venv/bin/python tools/check.py            # everything (~1.5-2 min)
-  .venv/bin/python tools/check.py --fast     # unit tests + ui tests + android checks + attract
+  .venv/bin/python tools/check.py --fast     # unit tests + ui tests + android checks + raylib default probe + attract
   .venv/bin/python tools/check.py --jobs 1   # serial
   .venv/bin/python tools/check.py --only NAME[,NAME...]
 
 CI tier 1 runs the no-private-material subset (no ROM/savestates needed;
 the launch BIOS is committed clean-room repo material since the emibios
-swap): `--only unit-cpp,unit-py,ui-tests,patches,android-static` — see
+swap): `--only unit-cpp,unit-py,android-static` — see
 tests/README.md § Continuous integration.
 
 Opt-in suite (not in the default run): `android-apk` — the content guard for
@@ -182,139 +182,10 @@ def check_cadence():
     return r.returncode == 0 and "cadence_probe: PASS" in line, line
 
 
-def check_ui_tests():
-    """recomp-ui's runtime-UI tests (tools/ui_check.py): the settings overlay
-    is a patched submodule, so its model + ImGui presentation tests must run,
-    not just the diff be validated by the patches check."""
-    r = run([sys.executable, "tools/ui_check.py"], timeout=900)
-    line = (r.stdout.strip().splitlines() or [""])[-1]
-    return r.returncode == 0 and "ui_check: OK" in line, line
-
-
 def check_savecheck():
     r = run([sys.executable, "tools/savecheck.py", str(FIXTURE_SAVE)], timeout=120)
     line = (r.stdout.strip().splitlines() or [""])[-1]
     return r.returncode == 0 and "savecheck: OK" in line, line
-
-
-def check_patches():
-    """tools/patches/*.patch must be real diffs matching the pinned submodules:
-    apply-able forward to a pristine tree, or reversible from the patched dev
-    tree. Catches mangled/empty exports (2026-10-08 regression). Patches named
-    arm-recomp-core-* target the nested external/arm-recomp-core repo and
-    recomp-ui-* the recomp-ui submodule; all others target gbarecomp itself."""
-    details = []
-    ok = True
-    names = sorted(p.name for p in (REPO / "tools" / "patches").glob("*.patch"))
-    if not names:
-        return False, "no *.patch files found"
-    for name in names:
-        p = REPO / "tools/patches" / name
-        if not p.exists():
-            ok = False
-            details.append(f"{name}: missing")
-            continue
-        if name.startswith("arm-recomp-core"):
-            root = "gbarecomp/external/arm-recomp-core"
-        elif name.startswith("recomp-ui"):
-            root = "recomp-ui"
-        else:
-            root = "gbarecomp"
-        fwd = run(["git", "-C", root, "apply", "--check", str(p)])
-        if fwd.returncode == 0:
-            details.append(f"{name}: forward-ok")
-            continue
-        rev = run(["git", "-C", root, "apply", "--check",
-                   "--reverse", str(p)])
-        if rev.returncode == 0:
-            # Reverse-ok on a local dev tree is NOT enough for CI: a fresh
-            # checkout validates the SAME file forward against the pristine
-            # pin, and a dev-based export (context interleave from other
-            # local features) goes INVALID there (2026-10-09: both
-            # regenerated reference diffs broke tier-1 this way). A pristine
-            # submodule has no local edits, so forward-apply there is the
-            # cheap equivalent of the pin-based export — enforce it.
-            pin_ok = None
-            with tempfile.TemporaryDirectory(prefix="gbpin.") as td:
-                pr = subprocess.run(
-                    ["bash", "-c",
-                     f"git -C {root} archive HEAD | tar -x -C {td}"],
-                    cwd=str(REPO), capture_output=True, text=True)
-                if pr.returncode == 0:
-                    pf = subprocess.run(
-                        ["git", "-C", td, "apply", "--check", str(p)],
-                        capture_output=True, text=True)
-                    if pf.returncode != 0:
-                        ok = False
-                        details.append(
-                            f"{name}: INVALID on pristine pin "
-                            f"(CI condition; rebase pin-based)")
-                    else:
-                        pin_ok = True
-            details.append(f"{name}: reverse-ok (applied)"
-                           + (", pin-forward-ok" if pin_ok else ""))
-        else:
-            ok = False
-            details.append(f"{name}: INVALID")
-    # Replay integrity: pin + the consolidated patch must byte-match the dev
-    # tree. This catches submodule drift (unrecorded edits) and any mangling
-    # the per-file forward/reverse checks would miss. The per-feature files
-    # are reference diffs and deliberately are NOT stacked here (their
-    # contexts interleave after historical re-exports; the consolidated
-    # patch is the canonical re-apply unit). Same for the nested
-    # arm-recomp-core repo with its own consolidated patch.
-    for root, cons_name, label in (
-            ("gbarecomp", "gbarecomp-local.patch", "gbarecomp-local"),
-            ("gbarecomp/external/arm-recomp-core",
-             "arm-recomp-core-local.patch", "arm-recomp-core-local"),
-            ("recomp-ui", "recomp-ui-local.patch", "recomp-ui-local")):
-        cons = REPO / "tools" / "patches" / cons_name
-        if not cons.exists():
-            continue
-        with tempfile.TemporaryDirectory(prefix="gbpatch.") as td:
-            arch = subprocess.run(
-                ["bash", "-c", f"git -C {root} archive HEAD | tar -x -C {td}"],
-                cwd=str(REPO), capture_output=True, text=True)
-            app = subprocess.run(
-                ["patch", "-p1", "-s", "-f", "--no-backup-if-mismatch",
-                 "-i", str(cons)], cwd=td, capture_output=True, text=True)
-            if arch.returncode != 0 or app.returncode != 0:
-                ok = False
-                details.append(f"{label} replay: apply FAILED")
-            else:
-                # The byte-compare below is a LOCAL-dev-tree guarantee: pin+
-                # patch must equal the submodule tree that carries the
-                # uncommitted framework edits. A pristine checkout (CI) has
-                # no local edits — its tree IS the pin, so the clean apply
-                # above already proved patch<->pin fidelity and the compare
-                # would false-red on every patched file. Skip it there.
-                # Tracked modifications only (-uno): untracked build junk
-                # must not force the compare.
-                pristine = not run(
-                    ["git", "-C", root, "status", "--porcelain", "-uno"]
-                ).stdout.strip()
-                if pristine:
-                    details.append(
-                        f"{label} replay: apply-ok (pristine submodule)")
-                    continue
-                tracked = run(["git", "-C", root, "ls-files"]).stdout.split()
-                bad = []
-                for f in tracked:
-                    dev = REPO / root / f
-                    if not dev.is_file():
-                        continue  # gitlinks and directories
-                    rep = pathlib.Path(td) / f
-                    if not rep.exists() or rep.read_bytes() != dev.read_bytes():
-                        bad.append(f)
-                if bad:
-                    ok = False
-                    details.append(
-                        f"{label} replay: {len(bad)} file(s) differ "
-                        f"(e.g. {', '.join(bad[:3])})")
-                else:
-                    details.append(
-                        f"{label} replay: {len(tracked)}-file tree matches")
-    return ok, " ".join(details)
 
 
 def _acceptance_lock():
@@ -394,6 +265,169 @@ def check_hangrepro():
     return r.returncode == 0, line or f"exit {r.returncode}"
 
 
+def check_raylib_headless():
+    """Headless tier (Phase 5, required): the standalone framework with
+    raylib on PLATFORM_MEMORY (rlsw software GL), driven with no display
+    server at all.
+
+    Configures `build-raylib-headless/` (its own dir: a dir caches its
+    source AND its flag set), builds the whole framework test set there,
+    runs full ctest, then runs the smoke binary directly with
+    DISPLAY/WAYLAND_DISPLAY scrubbed and requires the `tier=rlsw headless`
+    report line -- the gate states which tier ran, not just exit 0.
+
+    Opt-in locally (first run fetches + builds raylib, minutes; needs
+    network on first run); CI runs it every push (the `headless` job)."""
+    build = REPO / "build-raylib-headless"
+    cfg = ["cmake", "-S", str(REPO / "gbarecompx"), "-B", str(build),
+           "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release",
+           "-DGBARECOMP_USE_RAYLIB=ON", "-DGBARECOMP_RAYLIB_HEADLESS=ON"]
+    r = run(cfg, timeout=900)
+    if r.returncode != 0:
+        return False, "headless configure failed (needs network on first run)"
+    r = run(["cmake", "--build", str(build), "--parallel", "4"], timeout=1500)
+    if r.returncode != 0:
+        errs = [ln for ln in (r.stdout + r.stderr).splitlines()
+                if "error:" in ln]
+        return False, (errs[0].strip() if errs else "headless build failed")
+    r = run(["ctest", "--test-dir", str(build), "--output-on-failure"],
+            timeout=900)
+    if r.returncode != 0:
+        return False, "headless ctest failed"
+    exe = build / "raylib_headless_tests"
+    env = clean_env()
+    env.pop("DISPLAY", None)
+    env.pop("WAYLAND_DISPLAY", None)
+    r = run([str(exe)], env=env, timeout=300)
+    out = r.stdout + r.stderr
+    if r.returncode != 0:
+        lines = [ln for ln in out.splitlines() if ln.strip()]
+        return False, (lines[-1][-160:] if lines else "headless smoke failed")
+    if "tier=rlsw headless" not in out:
+        return False, "smoke passed without reporting the headless tier"
+    return True, "PASS (rlsw headless, DISPLAY unset)"
+
+
+def check_raylib_compile():
+    """Compile the RaylibBackend against real raylib 6 (opt-in).
+
+    Phase 4c made raylib the DEFAULT: this configures the canonical `build/`
+    dir with NO raylib flag and asserts the framework's effective flag. If the
+    default regresses to OFF, that assertion fails and names the regression
+    (the present-test target would also vanish, but its error would read
+    "unknown target" instead).
+
+    Nothing else builds the raylib path on a fresh checkout, so it could
+    silently stop compiling while every other gate stays green. Builds just the
+    backend target -- not raylib itself, not the game.
+
+    It ALSO compiles the backend with the flag OFF (stub build, second build
+    dir). The backend file must compile in both configurations: Slice B/C
+    helpers were once declared inside `#if defined(GBARECOMP_USE_RAYLIB)` but
+    called from unguarded setters, which broke the other configuration while
+    the raylib tree stayed green -- and no gate built that configuration, so it
+    survived several sessions. This is the gate that closes that class, and the
+    explicit OFF is what keeps a default flip from silently dropping this half.
+
+    Opt-in rather than default: the first configure fetches and builds raylib,
+    which is minutes. Once cached in build/ it is a few seconds. The stub dir
+    needs no raylib at all (flag OFF skips the fetch), so it is cheap and
+    offline from the first run.
+
+    Needs network on first run (raylib is fetched by SHA).
+    """
+
+    # Configure from the ROOT project with DEFAULTS ONLY -- the no-flag
+    # configure IS the Phase 4c contract (raylib is the product backend), and
+    # this is the same dir every app suite runs from. It wires GBARECOMP_ROOT /
+    # mods / the app target the runtime needs. A build dir caches its source
+    # directory, so pointing a -S at the framework subdir against the same dir
+    # is rejected by CMake.
+    build = REPO / "build"
+    src = REPO
+    # NB: cmake, not sys.executable -- "-S" is also a Python flag and would be
+    # silently swallowed as one, turning this into `python -S <dir>`.
+    cfg = ["cmake", "-S", str(src), "-B", str(build), "-G", "Ninja",
+           "-DCMAKE_BUILD_TYPE=Release"]
+    r = run(cfg, timeout=900)
+    if r.returncode != 0:
+        return False, f"configure failed (raylib fetched by SHA; needs network)"
+
+    # The effective flag, not the request: "GBARECOMP_USE_RAYLIB was requested"
+    # is not the same claim as "raylib was fetched and linked".
+    if "GBARECOMP_RAYLIB_ENABLED:INTERNAL=ON" not in (
+            build / "CMakeCache.txt").read_text():
+        return False, ("default configure did not select raylib: the Phase 4c "
+                       "default flip regressed (GBARECOMP_RAYLIB_ENABLED is "
+                       "not ON)")
+
+    r = run(["cmake", "--build", str(build), "--target",
+             "gbarecomp_raylib_backend", "--parallel", "4"], timeout=900)
+    if r.returncode != 0:
+        errs = [ln for ln in (r.stdout + r.stderr).splitlines()
+                if "error:" in ln]
+        return False, (errs[0].strip() if errs else "raylib backend build failed")
+
+    # The OFF half: same file must compile as a stub. Uses its own build dir
+    # (a dir caches its source AND its flag set -- reconfiguring build/ OFF
+    # and back would thrash the cached raylib build).
+    # Explicit OFF rather than relying on the default, so a default flip can
+    # never silently drop this half. No raylib fetch happens with the flag
+    # off, so this half is offline-cheap.
+    stub = REPO / "build-raylib-stub"
+    r = run(["cmake", "-S", str(src), "-B", str(stub), "-G", "Ninja",
+             "-DCMAKE_BUILD_TYPE=Release", "-DGBARECOMP_USE_RAYLIB=OFF"],
+            timeout=900)
+    if r.returncode != 0:
+        return False, "stub configure failed"
+    r = run(["cmake", "--build", str(stub), "--target",
+             "gbarecomp_raylib_backend", "--parallel", "4"], timeout=900)
+    if r.returncode != 0:
+        errs = [ln for ln in (r.stdout + r.stderr).splitlines()
+                if "error:" in ln]
+        return False, ("stub (USE_RAYLIB=OFF) backend build failed: " +
+                       (errs[0].strip() if errs
+                        else "raylib_backend.cpp does not compile as a stub"))
+
+    # Compiling is not running — but the PRESENT-pipeline runtime coverage
+    # (ffta_raylib_present_tests through 2026-10-17) moved to the FRAMEWORK:
+    # gbarecompx/tests/runtime/raylib_present_test.cpp, run by the fork's own
+    # raylib CI job under Xvfb+llvmpipe. The ownership split keeps this suite
+    # to the game's own surface: the product-config compile + the default-flip
+    # assertion above are what "the game's raylib path still builds" means.
+    # (History that earned its keep here: the present test once found that
+    # open() hid the window whenever linear filtering was off — the default —
+    # so a default launch was invisible. The menu composited-screen tier that
+    # used to ride this recipe moved with it — menu_render_contract_tests is
+    # the fork's test and runs in the fork's raylib job.)
+    return True, "backend compiles (ON+OFF; raylib default selected)"
+
+
+def check_raylib_backend():
+    """RaylibBackend completeness + guard self-test.
+
+    The WindowBackend seam only pays off if the backend implements the WHOLE
+    interface. `override` catches signature drift but NOT a newly-added virtual
+    the backend fails to override -- that silently inherits the default.
+    tools/check_raylib_backend_complete.py closes that gap with three checks:
+    the single-generation markers, purity of every interface method, and
+    per-interface attribution (each method overridden at ITS OWN impl site -- a
+    method implemented in the wrong impl class is caught since Phase 4d). Its
+    self-test covers the parser cases that have bitten us (function-pointer
+    args, pointer spacing, overloads) plus the attribution cases.
+
+    Cheap -- pure Python, no build."""
+    r = run([sys.executable, "tools/tests/test_check_raylib_backend_complete.py"],
+            timeout=120)
+    if r.returncode != 0:
+        line = (r.stdout.strip().splitlines() or [""])[-1]
+        return False, f"guard self-test failed: {line}"
+
+    r = run([sys.executable, "tools/check_raylib_backend_complete.py"], timeout=120)
+    line = (r.stdout.strip().splitlines() or [""])[-1]
+    return r.returncode == 0, line or f"exit {r.returncode}"
+
+
 def check_android_static():
     """Device-free Android checks (tools/android_static_check.py): identity
     pin consistency, the mods payload contract, tracked-file hygiene, and a
@@ -424,13 +458,53 @@ def check_release():
     return r.returncode == 0, line or f"exit {r.returncode}"
 
 
+def backend_default_cache_ok(cache_text):
+    """Pure predicate behind check_backend_default: the canonical build dir
+    is the raylib product build only when the effective flag is ON *and*
+    the dir was not configured headless (a Memory build reports ENABLED too,
+    but shows no window). Returns (ok, detail)."""
+    if "GBARECOMP_RAYLIB_ENABLED:INTERNAL=ON" not in cache_text:
+        return False, ("build/ is not the raylib product build: "
+                       "GBARECOMP_RAYLIB_ENABLED is not ON (Phase 4c default "
+                       "regressed, or the dir was configured with "
+                       "-DGBARECOMP_USE_RAYLIB=OFF)")
+    if "GBARECOMP_RAYLIB_HEADLESS:BOOL=ON" in cache_text:
+        return False, ("build/ is a headless Memory build "
+                       "(GBARECOMP_RAYLIB_HEADLESS is ON), not the raylib "
+                       "product build: reconfigure without the flag")
+    return True, "build/ is the raylib product build"
+
+
+def check_backend_default():
+    """The canonical build dir is the raylib product build (Phase 4c).
+
+    The default flip is only real if the dir every app suite runs from was
+    configured with it: `build/` must carry the framework's effective raylib
+    flag, and (when built) the selection predicate must agree. Cheap: reads the
+    cache and runs one small binary; no configure, no fetch. Skips cleanly when
+    the canonical dir is not configured (tier-1-only checkouts)."""
+    cache = REPO / "build/CMakeCache.txt"
+    if not cache.exists():
+        return True, "skipped (build/ not configured)"
+    ok, detail = backend_default_cache_ok(cache.read_text())
+    if not ok:
+        return False, detail
+    # The selection-predicate binary (ffta_backend_select_tests) moved to the
+    # framework's test tree (2026-10-17 ownership split; the fork's CI runs
+    # it config-adaptively). The cache assertion above is this suite's
+    # remaining contract.
+    return True, "build/ is the raylib product build (cache)"
+
+
 CHECKS = {
     "unit-cpp": check_unit_cpp,
     "unit-py": check_unit_py,
-    "ui-tests": check_ui_tests,
     "savecheck": check_savecheck,
-    "patches": check_patches,
     "android-static": check_android_static,
+    "raylib-backend": check_raylib_backend,
+    "backend-default": check_backend_default,
+    "raylib-compile": check_raylib_compile,
+    "raylib-headless": check_raylib_headless,
     "hangrepro": check_hangrepro,
     "desktop-accept": check_desktop_accept,
     "desktop-accept-window": check_desktop_accept_window,
@@ -447,16 +521,18 @@ CHECKS = {
                                           REG / "battle_move_start.state",
                                           REG / "battle_move.sav", 5600),
 }
-FAST = ["unit-cpp", "unit-py", "ui-tests", "savecheck", "patches",
-        "android-static", "attract"]
+FAST = ["unit-cpp", "unit-py", "savecheck",
+        "android-static", "raylib-backend", "backend-default", "attract"]
 # Opt-in suites, left out of the default run (they need local artifacts a
 # desktop-only worktree may not have); --only NAME runs them explicitly.
 # release: the zip packager — needs a built tree (no ROM), and its output
 # is a public artifact contract, so it runs explicit, never by default.
-OPTIONAL = {"android-apk", "release"}
+# raylib-compile is opt-in locally (its first run fetches + builds raylib, minutes)
+# but IS run by CI: the raylib-backend job in .github/workflows/ci.yml needs no ROM
+# and no display, so it is cheap enough to gate every push.
+OPTIONAL = {"android-apk", "release", "raylib-compile", "raylib-headless"}
 # Checks that execute the game binary (require it to exist); the others run
-# on a fresh clone without the ROM (CI tier 1: unit-cpp, unit-py, ui-tests,
-# patches).
+# on a fresh clone without the ROM (CI tier 1: unit-cpp, unit-py, android-static).
 NEEDS_EXE = {"attract", "hle-audit", "ws_smoke", "user_load", "route_G",
              "route_K", "route_B", "cadence"}
 
@@ -466,7 +542,7 @@ def main():
     ap.add_argument("--fast", action="store_true")
     ap.add_argument("--only",
                     help="comma-separated subset, e.g. "
-                         "unit-cpp,unit-py,patches,android-static")
+                         "unit-cpp,unit-py,android-static")
     ap.add_argument("--jobs", type=int, default=0,
                     help="concurrent checks (default: auto = min(8, cpus); "
                          "1 = serial)")

@@ -11,9 +11,9 @@ start, features, controls, building); running and display options live in
 - **C++ (`src/` custom code, no ROM/BIOS):**
   `cmake --build build --target ffta_unit_tests && ctest --test-dir build -R ram_dispatch`
   — `ffta_ram_dispatch` (RAM-code canonicalizer) + the host-stack-guard
-  test, which **compiles only where the pinned submodule declares the guard
-  APIs** (`HOST_STACK_GUARD_API`; absent on a pristine checkout, it prints a
-  skip — the APIs live in `tools/patches/host-stack-guard-desktop.patch`).
+  test, which **compiles where the framework submodule declares the guard
+  APIs** (`HOST_STACK_GUARD_API` in the gbarecompx fork; a checkout
+  missing them prints a skip).
   Also unit-covered since the 2026-10-09 src audit: the **LZSS entry guard**
   (`ffta::lzss_entry_guard`, `src/ffta_lzss_guard.h`) — plausible length →
   declined, implausible → return-to-LR with the thumb bit stripped, and the
@@ -21,30 +21,27 @@ start, features, controls, building); running and display options live in
   mid-copy-resume regressions (sentinel `r2 == -1` from any address,
   including a byte-matching re-plant, must pass through; two-byte-early
   entries only run on a byte-match) and the copy-count clamp semantics.
-- **Frame pacer (`tests/unit/test_frame_pacer.cpp`, same binary):**
+- **Frame pacer (moved 2026-10-17 to `gbarecompx/tests/runtime/frame_pacer_test.cpp` —
+  the framework owns `host_platform`):**
   `wait_for_next_frame(k)` throttles k periods (the issue-#8 fix — a
   4-frame present must take ~4 periods, not 1), the default paces one
   frame, uncapped returns immediately, and absurd banks clamp instead of
   sleeping for seconds. Wide timing margins (no flakes); red-verified
-  against the pre-fix single-period behavior. Pristine-checkout policy
-  mirrors the stack-guard test (`PACER_BANKED_API` probe — compiles to a
-  skip where the patched header is absent).
+  against the pre-fix single-period behavior.
 - **Python tooling:** `.venv/bin/python tests/python/test_tools.py`
-  (needs capstone — the `.venv`; run by `tools/check.py --only unit-py`).
-  Covers the pure healing/audit logic (trace_split, cache_harvest,
-  misspack prologue-scan) plus cheap structural guards:
+  (stdlib only; run by `tools/check.py --only unit-py`).
+  Covers cheap structural guards:
   - **TSV shape** — `symbols/*.tsv` field counts, hex addresses, region
     vocab, C-identifier names, no duplicate names (a malformed line breaks
     regen or mislabels an emitted unit; negative-tested).
-  - **Patches README parity** — the table must list exactly the present
-    `*.patch` files.
   - **`gba_bios.bin` byte-pin** — sha1 + the exact words at every contract
     point the engine cites (vectors, IRQ wrapper epilogue, SWI dispatcher
     service-switch + epilogue). **Local-only:** the retail dump is
-    BIOS-derived and never in git (`gbarecomp/.gitignore bios/*.bin`);
+    BIOS-derived and never in git (`gbarecompx/.gitignore bios/*.bin`);
     the test skips on any checkout without it (CI included). Since the
-    issue #17 swap this is REFERENCE material (the launcher-accepted
-    alternative + the oracle's default), not the launch BIOS.
+    issue #17 swap this is REFERENCE material (a user-supplied
+    alternative the picker still accepts + the oracle's default), not
+    the launch BIOS.
   - **`emibios_gba_bios.bin` byte-pin** (`EmibiosBytePinTests`) — the
     same contract-point discipline for the COMMITTED launch BIOS
     (clean-room emibios, `bios/`, LGPL): sha1/size, exception vectors,
@@ -60,15 +57,13 @@ start, features, controls, building); running and display options live in
     gate must never regress to comparing emitted corpus mtimes (the
     recompiler preserves them for byte-identical output — the
     2026-10-11 "corpus is stale forever" lesson).
-- `tools/check.py` runs both, plus the patches check (every per-feature
-  patch must also **forward-apply on the pristine pin** — the CI condition;
-  dev-based exports go INVALID there), the recomp-ui runtime-UI tests
-  (`tools/ui_check.py`, suite `ui-tests` — the in-game settings overlay is a
-  patched submodule, so its model + ImGui presentation tests run too; builds
-  with just a C/C++ compiler, no ROM. On a pristine checkout — CI — it
-  builds upstream's tests unchanged, so the patched behavior is covered
-  locally, not there), the attract gate,
-  widescreen smoke and strict route replays (below).
+- `tools/check.py` runs both, the attract gate,
+  widescreen smoke and strict route replays (below). The GitHub CI runs
+  `--only unit-cpp,unit-py,android-static` plus the raylib-backend and
+  android-lint jobs (`.github/workflows/ci.yml`). The per-feature
+  patches check is RETIRED: the framework fork carries its former patch
+  work as committed history, so there is no patch suite to
+  forward-apply anymore.
 
 ---
 
@@ -89,7 +84,6 @@ playtests cannot clobber each other.
 | `tools/play.sh --scale N` | bigger window (1–8; 8 = 1920×1280) |
 | `tools/play.sh --resize-view` | widescreen windowed — the view follows the window (up to 448 px; fixed width: `--view-width 320\|384\|448`; default stays faithful 240) |
 | `tools/play.sh --fullscreen` | borderless desktop fullscreen |
-| `tools/play.sh --launcher` | run the settings UI first |
 | `tools/play.sh --tcp-observe PORT` | window + read-only debug port (see below) |
 | `tools/play.sh --save-path saves/copy.sav` | play a different battery save (last flag wins; work on a copy — in-game saves rewrite the file) |
 
@@ -126,9 +120,9 @@ Notes:
 | `logs/playtest_misses.frag` | TOML proposals for every code miss — journaled to disk the moment each miss is recorded (a hang or kill cannot lose it); rewritten with final counts at clean exit |
 | `recomp_cache/…` | each miss healed on the fly into native code — the game keeps running; the frag is the offline seed queue |
 
-A clean close (**ESC** in-game, or `tools/quit.py`) also flushes the exit
+A clean close (**ESC** in-game, or `gbarecompx/tools/quit.py`) also flushes the exit
 diagnostics. If the window ever refuses to close, `.venv/bin/python
-tools/quit.py <port>` closes remotely and flushes exactly the same
+gbarecompx/tools/quit.py <port>` closes remotely and flushes exactly the same
 artifacts.
 
 ### Debugging from a second terminal
@@ -139,14 +133,14 @@ single long-lived watcher per session.
 | Tool | Use |
 |---|---|
 | `.venv/bin/python tools/keyprobe.py PORT` | live KEYINPUT monitor (active-low) — verifies host keys reach the guest. Click the window once (focus) first. |
-| `.venv/bin/python tools/livewatch.py PORT` | frame-stall watchdog — snapshots registers, state hash and an IWRAM stack window to `/tmp/hang_*.json` the moment the frame counter stops advancing |
+| `.venv/bin/python gbarecompx/tools/livewatch.py PORT` | frame-stall watchdog — snapshots registers, state hash and an IWRAM stack window to `/tmp/hang_*.json` the moment the frame counter stops advancing |
 | `.venv/bin/python tools/hangprobe.py PORT` | read-only hang probe — registers + IF/IE/IME + FFTA wake flag + IRQ vector + miss report; safe on stalled sessions (never send `savestate_save` there — it wedges the single-client server) |
-| `.venv/bin/python tools/quit.py PORT` | clean remote close (archives + flushes) |
-| raw TCP reads | memory/register reads for ad-hoc questions — see `gbarecomp/TCP.md`; observe mode has no stepping |
+| `.venv/bin/python gbarecompx/tools/quit.py PORT` | clean remote close (archives + flushes) |
+| raw TCP reads | memory/register reads for ad-hoc questions — see `gbarecompx/TCP.md`; observe mode has no stepping |
 
 For deeper captures (no code changes): `GBARECOMP_INSN_TRACE=1` +
 `GBARECOMP_FP_SAVE=file` (per-instruction ring; query with
-`tools/ringscan.py`), `GBARECOMP_WRAM_TRACE` (+`_LO`/`_HI`),
+`gbarecompx/tools/ringscan.py`), `GBARECOMP_WRAM_TRACE` (+`_LO`/`_HI`),
 `GBARECOMP_MISS_IWRAM_DUMP` — details in `reference/dev-gotchas.md`.
 
 ### Recipes
@@ -172,11 +166,11 @@ For deeper captures (no code changes): `GBARECOMP_INSN_TRACE=1` +
   (mixer rate, samples_generated, SOUNDBIAS, cycles/sample),
   `GBARECOMP_FRAME_PHASE=path` (per-visit guest/pacer split),
   `GBARECOMP_SAMPLE=1` (hot-PC histogram). Knobs live in
-  `gbarecomp/src/runtime/host_window.cpp` + `recomp_audio_drc.h`; note the
+  `gbarecompx/src/runtime/host_window.cpp` + `recomp_audio_drc.h`; note the
   mixer is mono and FFTA runs with the MP2K shadow off (`game.toml`).
 - **Save flows / external saves.** Play on a copy (`--save-path`), validate
   structurally with `tools/savecheck.py`; oracle comparisons:
-  `tools/dualrun.py probe saveflow`.
+  `gbarecompx/tools/dualrun.py probe saveflow`.
 - **Long sessions.** Supported — present-in-place + background healing keep
   long runs stable, and the frag stays current throughout.
 - **Widescreen.** `tools/play.sh --scale 4 --resize-view` (or
@@ -249,7 +243,7 @@ flowchart TD
     class Abort,Fix failure
 ```
 
-**1 — Play.** `tools/play.sh [--scale 8]` and just play. The launcher
+**1 — Play.** `tools/play.sh [--scale 8]` and just play. The script
 instruments everything:
 
 | Artifact | What it is |
@@ -264,12 +258,12 @@ instruments everything:
   so both clean exits and kills/hangs leave the miss list on disk; a clean
   exit rewrites it with final counts.
 - If a session still looks odd, recover the healed PCs with
-  `.venv/bin/python tools/cache_harvest.py --new` (reads the heal cache
+  `.venv/bin/python gbarecompx/tools/cache_harvest.py --new` (reads the heal cache
   filenames). Paste the terminal output too — abort messages name the pc.
 
 **3 — Merge reviewed seeds** into `game.toml` (`[[extra_func]]` /
 `[[jump_table]]` / `[[code_copy]]`, each with a disassembly-evidence `note`;
-`tools/misspack.py <frag>` builds the evidence pack). Never auto-write
+`gbarecompx/tools/misspack.py <frag>` builds the evidence pack). Never auto-write
 `game.toml`; proposals are reviewed. **Same-session symbols check** (the
 step that keeps getting missed): every newly-identified function gets a
 naming-only entry in `symbols/ffta_symbols.tsv`, and every newly-identified
@@ -289,13 +283,13 @@ device journal is silent coverage debt (the 2026-10-11
 gAbilityAnimationTable batch: 218 records sat invisible until a gate run
 resumed that session's suspend state — BRINGUP same date).
 
-**4 — Resolve to static.** `.venv/bin/python tools/resolve.py --trace
+**4 — Resolve to static.** `.venv/bin/python gbarecompx/tools/resolve.py --trace
 logs/playthrough.csv [--load-state saves/<state>] [--frames N]` — it
 strict-replays your session, seeds each miss through a temporary overlay,
 rebuilds and repeats until `FULLY_STATIC`, then writes the accumulated seeds
 to a proposal file for merging. If you reloaded a savestate mid-session, the
 trace jumps backward and replay rejects it — split it first with
-`.venv/bin/python tools/trace_split.py --trace logs/playthrough.csv` and
+`.venv/bin/python gbarecompx/tools/trace_split.py --trace logs/playthrough.csv` and
 resolve each segment from the same start state.
 
 **5 — Verify.** `.venv/bin/python tools/cycle.py` (cold regen →
@@ -313,7 +307,7 @@ GBARECOMP_INPUT_REPLAY=logs/playthrough.csv ./build/FFTARecomp ...` — expect
 |---|---|
 | `dispatch miss for pc=… no generated function` | Normal coverage gap: bridged + healed. Feed it to the corpus. |
 | `SELF-HEAL bridge for 0x… exceeded 200000000 instructions … Aborting` | Bridge stop-contract limitation (crash #1/#2 in BRINGUP). Harvest the cache, seed the path static, retry. |
-| `SELF-HEAL bridge hit interpreter NotImplemented/Undefined at pc=…` | A genuine interpreter-lowering gap in gbarecomp. Report; fix belongs upstream. |
+| `SELF-HEAL bridge hit interpreter NotImplemented/Undefined at pc=…` | A genuine interpreter-lowering gap in the gbarecompx framework. Report; fix lands in the fork (upstream mstan/gbarecomp where the change is general). |
 
 ## Verification & regression
 
@@ -376,7 +370,7 @@ GBARECOMP_INPUT_REPLAY=logs/playthrough.csv ./build/FFTARecomp ...` — expect
   subset. `tools/savecheck.py` validates raw/RTN5 saves offline.
   The `saves/regress/` fixtures are local-only (never redistributed), so a
   fresh clone has nothing to replay: use
-  `--only unit-cpp,unit-py,patches,android-static` (the CI subset — no dumps
+  `--only unit-cpp,unit-py,android-static` (the CI subset — no dumps
   needed) or
   `--only attract` (dumps but no fixtures) until you have regenerated routes
   by playing + resolving; `--fast` also needs the fixture for its
@@ -447,10 +441,10 @@ oracle-identical (BRINGUP §§ cont.2–cont.4; driver-call tooling:
 `tools/readseq_probe.py`). Remaining minor observation: a ~950-frame
 native-vs-oracle offset for the same flow (open; no state divergence in the
 compared windows).
-- **Oracle frame-diff:** `tools/framediff.py --lo 4 --hi 300` (native vs the
+- **Oracle frame-diff:** `gbarecompx/tools/framediff.py --lo 4 --hi 300` (native vs the
   framework's mGBA oracle; bounded band diffs on animated content are
   expected and documented in BRINGUP § "park-phase semantics") and
-  `tools/dualrun.py` for lockstep region/pixel probes.
+  `gbarecompx/tools/dualrun.py` for lockstep region/pixel probes.
 - **Acceptance replays in the repo today:** boot → new game
   (`inputs/title_to_newgame.csv`, 6000 f), the battle continuation
   (`inputs/session2_battle_trace.csv` + a matching state), battle movement
@@ -469,10 +463,9 @@ Two tiers, split by what may leave your machine:
   Runs on GitHub-hosted runners for every push/PR: checks out the pinned
   submodules (**pristine at the pin** — local framework edits live only in
   working trees, never pushed), installs the build packages, configures, and
-  runs `tools/check.py --only unit-cpp,unit-py,patches,android-static` —
-  the host unit tests (C++/Python), patch integrity (per-feature patches
-  forward-validated against the **pristine pin**, so it works on a fresh
-  clone), and the device-free Android checks (identity pins, payload
+  runs `tools/check.py --only unit-cpp,unit-py,android-static` —
+  the host unit tests (C++/Python), the device-free Android checks (identity
+  pins, payload
   contract, tracked-file hygiene, a fake-`adb` self-test of the device gate
   script; no SDK needed). It needs no ROM or savestates, and therefore
   cannot run the game itself (the ROM byte-pin and stack-guard tests skip
@@ -483,12 +476,31 @@ Two tiers, split by what may leave your machine:
 - **Tier 2 — the full gate (`attract`, `ws_smoke`, route replays).** Needs
   `game.gba` + the sha-pinned local fixtures (`saves/ws_fixtures/`,
   `saves/regress/`), which are game-derived and never committed. Run it on
-  a **self-hosted runner with the material pre-placed**, or a job that
-  fetches a private fixture bundle under a token — gated to
-  `push`/`workflow_dispatch` and **never** exposed to fork-PR workflows
-  (a PR job on a runner that can read the ROM is an exfiltration path).
+  the **maintainer's machine**, or on a self-hosted runner with the
+  material pre-placed; it is never a GitHub-hosted job (the ROM-derived
+  corpus cannot be regenerated from a clean public checkout). The release
+  path is local: `tools/publish_release.py` builds, gates, and uploads the
+  artifacts; the tag workflow only creates the draft release shell.
   The sha pins (regress save + the ws fixtures) fail loudly if the
-  runner's fixtures drift.
+  fixtures drift.
+- The **`raylib-backend` job** (`.github/workflows/ci.yml`) is a second,
+  independent tier-1 job for the experimental raylib backend
+  (`gbarecompx/`, opt-in via `-DGBARECOMP_USE_RAYLIB=ON`). It runs
+  `tools/check.py --only raylib-compile`, which fetches raylib 6 by SHA, builds
+  the backend, and then **builds and runs** the integration test — on a
+  GitHub-hosted runner with no GPU, no `/dev/dri` and no X server, via
+  `xvfb-run -a` with Mesa's llvmpipe software rasterizer. No ROM needed: the
+  test links only raylib + `gbarecomp_raylib_backend`, deliberately kept lean
+  because `generated/` is gitignored and anything linking `gbarecomp_runtime`
+  cannot link on a fresh checkout. It reports which display it used, and skips
+  cleanly while `gbarecompx/` is untracked.
+- The **`raylib-headless` suite** (`tools/check.py --only raylib-headless`,
+  opt-in) is the display-free counterpart: it configures a standalone
+  `build-raylib-headless/` with `-DGBARECOMP_RAYLIB_HEADLESS=ON`
+  (raylib on `PLATFORM_MEMORY`, rlsw software GL — no X11/GL dev packages),
+  runs the full framework ctest there, then runs the smoke with
+  `DISPLAY`/`WAYLAND_DISPLAY` scrubbed and requires the `tier=rlsw headless`
+  report line. First run fetches raylib (network); reruns take seconds.
 - The **Android device gate** (`tools/validate_android.sh`) is device-bound
   and manual — no phone in CI — so it is not part of either tier. The
   **APK content guard** is device-free but needs a Gradle build (SDK/NDK),
@@ -507,18 +519,32 @@ Two tiers, split by what may leave your machine:
   `GBARECOMP_STATIC_RELEASE`), guards the PE import table (system DLLs
   only — link-time `-s`, never post-link strip, per the R2 determinism
   lesson), sweeps the same ROM/BIOS/binary rules, and wine-smokes the
-  bare extraction to FULLY_STATIC.
-- **Release — `.github/workflows/release.yml` (tier 2, tag-triggered).**
-  A `v*` tag push (write access — fork PRs can never trigger it)
-  bootstraps the full tree on the self-hosted runner — the ROM comes from
-  the runner's `FFTA_ROM` env var (pre-placed outside the workspace, never
-  in git) and is copied in for the corpus regen only — then runs the full
-  gate and packages every artifact (`tools/make_release.py --apk`, and
-  the static Windows cross-build `--windows` once the prefix exists).
-  Every attached file is content-guarded **before** the release exists:
-  the zips by the make_release sweep (ROM sha1 under any name; the
-  Windows exe additionally by the PE static-link guard and a wine
-  FULLY_STATIC smoke), the APK by `android_apk_check --expect
-  public`. `workflow_dispatch` runs the whole pipeline except the attach
-  step — a rehearsal that publishes nothing.
+  bare extraction to FULLY_STATIC. `--binary build-compat/FFTARecomp`
+  stages the SteamOS-compatible (glibc 2.36) executable instead of the
+  host build.
+- The **AppImage packager** (`tools/make_appimage.py`) reuses the same
+  allowlist stage, adds the pinned appimagetool + type-2 runtime, desktop entry and
+  icon, and a writable-XDG `AppRun` wrapper (the game writes `rom.cfg`,
+  settings and saves beside its executable; an AppImage mount is
+  read-only). It then extracts the finished AppImage and reruns the same
+  private-material sweep, and boots the packaged AppImage from a fresh
+  data dir to FULLY_STATIC. `tools/compat_build.py` builds the binary in
+  the pinned Debian 12 container (glibc 2.36) and fails if the required
+  GLIBC symbols are newer than the SteamOS floor.
+- **Release — `.github/workflows/release.yml` (GitHub-hosted, no
+  private material).** A `v*` tag push (write access — fork PRs can never
+  trigger it) creates a **draft** release shell for the tag. It does not
+  check out the game tree, run the corpus regen, or ask GitHub for the
+  ROM: the static corpus is ROM-derived and can only be produced on the
+  maintainer's machine. `workflow_dispatch` prepares the draft for an
+  existing tag as a recovery path. The maintainer runs
+  `tools/publish_release.py --version <tag>` locally: it builds the Linux
+  zip/APK, static Windows zip, and Steam Deck AppImage (the desktop
+  binaries from the pinned Debian 12 compat container), verifies every
+  artifact's guard (sweep, PE import table, AppImage squashfs + strict
+  smoke, APK `--expect public`), writes `SHA256SUMS-<tag>.txt`, uploads
+  them to the draft, and publishes only when `--publish` is passed. This
+  is the tier-2 posture with the private material kept entirely off
+  GitHub; the public artifacts stay ROM-less and ask the player for their
+  own dump in the launcher.
 

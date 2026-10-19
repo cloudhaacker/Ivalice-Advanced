@@ -28,7 +28,7 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-RECOMPILER = REPO / "gbarecomp/build/gba_recompile"
+RECOMPILER = REPO / "gbarecompx/build/gba_recompile"
 NATIVE = REPO / "build/FFTARecomp"
 BIOS = REPO / "bios/emibios_gba_bios.bin"
 ROM = REPO / "game.gba"
@@ -139,7 +139,7 @@ def stage_harvest(frames):
     print(f"harvest: {len(pcs)} distinct miss PCs → "
           f"{frag.relative_to(REPO)} (coverage={cov.group(1) if cov else '?'})")
     if pcs:
-        print("   next: .venv/bin/python tools/misspack.py "
+        print("   next: .venv/bin/python gbarecompx/tools/misspack.py "
               "logs/cycle_harvest.frag")
     return True
 

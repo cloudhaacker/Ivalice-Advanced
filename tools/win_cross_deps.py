@@ -3,15 +3,16 @@
 
 Builds the MinGW-x64 static libraries the release exe links (issue #3, R2):
 
-  cross-prefix/lib/libSDL2.a + libSDL2main.a     engine (GBARECOMP_STATIC_RELEASE)
-  cross-prefix/lib/libfreetype.a                recomp-ui color emoji (QUIET find)
-  cross-prefix/lib/libharfbuzz.a                recomp-ui shaping (pkg-config)
-  cross-prefix/lib/libzlib.a                    freetype compressed fonts
+  cross-prefix/lib/libraylib.a                  engine window backend (the
+                                                game's product backend since
+                                                Phase 4c; found via
+                                                find_package(raylib CONFIG)).
+                                                raylib-only target since Phase 5.
 
 Why source builds: Arch ships no mingw-w64 binary library packages (AUR
-satellite packages are unmaintained), and MSYS2 is Windows-only. Versions
-mirror the MSYS2 repo (SDL2 2.32.10 = msys2 mingw64; harfbuzz 14.6.0) so the
-result matches what the engine's reference recipe would link.
+satellite packages are unmaintained), and MSYS2 is Windows-only. The
+single remaining dependency is raylib, pinned to the same 6.0 SHA the
+engine's FetchContent clone builds.
 
 Consumed by tools/make_release.py --windows via the CMAKE_TOOLCHAIN_FILE
 (tools/mingw-x64.cmake), which points CMAKE_PREFIX_PATH at this prefix.
@@ -47,61 +48,17 @@ TOOLCHAIN = REPO / "tools" / "mingw-x64.cmake"
 # fails here loudly.
 DEPS = [
     {
-        "name": "zlib",
-        "repo": "madler/zlib",
-        "tag": "v1.3.2",
-        "sha256": "b99a0b86c0ba9360ec7e78c4f1e43b1cbdf1e6936c8fa0f6835c0cd694a495a1",
+        "name": "raylib",
+        "repo": "raysan5/raylib",
+        "tag": "6.0",
+        "sha256": "2b3ee1e2120c7a0796b33062c7e9a694dd8a8caa56a96319ac8c8ecf54a90d0b",
         "cmake": [
-            # zlib's own option names (not BUILD_TESTING/BUILD_SHARED_LIBS):
-            # ZLIB_BUILD_TESTING kills test/infcover (needs libgcov; tests
-            # are upstream business), ZLIB_BUILD_SHARED kills libz.dll so
-            # every consumer links the static archive (prune_dynamic stays
-            # as belt-and-braces).
-            "-DZLIB_BUILD_SHARED=OFF",
-            "-DZLIB_BUILD_TESTING=OFF",
-        ],
-    },
-    {
-        "name": "freetype",
-        "repo": "freetype/freetype",
-        "tag": "VER-2-14-3",
-        "sha256": "dc49de6b01a266eef4876a4dd34d9842c475d3e28ff2eff63bd2fb760ab56261",
-        "cmake": [
+            # The engine's window backend (Phase 4e). Same release as the
+            # framework's FetchContent pin (tag 6.0 = commit dbc56a87...);
+            # the prefix build is what the Windows release links, so the
+            # cross build needs no FetchContent and no network.
             "-DBUILD_SHARED_LIBS=OFF",
-            "-DFT_DISABLE_PNG=ON",        # no libpng cross-build; irrelevant
-                                           # for the launcher font paths
-            "-DFT_DISABLE_BZIP2=ON",
-            "-DFT_DISABLE_BROTLI=ON",
-            "-DFT_DISABLE_HARFBUZZ=ON",   # linked at the recomp-ui level,
-                                           # not inside freetype
-        ],
-    },
-    {
-        "name": "harfbuzz",
-        "repo": "harfbuzz/harfbuzz",
-        "tag": "14.6.0",
-        "sha256": "eca8581e5ad8e21dbda31556c0363f764b1a754c9c1bb33ca7cd56ca1c07ddc9",
-        "meson": [
-            # harfbuzz 14.x has no "fontconfig" toggle anymore (removed);
-            # freetype is deliberately off here too (linked at the
-            # recomp-ui level, not inside harfbuzz).
-            "-Ddefault_library=static",
-            "-Dglib=disabled", "-Dgobject=disabled", "-Dcairo=disabled",
-            "-Dicu=disabled", "-Dfreetype=disabled",
-            "-Dintrospection=disabled", "-Dtests=disabled", "-Ddocs=disabled",
-            "-Dutilities=disabled",
-        ],
-    },
-    {
-        "name": "sdl2",
-        "repo": "libsdl-org/SDL",
-        "tag": "release-2.32.10",
-        "sha256": "03f9d7c191a837525c9cda6406af2f2e48be02b5e7eb03d949cc9f1e9ca41c8b",
-        "cmake": [
-            "-DBUILD_SHARED_LIBS=OFF",
-            "-DSDL_SHARED=OFF",
-            "-DSDL_STATIC=ON",
-            "-DSDL_TEST=OFF",
+            "-DBUILD_EXAMPLES=OFF",
         ],
     },
 ]
@@ -218,40 +175,6 @@ def build_cmake(dep, extra):
     prune_dynamic()
 
 
-def build_meson(dep):
-    work = extract_dir(dep)
-    if work.exists():
-        shutil.rmtree(work)
-    with tarfile.open(tarball_path(dep)) as tf:
-        member = tf.getnames()[0]
-    with tarfile.open(tarball_path(dep)) as tf:
-        tf.extractall(SRC)  # noqa: S202 - pin-verified tarball
-    src_dir = (SRC / member).resolve()
-    src_dir.rename(work)
-    cross = BUILD / "harfbuzz-cross.ini"
-    cross.write_text(f"""[binaries]
-c = 'x86_64-w64-mingw32-gcc'
-cpp = 'x86_64-w64-mingw32-g++'
-ar = 'x86_64-w64-mingw32-ar'
-strip = 'x86_64-w64-mingw32-strip'
-pkg-config = 'pkg-config'
-
-[host_machine]
-system = 'windows'
-cpu_family = 'x86_64'
-cpu = 'x86_64'
-endian = 'little'
-""", encoding="utf-8")
-    env = dict(**__import__("os").environ)
-    env["PKG_CONFIG_PATH"] = str(PREFIX / "lib" / "pkgconfig")
-    run(["meson", "setup", work / "out", work, f"--cross-file={cross}",
-         f"--prefix={PREFIX}"]
-        + dep["meson"], env=env)
-    run(["meson", "compile", "-C", work / "out"], env=env)
-    run(["meson", "install", "-C", work / "out"], env=env)
-    prune_dynamic()
-
-
 def cmd_fetch():
     for dep in DEPS:
         fetch(dep)
@@ -262,10 +185,7 @@ def build(dep):
         print(f"{dep['name']}: up to date ({dep['tag']})")
         return
     print(f"{dep['name']}: building {dep['tag']} ...")
-    if "meson" in dep:
-        build_meson(dep)
-    else:
-        build_cmake(dep, [])
+    build_cmake(dep, [])
     (PREFIX / ".done").mkdir(parents=True, exist_ok=True)
     marker_path(dep).write_text(
         f"{dep['repo']} @ {dep['tag']}\nsha256 {dep['sha256']}\n",

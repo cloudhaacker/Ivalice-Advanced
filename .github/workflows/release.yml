@@ -1,90 +1,56 @@
-# Release — tag-triggered, tier 2 (the private-material-bearing machine).
+# Release — tag-triggered, GitHub-hosted, NO private material.
 #
-# Posture (tests/README.md § Continuous integration):
-#   - A v* tag push requires write access to this repo — fork PRs can never
-#     trigger this workflow, so there is no fork-exfiltration surface.
-#   - The runner is SELF-HOSTED and carries the private material
-#     pre-placed OUTSIDE the workspace: FFTA_ROM (env var set in the
-#     runner's own env config, never in this repo) points at the pinned
-#     USA dump. It is copied in after checkout for the corpus regen; every
-#     artifact this job produces is content-guarded ROM-free BEFORE the
-#     release is created (the zip by the make_release sweep — ROM sha1
-#     under any name; the APK by android_apk_check --expect public).
-#   - workflow_dispatch runs the whole pipeline EXCEPT the attach step:
-#     a full-dress rehearsal that publishes nothing.
+# The release artifacts are built and verified on the maintainer's machine
+# (where the ROM lives) and uploaded with tools/publish_release.py. This
+# workflow deliberately does not check out the game tree, bootstrap the
+# corpus, or run the full gate: none of that can happen on GitHub without
+# the private dump, and it must never be uploaded there.
 #
-# The runner needs what a tier-2 machine already has: python3 + the
-# .venv bootstrap (build.py creates it), the Android SDK/NDK/JDK (the
-# --apk preflight discovers them the way build_apk.py does), the pinned
-# fixtures for the full gate, and the gh CLI (GH_TOKEN comes from the job).
+# What it does:
+#   - tag push: creates a DRAFT release for the tag (or leaves an existing
+#     release untouched), so the local upload has a destination;
+#   - workflow_dispatch: same, for an existing tag, as a recovery path.
+#
+# The local publisher attaches:
+#   FFTARecomp-<tag>-linux-x64.zip
+#   FFTARecomp-<tag>-linux-x86_64.AppImage
+#   FFTARecomp-<tag>-windows-x64.zip
+#   FFTARecomp-<tag>-android-arm64-v8a.apk
+#   SHA256SUMS-<tag>.txt
+# and publishes the draft when asked (tools/publish_release.py --publish).
 name: Release (tag)
 
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to prepare (e.g. v1.7)
+        required: true
 
 permissions:
   contents: write
 
 jobs:
-  release:
-    runs-on: self-hosted
-    timeout-minutes: 90
+  draft:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      # Two passes mirror ci.yml and the local recipe: the first init can
-      # leave nested worktrees empty (arm-recomp-core), --checkout fixes.
-      - name: Pinned submodules
-        run: |
-          git submodule update --init --recursive
-          git submodule update --checkout --recursive
-
-      - name: Place the private dump (runner-local, never in git or artifacts)
-        run: |
-          test -n "$FFTA_ROM" || { echo \
-            "FFTA_ROM is not set — configure it in the runner's env" \
-            "(path outside the workspace; see this file's header)"; exit 1; }
-          cp "$FFTA_ROM" game.gba
-
-      # Patches onto the pinned submodules -> venv -> corpus regen ->
-      # build -> strict 2400-frame smoke. Idempotent; see build.py.
-      - name: Bootstrap (patches → corpus → build → smoke)
-        run: python3 build.py
-
-      # The full gate: host units, patches, android-static, attract,
-      # widescreen smoke, strict route replays over the local fixtures.
-      - name: Full gate
-        run: .venv/bin/python tools/check.py --jobs 8
-
-      # Both artifacts in one pass: the deterministic zip (allowlist stage
-      # + private-material sweep) and the guarded public APK (clean
-      # repackage + android_apk_check --expect public). The version is
-      # pinned to the tag: build.py applies framework patches to the
-      # submodules, so `git describe --dirty` inside the job yields
-      # `v1.5-dirty` — the release IS the tag, unconditionally.
-      # (workflow_dispatch: GITHUB_REF_NAME is the branch name — a
-      # rehearsal artifact name, fine.)
-      - name: Package (zip + public APK, guarded)
-        run: >
-          .venv/bin/python tools/make_release.py --apk
-          --version "$GITHUB_REF_NAME"
-
-      # Tag events only (dispatch is branch-named). Idempotent: if the
-      # release already exists (cut manually before a runner picked this
-      # up), upload --clobber refreshes the assets; otherwise create it.
-      - name: Attach artifacts to the release
-        if: startsWith(github.ref, 'refs/tags/')
-        run: |
-          set -e
-          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release create "$GITHUB_REF_NAME" --generate-notes
-          fi
-          gh release upload "$GITHUB_REF_NAME" \
-            "release-stage/FFTARecomp-${GITHUB_REF_NAME}-linux-x64.zip" \
-            "release-stage/FFTARecomp-${GITHUB_REF_NAME}-android-arm64-v8a.apk" \
-            --clobber
+      - name: Create the draft release shell
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -e
+          # Dispatch must not create a tag at the default branch: require
+          # the tag to exist first. A tag push obviously satisfies this.
+          gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" >/dev/null
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "release $TAG already exists — leaving it untouched"
+            exit 0
+          fi
+          gh release create "$TAG" --draft --generate-notes \
+            --title "FFTARecomp $TAG"
+          echo "created draft release $TAG — build locally, then run:"
+          echo "  .venv/bin/python tools/publish_release.py --version $TAG"

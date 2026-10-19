@@ -3,7 +3,7 @@
 Facts gathered 2026-10-07 (engine-hacks patch comments + charlie-troy/ffta-decomp
 docs + our own disassembly + `tools/eventcrawl.py`) and extended 2026-10-11
 (LeonarthCG/FFTA_Event_Editor opcode definitions cross-checked against our ROM;
-BRINGUP § 2026-10-11). Verify claims with `tools/disarm.py` before acting;
+BRINGUP § 2026-10-11). Verify claims with `gbarecompx/tools/disarm.py` before acting;
 cite this file's addresses.
 
 ## Script storage (validated by tools/eventcrawl.py)

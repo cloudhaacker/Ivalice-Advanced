@@ -1,6 +1,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -11,17 +12,15 @@
 #include "ffta_ram_dispatch.h"
 #include "ffta_lzss_guard.h"
 #include "ffta_speed_boost.h"
+#include "ffta_ws_margin.h"
 #include "mobile_platform.h"
 
 #if defined(__ANDROID__)
-#include <SDL_system.h>  // SDL_AndroidGetExternalStoragePath (user-visible saves)
 #include <filesystem>
 #include <system_error>
 #endif
 
-#if defined(GBAGAME_RECOMP_UI)
-#include "game_launcher_boot.h"
-#endif
+#include "launcher.h"
 
 #if !defined(_WIN32) && !defined(__ANDROID__)
 #include <sys/resource.h>
@@ -77,7 +76,13 @@ extern "C" int (*g_ws_bg_x_provider)(int, int, int, int*);
 extern "C" unsigned g_ws_bg_x_provider_layers;
 std::uint32_t g_ws_frame_left = 0;
 std::uint32_t g_ws_frame_right = 0;
-int ffta_ws_bg_x_provider(int bg, int x, int y, int* hw_x);
+// The BG margin columns are deliberately left to the engine's
+// window-controlled sampling: FFTA swaps layer roles per scene (the move
+// overlay moves the field ring to BG2/BG3; the Totema summon runs its
+// effect layers at 256 px), so any fixed layer skip loses real content —
+// the original "BG2/BG3 = UI" skip showed the alias seam in the move state,
+// and a tilemap-width skip cut the summon. The policy below keeps the
+// world-map pillarbox; the sprite clip keeps parked OBJ out of the margins.
 // Reset callback: fires in every activation pass (after the engine's
 // disable-all of entry hooks), so it re-arms the correctness guard and
 // clears our presentation state; the activation plugin opts back in below.
@@ -97,11 +102,13 @@ static void ffta_mod_reset() {
 // authored-margin hooks after the runner's game-owned cleanup; a disabled
 // feature simply leaves the engine-default margin policy in place.
 static void ffta_ws_activate() {
-    g_ws_authored_margin_layers = 1;
-    g_ws_obj_native_clip = 1;
-    g_ws_bg_x_provider = ffta_ws_bg_x_provider;
-    g_ws_bg_x_provider_layers = (1u << 2) | (1u << 3);  // BG2/BG3 (UI)
-    std::fprintf(stderr, "[ffta] ws: margin hooks installed (ffta.widescreen)\n");
+    // The engine's window-controlled margin sampling stands (the behavior the
+    // wide-view validation accepted); see the note above the frame policy.
+    // No OBJ clip either: the wide view must reveal the units the camera has
+    // panned past (user-reported: sprites vanished in the margins while the
+    // level/BG stayed drawn). The parked-sprite question is tracked
+    // separately — see the BRINGUP entry.
+    std::fprintf(stderr, "[ffta] ws: margin policy installed (ffta.widescreen)\n");
 }
 
 GBA_MOD_CONSTRUCTOR(register_ffta_mod_plugins) {
@@ -111,12 +118,50 @@ GBA_MOD_CONSTRUCTOR(register_ffta_mod_plugins) {
     gba_mod_register_activation_plugin("ffta.widescreen", ffta_ws_activate);
 }
 
-// ── Widescreen (W3): per-scene margin policy ───────────────────────────────
-// The world map's field BGs are 256-px-wide tilemaps (size=2), so its margin
-// samples land on the tilemap's wrapped edge — pillarbox those scenes.
-// Field / battle / pub scenes keep their 512-wide rings (size=1) authored, so
-// the margins stay real content. Runs at every emulated frame start, before
-// scanline 0; inert at native width (only the wide compositor reads these).
+// ── Widescreen (W3/W4): per-scene margin policy ────────────────────────────
+// Two rules, both read from the per-frame IO snapshot (no guest-RAM state):
+//
+// 1. Pillarbox (W3): the world map's field BGs are 256-px-wide tilemaps
+//    (size=2), so its margin samples land on the tilemap's wrapped edge —
+//    pillarbox those scenes.
+//
+// 2. UI-layer margin suppression (2026-10-16, re-lands the 2026-10-15 W2
+//    interim rule): FFTA's UI panels — chat bubbles, portrait plates, pub
+//    rumor/law screens, confirm dialogs — are 256-px tilemaps (BGxCNT
+//    size==0) whose margin samples wrap into the panel's own edge columns
+//    ("chat text bubbles are wrapping/repeating"). The wide compositor
+//    samples tilemap px (x - extra_left + hofs) mod 256 continuously, so a
+//    256-px panel repeats its border/interior/text in the margins wherever
+//    its scroll lands — pinned pixel-exact on four device captures and the
+//    desktop pub replay (BRINGUP). Size-0 layers therefore never paint
+//    margin columns: suppress their samples outside the native 240 span.
+//    Captured disconfirmations, in order: BLDCNT is NOT a condition (the
+//    pub conversation runs blended, bldcnt=0x3348, with the bubble up);
+//    window-enable is NOT a condition either (the desktop pub bubble has
+//    DISPCNT window bits 13/14 SET while all four device conversation
+//    captures have the same registers configured but the enable bits CLEAR
+//    — a windows gate would have armed nowhere on the device). The only
+//    stable discriminator is the size field. Battle move/pan/menu keeps its
+//    margins because ALL FOUR layers are the 512-px ring there (no size-0
+//    layer — captured; the same fact that made the interim fix fix the move
+//    state). Sprites: the device windows OBJ out of the margins (winout
+//    0x2F) and the desktop pub parks off-screen sprites (issue #26) — no
+//    sprite content is suppressed with the BGs. The rule was withdrawn
+//    2026-10-15 for the Totema report, but its summon A/B (BRINGUP) shows
+//    the summon window pixel-identical with the rule enabled — the report
+//    was presentation-side; re-landed with that A/B plus the ws matrix and
+//    the bubble-fixture A/B (GBARECOMP_FFTA_UI_GATE=0) as the gates.
+//
+// Runs at every emulated frame start, before scanline 0; inert at native
+// width (only the wide compositor reads these).
+static int ffta_ws_ui_gate(int bg, int output_x, int screen_y, int* out_hw_x) {
+    // The tested span logic (ffta_ws_margin.h): -1 suppresses the sample
+    // outside the native span, 0 keeps the hardware X in it. out_hw_x stays
+    // null — no remap, only suppression.
+    return ffta::ws_ui_gate_sample(static_cast<int>(g_ws_frame_left),
+                                   output_x);
+}
+
 void ffta_ws_margin_policy(const gbarecomp::ExtendedViewFrameInfo* frame) {
     if (!frame || !frame->io || frame->io_size < 0x10) return;
     g_ws_frame_left = frame->extra_left;
@@ -128,19 +173,19 @@ void ffta_ws_margin_policy(const gbarecomp::ExtendedViewFrameInfo* frame) {
     const bool world_map_tilemaps =
         ((bg0 >> 14) & 3u) == 2u && ((bg1 >> 14) & 3u) == 2u;
     g_ws_pillarbox = world_map_tilemaps ? 1 : 0;
-}
 
-// UI layers must not paint into margin columns: BG2/BG3 are 256-wide screens
-// (menus, funds, dialogue panels) and would show wrapped edge fragments.
-// Skip those layers wherever the output x is outside the native 240 span.
-int ffta_ws_bg_x_provider(int bg, int x, int y, int* hw_x) {
-    (void)y;
-    (void)hw_x;
-    if (bg >= 2) {
-        const int left = static_cast<int>(g_ws_frame_left);
-        if (x < left || x >= left + 240) return -1;  // handled: no pixel
-    }
-    return 0;
+    // Rule 2: the per-frame size-0 layer mask (the tested decision lives in
+    // ffta_ws_margin.h) drives both the provider install and its layer
+    // admission. Empty mask -> provider uninstalled (the engine's sampling
+    // stands, zero added traffic). The env opt-out is the A/B arm for the
+    // fixture gates (and an emergency kill-switch).
+    static const bool ui_gate_disabled =
+        std::getenv("GBARECOMP_FFTA_UI_GATE") &&
+        std::getenv("GBARECOMP_FFTA_UI_GATE")[0] == '0';
+    const unsigned mask =
+        ui_gate_disabled ? 0u : ffta::ws_ui_gate_layers(io, frame->io_size);
+    g_ws_bg_x_provider_layers = mask;
+    g_ws_bg_x_provider = mask ? &ffta_ws_ui_gate : nullptr;
 }
 
 #if defined(__ANDROID__)
@@ -158,6 +203,27 @@ int ffta_ws_bg_x_provider(int bg, int x, int y, int* hw_x) {
 // deliberately NOT migrated — a stale resume marker must never survive an
 // update.
 namespace {
+
+// User-visible external app directory (.../Android/data/<pkg>/files/).
+// The Android base is the raylib/NativeActivity scaffold (Phase 4f): the path
+// is derived from the baked applicationId (mobile_platform.h); nullptr keeps
+// the app-private files/ fallback in both redirect helpers below.
+const char* ffta_external_storage_path() {
+#if defined(__ANDROID__) && defined(GBARECOMP_ANDROID_PACKAGE)
+// App-specific external dir: needs no permission, is MTP-visible over USB,
+// and /sdcard tracks the current user (the real port may upgrade this to JNI
+// getExternalFilesDir).
+#define FFTA__STR(x) #x
+#define FFTA__XSTR(x) FFTA__STR(x)
+    static const char kExt[] = "/sdcard/Android/data/" FFTA__XSTR(
+                                   GBARECOMP_ANDROID_PACKAGE) "/files";
+#undef FFTA__XSTR
+#undef FFTA__STR
+    return kExt;
+#else
+    return nullptr;
+#endif
+}
 
 void ffta_migrate_file(const std::filesystem::path& from,
                        const std::filesystem::path& to) {
@@ -188,7 +254,7 @@ void ffta_migrate_file(const std::filesystem::path& from,
 // Appends --save-path/--state-dir (CLI wins over the staged TOML). No-op
 // when external storage is unavailable: the TOML's internal paths stand.
 void ffta_redirect_player_data(std::vector<std::string>& args) {
-    const char* ext = SDL_AndroidGetExternalStoragePath();
+    const char* ext = ffta_external_storage_path();
     if (!ext || !*ext) {
         std::fprintf(stderr, "[ffta] saves: external storage unavailable, "
                              "keeping app-private files/\n");
@@ -223,7 +289,7 @@ void ffta_redirect_player_data(std::vector<std::string>& args) {
 // log path for MobileProcessOptions.log_file. Empty when external storage is
 // unavailable: the engine's app-private defaults stand.
 std::string ffta_redirect_diagnostics() {
-    const char* ext = SDL_AndroidGetExternalStoragePath();
+    const char* ext = ffta_external_storage_path();
     if (!ext || !*ext) {
         std::fprintf(stderr, "[ffta] logs: external storage unavailable, "
                              "keeping app-private files/\n");
@@ -293,6 +359,35 @@ int ffta_main(int argc, char** argv) {
     // these are its first lines.
     if (on_mobile) ffta_log_manifest(external_log);
 #endif
+#if defined(__ANDROID__)
+    // Mobile args carry --no-launcher: the setup screen is the Android
+    // launcher. The pre-boot launch screen exists on device and now works
+    // (SAF pick via android_saf_bridge, payload box art) but stays opt-in
+    // via a --launcher debug arg until the mobile boot flow is redesigned
+    // around it — the device gate and the suspend/resume lifecycle depend
+    // on an unattended boot.
+    #if defined(GBAGAME_BUNDLED_ROM)
+    // Private build with the ROM staged: drop the vacuous flag and boot.
+    // (Public builds stop at the #else below — skipping setup is only valid
+    // with a bundled ROM.)
+    args.erase(std::remove(args.begin(), args.end(), "--no-launcher"),
+               args.end());
+#else
+    // Public build: the ROM arrives through the setup flow (SAF import).
+    // Boot only when the staged ROM is actually there (cwd is the app files
+    // dir; the TOML's ../../roms/<file> resolves beside it) rather than
+    // refusing outright — the pre-4f shell never hit this path (its
+    // compiled-in launcher made this whole block unreachable), and a public
+    // raylib build must boot after an import exactly like it always did.
+    std::error_code rom_ec;
+    if (!std::filesystem::is_regular_file("roms/ffta_usa.gba", rom_ec)) {
+        std::fprintf(stderr,
+                     "[ffta] no staged ROM: import one through the setup "
+                     "screen (roms/ffta_usa.gba missing)\n");
+        return 1;
+    }
+#endif
+#endif
 
     gbarecomp::RunOptions opts;
     opts.builtin_game_name = "Final Fantasy Tactics Advance";
@@ -327,15 +422,12 @@ int ffta_main(int argc, char** argv) {
     // any touch reveals it and then acts normally. Inert without a pad.
     opts.touch_pad_idle_hide_seconds = 15;
 
-    // Issue #11 (speed toggle, Phase 0): expose the engine's Assist Tools
-    // surface so fast-forward is discoverable and configurable — the
-    // launcher Assist page (Fast-forward key/pad bindings + 2-10x speed
-    // slider) and the in-game Fast-forward latch + speed rows. Hold-to-boost
-    // (Tab / 2 / right-trigger) already worked; this only surfaces it.
+    // Issue #11 (speed toggle, Phase 0): keep the engine's Assist surface
+    // enabled. The raygui in-game menu exposes the Fast-forward speed row
+    // under Assist; hold-to-boost (Tab / 2 / right-trigger) already worked.
     // Rewind stays suppressed: rewind_history_seconds defaults to 0, so no
-    // rewind row or history is created (known wart: the launcher still lists
-    // a Rewind binding row — engine hardcodes both rows; the binding is
-    // inert without history).
+    // rewind row or history is created (known wart: the old launcher listed
+    // a Rewind binding row; the binding is inert without history).
     opts.expose_assist_tools = true;
 
     // Issue #11 (speed toggle, Phase 1): FFTA-owned touch pill. Tap the
@@ -373,9 +465,43 @@ int ffta_main(int argc, char** argv) {
         opts.ui_touch_friendly = true;
     }
 
-#if defined(GBAGAME_RECOMP_UI)
-    // Mobile args carry --no-launcher, so this returns false on device.
-    if (game_launcher_preboot(args, opts)) return 0;
+#include "launcher.h"
+
+#if defined(GBARECOMP_USE_RAYLIB)
+    // Skip the pre-boot launcher for headless / explicit-path invocation
+    // (--rom/--bios/--no-window/--frames/--load-state/--tcp/--no-launcher).
+    // Bare invocation shows the screen; --launcher forces it even for
+    // scripted-looking runs (play.sh passes --rom). Constraint 7.
+    //
+    // Classify the MUTATED args vector, not the raw argv: on Android the
+    // native entry's argv is raylib's synthetic {"raylib"}, so every flag
+    // the mobile layer appended (--no-launcher, the staged TOML, the
+    // debug-args.txt entries) is invisible to an argv-based check — which
+    // made the launch screen un-skippable on device (2026-10-16 finding).
+    // The POSTURE stands (2026-10-16, user decision): Android's pre-boot
+    // surface is the platform setup activity (pure Android/SAF); the raygui
+    // launch screen is desktop-only. --launcher (a debug arg) can still
+    // force the screen on device for development; its ROM picker fails
+    // cleanly there (no desktop dialog backends — see asset_picker.cpp).
+    if (gbarecomp::launcher_wants_screen(args) ||
+        !gbarecomp::launcher_should_skip_screen(args)) {
+        if (auto backend = gbarecomp::create_launcher_backend()) {
+            gbarecomp::LauncherConfig cfg;
+            cfg.argv0 = argc > 0 ? argv[0] : nullptr;
+            cfg.first_boot_pick = true;
+            auto res = backend->run(cfg);
+            if (res.kind == gbarecomp::LauncherResult::Kind::Quit)
+                return 0;
+            if (res.kind == gbarecomp::LauncherResult::Kind::Launch) {
+                args.push_back("--rom");
+                args.push_back(res.rom);
+                if (!res.bios.empty()) {
+                    args.push_back("--bios");
+                    args.push_back(res.bios);
+                }
+            }
+        }
+    }
 #endif
     std::vector<char*> av;
     av.reserve(args.size());
@@ -384,9 +510,15 @@ int ffta_main(int argc, char** argv) {
 }
 
 #if defined(__ANDROID__)
-extern "C" int SDL_main(int argc, char** argv) {
-    // Desktop-sized host stack for the recompiled corpus (mobile_platform.h).
-    return gbarecomp::mobile_run_with_stack(ffta_main, argc, argv);
+// Raylib (NativeActivity) entry: android_native_app_glue calls main() on the
+// glue thread, and raylib is glue-thread-bound (its ALooper polling fails on
+// any other thread). So the game runs HERE, not on mobile_run_with_stack's
+// pthread — the vendored glue (platform/android/native_app_glue) sizes this
+// thread to kMobileGameStackBytes. Arm the stack guard for it directly (same
+// 32 MiB margin run_stacked keeps).
+int main(int argc, char** argv) {
+    gbarecomp::host_stack_guard_arm_current(32u * 1024u * 1024u);
+    return ffta_main(argc, argv);
 }
 #else
 int main(int argc, char** argv) {

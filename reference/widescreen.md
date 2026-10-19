@@ -1,7 +1,7 @@
 # Widescreen reference — FFTA field camera, strip, and apply paths
 
 Facts from the 2026-10-08 investigation (BRINGUP § "Widescreen W1"). All
-addresses verified with `tools/disarm.py`/live TCP probes unless labeled as
+addresses verified with `gbarecompx/tools/disarm.py`/live TCP probes unless labeled as
 hypotheses. ROM = AFXE (sha1 4ac05441…).
 
 ## Finding this code (durable index — start here)
@@ -49,7 +49,8 @@ bottom of this file (savestate diff → abort trace → FP ring).
 - Plugin + manifest: `src/main.cpp` (`register_ffta_mod_plugins` /
   `ffta_ws_activate`), `mods/preloaded/packages/ffta.enhancement.widescreen/1.0.0/`
   (shipped to `<exe>/mods` by a CMake POST_BUILD rule). Framework race fix
-  for parallel launches: `tools/patches/mod-state-publish-race.patch`.
+  for parallel launches lives in the framework fork
+  (`mod_runtime.cpp` pid-unique publish temp).
 
 ## Display facts (world map + battle, mode 0)
 
@@ -111,8 +112,8 @@ descriptor (load/backup copy).
   0x08000718; the 0x0800072x-3C sequence sets the channel up, helper form
   `str r0,[r2,#8]` at 0x080013E0) executes the whole
   transfer while the flag is set, so every destination write was swallowed.
-  Fixed by per-call record control — patch
-  `tools/patches/mmio-cap-dma-reentrancy.patch`; see BRINGUP § "MMIO cap gap".
+  Fixed by per-call record control — framework fork code
+  (`gbarecompx/src/gba/gba_io.{h,cpp}`); see BRINGUP § "MMIO cap gap".
 - **What the fixed cap shows** (world-map recenter repro): the display commit
   is a per-frame **DMA block copy** of a shadow struct — 39 halfwords
   `0x04000008..0x04000054` (BGxCNT/HOFS/VOFS, affine, windows, blend), one
@@ -174,6 +175,8 @@ game installs margin hooks from the trusted activation plugin
 (`ffta.widescreen`, W3 m3 — this replaced the original
 `RunOptions::extended_view_init` install, which no longer exists):
 
+- **Withdrawn 2026-10-15** (see the correction at the bottom of this file):
+  the two opt-ins below are no longer set by the FFTA plugin.
 - `g_ws_authored_margin_layers = 1` — margin columns render from the guest's
   own BGs (the 512-wide field rings) instead of the pillarbox policy black;
   savestate loads then keep the pillarbox policy off.
@@ -289,11 +292,11 @@ landed as milestone 3 at the end of this file.)
 - **Framework race fixed (patched):** parallel launches each publish
   `mods/state.toml`; the shared `state.toml.tmp` name let one process's
   rename consume another's file (ENOENT), whose retry then removed the
-  freshly published output. Patch
-  `tools/patches/mod-state-publish-race.patch` (unique per-PID temp;
-  exported + reverse-checked); 4/4 parallel smoke runs clean after.
-- Gates: `cycle` PASS (attract byte-exact); `check.py` 9/9 (the patches
-  check now validates 4 patch files); `ws_smoke` 6 cases x 3 widths PASS.
+  freshly published output. Fix in the framework fork
+  (`mod_runtime.cpp` unique per-PID temp); 4/4 parallel smoke runs clean
+  after.
+- Gates: `cycle` PASS (attract byte-exact); `ws_smoke` 6 cases x 3 widths
+  PASS.
 
 ## Probe recipes used (reproducible)
 
@@ -301,8 +304,37 @@ landed as milestone 3 at the end of this file.)
   GBAS files (file offsets map ~linearly into EWRAM: offset = guest -
   0x02000000 + 0xFC in the 2026-10-08 container).
 - Code touching a var: FP ring (`GBARECOMP_INSN_TRACE=1` +
-  `GBARECOMP_FP_SAVE=path`; dumped on every clean exit) + `tools/ringscan.py
+  `GBARECOMP_FP_SAVE=path`; dumped on every clean exit) + `gbarecompx/tools/ringscan.py
   --reg/--reg-range`.
 - Writer/caller chain: `GBARECOMP_ABORT_ON_MEM_WRITE_ADDR` (+
   `GBARECOMP_RUNTIME_TRACE=1`) — works for RAM/VRAM, NOT for IO registers.
 - Guest DMA attribution: `GBARECOMP_DMA_WATCH_ADDR`.
+
+## Correction (2026-10-15): the margin layer skip and the OBJ clip are withdrawn
+
+FFTA swaps BG layer roles per scene: the battle move state moves the 512-px
+field ring onto BG2/BG3 (the 256-px strip/UI layers onto BG0/BG1), and the
+Totema summon runs its effect layers at 256 px. Any fixed margin layer skip
+therefore loses real content in some scene — the original "BG2/BG3 = UI"
+skip showed the 256-px alias seam in the move state (user-reported: "the
+widescreen is somehow turned off while the character is in the move state");
+an interim tilemap-width skip fixed that but cut the summon's effect layers.
+`g_ws_authored_margin_layers` and the BG margin provider are therefore no
+longer set by the FFTA plugin: the engine's window-controlled sampling
+stands (the behavior the feature-off desktop always had, which renders the
+move state correctly — the ring wins the compositing). The W3 world-map
+pillarbox stays.
+
+The OBJ clip (`g_ws_obj_native_clip`) is likewise no longer set: a camera
+pan puts real units in the margin columns (user-reported: "those characters
+are clipped out even though the level and background are still drawn"), and
+the per-pixel/sprite-level clip hid them. The sprite-level parked test added
+in gbarecompx 5dc8e86 remains in gba_ppu.cpp as dormant opt-in code (the W2
+parked-sprite concern); the clip-off build's pan replay plus the live pan
+test found no parked-sprite garbage in the margins so far — if one surfaces,
+re-enable the clip for the affected game with a narrower parked test.
+
+Verification: ws_check PASS 6 cases x 3 widths with the skip withdrawn;
+deterministic state1 + input-trace replays (the summon window is
+pixel-identical with the feature enabled or disabled — the visible
+"clipping" was presentation-side).

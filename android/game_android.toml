@@ -39,6 +39,12 @@ view_width = 240                # native start; the host display selects the wid
 # RunOptions.max_view_width). Desktop keeps its opt-in flag (--resize-view).
 resize_view = true
 
+[touch]
+# The pad's millimetre layout is scaled down a step on phones: the authored
+# sizes (1.0) read large in the hand on a 6.8" panel. Tune with
+# --touch-pad-scale (debug-args.txt) or this key; 0.5..1.5.
+pad_scale = 0.85
+
 [audio]
 shadow = false                  # no MP2K shadow mixer; recompiled canon only
 

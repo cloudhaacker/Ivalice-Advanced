@@ -5,10 +5,11 @@
 #   cmake -DCMAKE_TOOLCHAIN_FILE=tools/mingw-x64.cmake ...
 #
 # Same compiler triple the engine's MSYS2 path targets (x86_64-w64-mingw32):
-# every WIN32/MINGW branch in gbarecomp/CMakeLists.txt and the game's
+# every WIN32/MINGW branch in gbarecompx/CMakeLists.txt and the game's
 # CMakeLists.txt applies here. Static-dependency prefix (tools/win_cross_deps.py
-# output) is appended to CMAKE_PREFIX_PATH + FIND_ROOT_PATH so the engine's
-# GBARECOMP_MINGW_PREFIX_UNIX / recomp-ui's Freetype / harfbuzz discovers work.
+# output — raylib only since the 2026-10 launcher track) is appended to
+# CMAKE_PREFIX_PATH + FIND_ROOT_PATH so the engine's
+# GBARECOMP_MINGW_PREFIX_UNIX discovery works.
 
 set(CMAKE_SYSTEM_NAME Windows)
 set(CMAKE_SYSTEM_PROCESSOR AMD64)
