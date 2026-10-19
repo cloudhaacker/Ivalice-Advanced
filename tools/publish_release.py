@@ -126,10 +126,25 @@ def build_all(version, compat=True, want=None):
             die(f"packaging failed: {' '.join(cmd)}")
 
 
+def extract_zip_preserving_modes(path, dest):
+    """Extract a release zip with the Unix modes recorded in its entries.
+
+    ``zipfile.extractall`` deliberately does not apply the external mode
+    bits, so a perfectly good Linux zip looks like it lost its executable
+    bit to sweep_stage. Restore what the archive advertises before sweeping.
+    """
+    with zipfile.ZipFile(path) as zf:
+        zf.extractall(dest)
+        for info in zf.infolist():
+            mode = (info.external_attr >> 16) & 0o777
+            target = Path(dest) / info.filename
+            if mode and target.exists() and not target.is_symlink():
+                target.chmod(mode)
+
+
 def verify_linux_zip(path):
     with tempfile.TemporaryDirectory(prefix="ffta-publish-linux-") as td:
-        with zipfile.ZipFile(path) as zf:
-            zf.extractall(td)
+        extract_zip_preserving_modes(path, td)
         roots = [p for p in Path(td).iterdir() if p.is_dir()]
         if len(roots) != 1:
             die(f"{path.name}: expected one top-level folder, got {len(roots)}")
@@ -143,8 +158,7 @@ def verify_windows_zip(path):
     if not objdump:
         die("x86_64-w64-mingw32-objdump not found (mingw-w64-binutils)")
     with tempfile.TemporaryDirectory(prefix="ffta-publish-win-") as td:
-        with zipfile.ZipFile(path) as zf:
-            zf.extractall(td)
+        extract_zip_preserving_modes(path, td)
         roots = [p for p in Path(td).iterdir() if p.is_dir()]
         if len(roots) != 1:
             die(f"{path.name}: expected one top-level folder, got {len(roots)}")
