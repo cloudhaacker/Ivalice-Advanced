@@ -11,8 +11,8 @@
   },
   "project": "FFTA Recomp",
   "status": "released",
-  "targets": ["Windows", "Linux", "Android"],
-  "toolchain": "gbarecomp",
+  "targets": ["Windows", "Linux", "Steam Deck", "Android"],
+  "toolchain": "gbarecompx",
   "approach": "Static ahead-of-time translation of the retail ARM/Thumb binary to native C++, held strict fully-static (zero interpreter fallback) by a self-healing coverage loop",
   "maintainers": [
     { "name": "James Doyle", "link": "https://github.com/james2doyle" }
@@ -22,5 +22,19 @@
     { "label": "GitHub", "url": "https://github.com/james2doyle/ffta-recomp" },
     { "label": "R.A.I.D. Discord", "url": "https://discord.gg/Ad9BwSzctP" }
   ],
-  "notes": "Full playthrough on Windows, Linux and Android — menus, battles, event scripts, cartridge saves and save states; validated widescreen view, fast-forward, keyboard/controller/touch input. The ROM is user-supplied and hash-verified at launch; the launch BIOS is bundled clean-room emibios. Experimental preview — back up saves and report repeatable crashes."
+  "tags": [
+    "widescreen",
+    "shader-stack",
+    "frame-interpolation",
+    "lcd-ghosting",
+    "fast-forward",
+    "save-states",
+    "controller",
+    "touch-controls",
+    "launch-screen",
+    "gba-screen-modes",
+    "steam-deck",
+    "android"
+  ],
+  "notes": "Full playthrough on Windows, Linux and Android — menus, battles, event scripts, cartridge saves and save states. Launch screen with box art and a native ROM picker. Validated widescreen view up to 448 px. GBA screen simulation: raw, unlit, frontlit, backlit and classic. In-game shader stack: MMPX edge smoothing, sharp scaling, pixel grid, LCD subpixel grille, LCD boost, dither and deband; frame interpolation and LCD ghosting. Fast-forward: hold Tab/2/right trigger or latch the on-screen FF pill; 2–10x speed set under Assist. Keyboard, controller and touch input. The Steam Deck/SteamOS AppImage ships with Game Mode defaults. Release artifacts are ROM-less; the ROM is user-supplied and hash-verified at launch, and the launch BIOS is bundled clean-room emibios. Experimental preview — back up saves and report repeatable crashes."
 }

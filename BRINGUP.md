@@ -9389,3 +9389,18 @@ tests to the new title; the old recomp-ui path keeps its historical
 **Evidence.** `gbarecompx` ctest 86/86; seam guard 61/61.
 
 **Commit.** `gbarecompx` `7c95fac`; game pin in this change.
+
+## 2026-10-19 — Recomp registry metadata refresh (.recomp.json)
+
+**Action.** Added the Steam Deck target and switched the toolchain name to
+the fork the project actually builds on (`gbarecompx`). Added feature tags
+for widescreen, the shader stack, frame interpolation, LCD ghosting,
+fast-forward, save states, controller, touch, Steam Deck and Android; expanded
+the notes to cover the launch screen, GBA screen modes, the shader/frame
+stack, 2–10x fast-forward, Steam Deck AppImage defaults, and ROM-less release
+artifacts.
+
+**Checks.** `.recomp.json` parses and validates against the published
+`https://recomp.fyi/schema/v1.json` (draft 2020-12).
+
+**Commit.** This change.
