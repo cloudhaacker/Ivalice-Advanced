@@ -342,7 +342,8 @@ access, which is enough:
 - **KeyCharacterMap fallback synthesis** (the "menu on B" mechanism): an
   UNHANDLED key event makes the InputDispatcher synthesize the device
   keymap's fallback — `Generic.kcm` maps `BUTTON_B→BACK`,
-  `BUTTON_A→DPAD_CENTER`, `BUTTON_X→DEL`, `BUTTON_SELECT→MENU` —
+  `BUTTON_A→DPAD_CENTER`, `BUTTON_X→DEL`, `BUTTON_Y→SPACE`,
+  `BUTTON_SELECT→MENU` —
   arriving ~36 ms after the raw press with
   `AKEY_EVENT_FLAG_FALLBACK` (0x400) and keyboard auto-repeat while
   held. Invisible to `getevent` (injected dispatcher-side, not via
@@ -350,7 +351,9 @@ access, which is enough:
   The runtime's Android pad hook consumes the gamepad-button range plus
   fallback-tagged BACK/CENTER (`android_gamepad.h`; keycode-trust, not
   source-trust), so real Back presses (no fallback flag) keep the menu
-  gesture. Debugging "button X opens the menu": the `pad-census:`
+  gesture. Guide and Y open the settings menu by design
+  (`pad_opens_menu`); any OTHER button reaching the menu is the fallback
+  bug above. Debugging "button X opens the menu": the `pad-census:`
   logcat lines print keycode, source AND flags — check the flag first.
 
 ## Run examples

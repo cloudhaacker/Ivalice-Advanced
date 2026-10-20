@@ -9,7 +9,7 @@ until you ask for it, and the selected speed is saved for later sessions.
 |---|---|---|---|
 | Fast-forward while held | `Tab` (or `2`) | right trigger | — |
 | Latch fast-forward | touchscreen: tap the `FF` pill | — | tap the `FF` pill |
-| Open the settings menu | `Del` | Guide button | long-press, three-finger tap, or system Back |
+| Open the settings menu | `Del` | Guide or Y button | long-press, three-finger tap, or system Back |
 | Change the speed | **Assist → Fast-forward speed** | same menu | same menu |
 
 `2` is the default Assist fast-forward key; `Tab` is the separate Turbo
@@ -18,7 +18,7 @@ turn fast-forward on and again to turn it off.
 
 ## Set the speed
 
-1. Open the in-game menu (`Del`, Guide, or the Android gesture above).
+1. Open the in-game menu (`Del`, Guide/Y, or the Android gesture above).
 2. Open the **Assist** section.
 3. Select **Fast-forward speed**.
 4. Use Left/Right (D-Pad/arrows or controller) to choose **2x–10x**.

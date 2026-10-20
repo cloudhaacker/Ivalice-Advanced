@@ -169,7 +169,7 @@ crash playbooks: `BRINGUP.md`.
   bits (the raylib #5387 device class — buttons flagged KEYBOARD were
   dead), and consumes KeyCharacterMap fallback synthesis (the OS turned
   unhandled BUTTON_B into BACK — the "menu on B" symptom). Face buttons
-  map label-wise; the pad's menu button and the Back key both open the
+  map label-wise; the pad's menu button (or Y) and the Back key both open the
   settings overlay; right trigger = fast-forward; left stick = d-pad.
 - **Sharp scaling verified at the pixels** (fractional layouts differ
   ~70%, exact-integer layouts identical — the designed inertness per

@@ -9477,3 +9477,35 @@ already correct (`zipinfo` showed `-rwxr-xr-x`).
 
 **Notes.** No ROM or retail BIOS material uploaded; APK remains debug-signed
 and is the open release-signing decision.
+
+## 2026-10-20 — controller Y opens the settings overlay
+
+**Change.** Guide (the pad's menu/home button) was the only controller
+path into the settings overlay: both backends held the CONFIGURED
+`HK_MENU` key while it was down (`raylib_backend.cpp` — Android
+`kPadGuide`, desktop GLFW `kGlfwBtnGuide`). Y now opens it too on every
+platform through the shared predicate `pad_opens_menu(guide_down,
+y_down)` (`input_translate.h`), called from both paths. Y has no GBA
+meaning on either map (`kPadMap` gba_bit 0), so no game input is taken;
+the existing hotkey edge still gives press-open / press-close.
+
+**Why.** Pads without a usable GUIDE/home button — or whose guide the OS
+reserves — otherwise had no controller menu path. Y is the free face
+button on the standard layout; the pad's Back button stays GBA Select,
+and the Android system Back gesture is untouched.
+
+**Verification.** `input_translate_tests` + `android_gamepad_tests` PASS
+(Guide-only, Y-only, both, neither). Cold `tools/cycle.py` PASS —
+63,134 units, dispatch aligned, attract `1EF4C118…` unchanged (the
+trigger is inert without a held button). `tools/check.py` **17/17
+PASS**. Android `assembleDebug` (arm64-v8a) compiles the `__ANDROID__`
+path; clean repackage passes `tools/android_apk_check.py --expect public`
+(8/8, 32.7 MiB).
+
+**Docs.** Root README controls table/prose, `docs/fast-forward.md`,
+`android/README.md`, the repo status block above, the framework README,
+and `reference/dev-gotchas.md` (Generic.kcm also maps `BUTTON_Y→SPACE`;
+Guide/Y are intentional menu triggers — any other button reaching the
+menu is the fallback bug).
+
+**Commit.** `gbarecompx` `fce1781`; game pin + docs in this change.

@@ -50,11 +50,11 @@ no Nintendo BIOS dump is required.
 | Select | Backspace | Back (Select) |
 | L / R | C / V | LB / RB |
 | Fast-forward (hold) | Tab | Right trigger |
-| In-game menu | Del | Guide button |
+| In-game menu | Del | Guide or Y button |
 
 Controllers are detected automatically. The left analog stick doubles as
 the D-Pad. Inside the menu, the D-Pad/arrows move, A selects, and B goes
-back; `Del` or the Guide button opens and closes it. Fast-forward runs the
+back; `Del`, the Guide button, or Y opens and closes it. Fast-forward runs the
 game faster while held or latched; its speed (2–10x) is configurable in the
 in-game menu's **Assist** section.
 
