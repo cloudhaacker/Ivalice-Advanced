@@ -19,8 +19,13 @@ untouched. Off by default.
 * `tools/m4a_to_midi.py` dumps every song to MIDI for auditioning.
 
 ## Setup
-Enable **Orchestral Music** in the Mods screen and pick `FluidR3_GM.sf2`
-(SHA-1 `4fd467af…`, 148 398 306 bytes) when asked. It is not redistributed.
+This build has no Mods screen yet (the raygui launcher/menu does not expose
+the mod provider), so selections live in `mods/state.toml` beside the exe.
+On Windows put `FluidR3_GM.sf2` (SHA-1 `4fd467af...`, 148 398 306 bytes; not
+redistributed) next to `FFTARecomp.exe` and run
+`tools/windows/enable_orchestra.bat`, which writes that file. Delete
+`mods/state.toml` to turn the feature off. A real in-game Mods page is the
+planned follow-up.
 
 ## Known gaps (MVP)
 * Instrument map is identity (FFTA voice number = GM program); to be refined
