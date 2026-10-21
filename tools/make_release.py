@@ -90,6 +90,7 @@ REQUIRED_FILES = [
     "LICENSES/ZLIB-raygui.txt",
     "THIRD_PARTY_ATTRIBUTION.md",
     "mods/packages/ffta.enhancement.widescreen/1.0.1/manifest.toml",
+    "mods/packages/ffta.enhancement.orchestra/0.1.0/manifest.toml",
 ]
 REQUIRED_DIRS = [
 ]

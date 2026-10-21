@@ -5499,6 +5499,26 @@ addr = 0x0800543C
 mode = "thumb"
 note = "lzss guard seam -> host plugin ffta.lzss-guard; rejects corrupted source headers"
 
+# Orchestral music plugin (ffta.orchestra, src/ffta_orchestra.*). Observation
+# seams on the AGB-SDK m4a player API; evidence: BRINGUP.md 2026-10-20 entry.
+#   0x081458AC MPlayStart(r0=MusicPlayerInfo*, r1=SongHeader*)  (Smsh check, [r5+0x34])
+#   0x08145990 MPlayStop(r0=MusicPlayerInfo*)                   (status|=0x80000000, clears chans)
+#   0x0814511C MPlayFadeOut(r0=MusicPlayerInfo*, r1=speed)      (+0x24=+0x26=speed, +0x28=0x100)
+[[mod_function_hook]]
+addr = 0x081458AC
+mode = "thumb"
+note = "m4a MPlayStart seam -> host plugin ffta.orchestra (BGM player 0x0200F2A0 only)"
+
+[[mod_function_hook]]
+addr = 0x08145990
+mode = "thumb"
+note = "m4a MPlayStop seam -> host plugin ffta.orchestra"
+
+[[mod_function_hook]]
+addr = 0x0814511C
+mode = "thumb"
+note = "m4a MPlayFadeOut seam -> host plugin ffta.orchestra"
+
 # ─── Batch ac: session 16:31 (post-fix summon attempt, spin) ───
 # 12 heal-cache units (0x081154D8-0x081159D0 battle cluster); split-interior seeds.
 

@@ -9509,3 +9509,23 @@ Guide/Y are intentional menu triggers — any other button reaching the
 menu is the fallback bug).
 
 **Commit.** `gbarecompx` `fce1781`; game pin + docs in this change.
+
+## 2026-10-20 — Orchestral music plugin (ffta.orchestra), first cut
+
+**Action.** Added `tools/m4a_to_midi.py` (song table 0x0814BB48, 640 entries,
+454 songs with data) and the `ffta.orchestra` plugin: sequencer
+`src/ffta_orchestra.h`, glue `src/ffta_orchestra_plugin.cpp`, package
+`mods/preloaded/packages/ffta.enhancement.orchestra/0.1.0`, TinySoundFont in
+`third_party/tsf`. Three `[[mod_function_hook]]` seams added to game.toml.
+
+**Evidence (disassembly).** `0x081458AC` checks `[r0+0x34]=='Smsh'`, takes
+`r0`=MusicPlayerInfo, `r1`=song header (called from `m4a_song_num_start`
+0x08141540 with player 0x0200F320 and header from the table at 0x0814BB48).
+`0x0814511C`: `strh r1,[r2,#0x26]; strh r1,[r2,#0x24]; strh #0x100,[r2,#0x28]`
+after the Smsh check = MPlayFadeOut(player, speed) (wrapper at 0x08145358).
+`0x08145990`: `status |= 0x80000000`, clears each track's channels = MPlayStop.
+Player table at 0x0814BB24: players 0x0200F2A0/F2E0/F320; song table
+player-index histogram {0: 231 (songs 0-99…), 1: 327, 2: 82}; song 42 → player 0.
+
+**Result.** Offline renders of songs 0/3/9/12/42 audition well by ear (user).
+In-game behaviour: pending first build and playtest.

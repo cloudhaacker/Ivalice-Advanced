@@ -1,0 +1,33 @@
+format_version = 1
+id = "ffta.enhancement.orchestra"
+version = "0.1.0"
+name = "FFTA Orchestral Music (experimental)"
+author = "ffta-recompiled"
+description = "Replaces the background music with a SoundFont-synthesised version of the same songs. The song data is read from your own ROM at run time; sound effects are unchanged. Experimental: instrument choices are still plain General MIDI."
+license = "PolyForm-Noncommercial-1.0.0"
+resolver = "declarative"
+save_compatibility = "shared"
+
+[[target]]
+game_id = "ffta-us"
+rom_sha1 = "4ac05441f4de70a4ec3dd932116346c61b8783d9"
+
+[[feature]]
+id = "orchestra"
+name = "Orchestral Music"
+description = "Play the game's songs through a SoundFont instead of the Game Boy Advance synth. Needs the FluidR3_GM.sf2 SoundFont (choose it once when asked)."
+group = "Audio"
+default_enabled = false
+
+[[plugin]]
+feature = "orchestra"
+id = "ffta.orchestra"
+
+[[asset]]
+feature = "orchestra"
+id = "soundfont"
+name = "FluidR3_GM SoundFont"
+sha1 = "4fd467afcb45c8b4cfd1eadac9372a819e35d46d"
+size = 148398306
+extensions = ["sf2"]
+purpose = "General MIDI SoundFont used to synthesise the orchestral music. It is not installed or redistributed by this package."

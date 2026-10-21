@@ -654,6 +654,7 @@ class ReleasePackTests(unittest.TestCase):
                 f(lic)
         f("THIRD_PARTY_ATTRIBUTION.md")
         f("mods/packages/ffta.enhancement.widescreen/1.0.1/manifest.toml")
+        f("mods/packages/ffta.enhancement.orchestra/0.1.0/manifest.toml")
         f("assets/fonts/Pro.ttf")
         f("assets/img/box.png")
         return root
