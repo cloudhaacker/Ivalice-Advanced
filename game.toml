@@ -5504,6 +5504,8 @@ note = "lzss guard seam -> host plugin ffta.lzss-guard; rejects corrupted source
 #   0x081458AC MPlayStart(r0=MusicPlayerInfo*, r1=SongHeader*)  (Smsh check, [r5+0x34])
 #   0x08145990 MPlayStop(r0=MusicPlayerInfo*)                   (status|=0x80000000, clears chans)
 #   0x0814511C MPlayFadeOut(r0=MusicPlayerInfo*, r1=speed)      (+0x24=+0x26=speed, +0x28=0x100)
+#   0x08144B2C MPlayMain(r0=MusicPlayerInfo*) per-frame tick: calls fade handler 0x081459D0
+#              first, track base [r0+0x2C], count [r0+8], track flags 0x80=EXIST 0x40=START
 [[mod_function_hook]]
 addr = 0x081458AC
 mode = "thumb"
@@ -5518,6 +5520,11 @@ note = "m4a MPlayStop seam -> host plugin ffta.orchestra"
 addr = 0x0814511C
 mode = "thumb"
 note = "m4a MPlayFadeOut seam -> host plugin ffta.orchestra"
+
+[[mod_function_hook]]
+addr = 0x08144B2C
+mode = "thumb"
+note = "m4a MPlayMain seam -> host plugin ffta.orchestra (silences native BGM tracks while orchestra plays)"
 
 # ─── Batch ac: session 16:31 (post-fix summon attempt, spin) ───
 # 12 heal-cache units (0x081154D8-0x081159D0 battle cluster); split-interior seeds.

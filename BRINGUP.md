@@ -9529,3 +9529,19 @@ player-index histogram {0: 231 (songs 0-99…), 1: 327, 2: 82}; song 42 → play
 
 **Result.** Offline renders of songs 0/3/9/12/42 audition well by ear (user).
 In-game behaviour: pending first build and playtest.
+
+## 2026-10-21 — Orchestra: skipping MPlayStart hangs the title (fixed)
+
+**Symptom (user, Windows).** With the feature on, the BGM changed but game
+input did nothing (menu worked). **Repro.** `GBARECOMP_INPUT_REPLAY=
+inputs/title_to_newgame.csv --frames 6000`: feature off → New Game cutscene;
+feature on (MPlayStart skipped) → frozen title screen. **Cause.** The game
+polls the BGM player's state; an idle player never reaches the next scene.
+**Fix.** MPlayStart is no longer skipped. New seam MPlayMain 0x08144B2C
+(per-frame; first call is the fade handler 0x081459D0; track base `[r0+0x2C]`,
+count `[r0+8]`, track flag 0x80 EXIST/0x40 START — START init sets volX=0x40
+at 0x08144BDA, hence a 3-frame native-PCM gate after each start). Before each
+BGM tick the plugin zeroes track volMR/volML/volX and sets VOLCHG so the native
+BGM stays silent while the sequencer plays. **Verification.** Same replay,
+feature on: final frame byte-identical to feature off. Audibility of residual
+native BGM (start/fade blips) pending user ear test.
